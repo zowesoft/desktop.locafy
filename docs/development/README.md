@@ -34,6 +34,16 @@ wails3 build   # production build into bin/
 wails3 init -l # list available templates
 ```
 
+## Verification commands
+
+```
+go test ./internal/...    # engine package tests
+go vet . ./internal/...   # static checks
+go build . ./internal/... # compile check
+```
+
+Note: `build/ios` and `build/android` contain mobile build scaffolding that only compiles under `ios`/`android` build tags, so `go build ./...` reports an empty `main` package there. Scope vet/build/test to `.` and `./internal/...`; `wails3 build` handles platform targets itself.
+
 Rules:
 
 - Files in `frontend/bindings/` are generated during build/dev and are never edited by hand.

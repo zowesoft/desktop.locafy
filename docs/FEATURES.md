@@ -60,12 +60,12 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 - **Description:** SQLite database with safe, documented migrations as the desktop's local persistence layer.
 - **Dependencies:** LOC-FOUND-001
 - **Acceptance criteria:** Local state persists across restarts; migrations run safely and repeatably; upgrade/migration path documented (PRD section 18.3).
-- **Status:** NOT_STARTED
+- **Status:** IN_PROGRESS
 - **Assigned agent:** —
-- **Files/modules:** —
+- **Files/modules:** `internal/db/`
 - **Tests:** Migration tests (fresh install, upgrade, rollback)
-- **Blockers:** —
-- **Evidence:** —
+- **Blockers:** Wiring into the running application happens with the settings service (DESK-BOOT-001); SQLite driver choice recorded in ADR-0003.
+- **Evidence:** `go test ./internal/...` passes: schema created via embedded ordered migrations, data persists across reopen, migrations idempotent, error paths covered.
 
 ### DESK-UI-001 — Navigation and design system
 
