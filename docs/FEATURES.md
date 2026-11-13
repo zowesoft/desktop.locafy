@@ -64,9 +64,9 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 - **Status:** IN_PROGRESS
 - **Assigned agent:** —
 - **Files/modules:** `internal/db/`
-- **Tests:** Migration tests (fresh install, upgrade, rollback); path-resolution test per platform
-- **Blockers:** Wiring into the running application happens with the settings service (DESK-BOOT-001); SQLite driver choice recorded in ADR-0003; data model recorded in ADR-0004.
-- **Evidence:** `go test ./internal/...` passes: schema created via embedded ordered migrations, data persists across reopen, migrations idempotent, error paths covered. Remaining: xdg-based `data/` path, transaction and UUID helpers.
+- **Tests:** Migration tests (fresh install, upgrade, rollback); path-resolution tests; transaction helper tests
+- **Blockers:** Path resolution and helpers are compile-time per-platform but test-verified on Windows only; macOS/Linux verification lands with CI (ADR-0001). Wiring into the running application happens with the settings service (DESK-BOOT-001).
+- **Evidence:** `go vet` and `go test ./internal/...` pass on Windows: embedded ordered migrations, idempotent re-runs, data persists across reopen; `DataHome()` resolves the roaming application-data directory per ADR-0004; `DataPath()` produces `locafy/data/locafy.db`; `WithTx` commits on success and rolls back on error; `NewID()` issues UUIDs.
 
 ### DESK-DB-002 — Control-plane schema foundation
 

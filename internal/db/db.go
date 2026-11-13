@@ -4,25 +4,9 @@ package db
 import (
 	"database/sql"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	_ "modernc.org/sqlite"
 )
-
-// DefaultPath returns the database path under the OS user-config
-// directory, creating the directory when missing.
-func DefaultPath() (string, error) {
-	base, err := os.UserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("resolve user config dir: %w", err)
-	}
-	dir := filepath.Join(base, "Locafy")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("create data directory: %w", err)
-	}
-	return filepath.Join(dir, "locafy.db"), nil
-}
 
 // Open opens the database at path with the settings the engine relies on:
 // WAL journaling, enforced foreign keys, and a busy timeout so concurrent
