@@ -38,7 +38,7 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 - **Assigned agent:** —
 - **Files/modules:** Repository root, CI configuration, `docs/`
 - **Tests:** CI pipeline runs build + tests
-- **Blockers:** — (Verified toolchain versions are a deliverable of this feature, recorded in `docs/decisions/`; desktop platform support is already decided in ADR-0001 — cross-platform from day one.)
+- **Blockers:** — (Verified toolchain recorded in ADR-0002 — Wails v3.0.0, Go 1.27.1, Node 22.14.0; desktop platform support decided in ADR-0001.)
 - **Evidence:** —
 
 ### DESK-BOOT-001 — Wails desktop bootstrap

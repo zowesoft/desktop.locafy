@@ -56,7 +56,7 @@ Do not implement features before the repository foundation feature `LOC-FOUND-00
 ## Decisions you must NOT guess (PRD section 23)
 
 - ~~First supported desktop OS~~ — resolved: cross-platform from day one (see Platform policy and ADR-0001).
-- Wails v3 / Go / React versions — verify against official compatibility sources when initializing; do not hardcode unverified versions into scripts.
+- ~~Wails v3 / Go / React versions~~ — verified and recorded in ADR-0002: Wails CLI v3.0.0, Go 1.27.1 (min 1.26), Node 22.14.0, npm 11.19.0. Re-verify before any upgrade.
 - Service packaging and installation strategy — undecided (evaluate native vs container-backed in Phases 4–5).
 - Object storage engine — MinIO is a candidate, not a decision (Phase 5).
 - Reverse proxy — Caddy is the initial candidate, to be validated in Phase 6.
