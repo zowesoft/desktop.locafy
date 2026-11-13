@@ -57,7 +57,7 @@ internal/
 
 Planned areas appear as their features are built; packages are added when a feature starts, not speculatively.
 
-**Persistence** — one SQLite database for desktop state, stored under the OS user-config directory (`%APPDATA%/Locafy` on Windows, equivalent per platform). Schema changes go through embedded, ordered, repeatable migrations (`internal/db/migrations/`). Project source files and managed service data live outside this database and are referenced, never embedded.
+**Persistence** — one SQLite database for desktop state — the control-plane database described in ADR-0004 — stored in the platform data directory via xdg (`%APPDATA%/Locafy/data/locafy.db` on Windows). Schema changes go through embedded, ordered, repeatable migrations (`internal/db/migrations/`); each feature owns its tables. Project source files and managed service data live outside this database and are referenced, never embedded.
 
 **Logging** — Go `slog` structured logging to rotating files under the user data directory, with secrets masked at the logging boundary. Log scope (machine/project/app/service) is part of the record.
 

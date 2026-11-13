@@ -8,6 +8,8 @@ Architecture decision records (ADRs) for this repository.
 |---|---|---|
 | [ADR-0001](ADR-0001-desktop-platform-support.md) | Cross-platform desktop support from day one (Windows, macOS, Linux) | Accepted |
 | [ADR-0002](ADR-0002-verified-toolchain.md) | Verified toolchain: Wails v3.0.0, Go 1.27.1, Node 22.14.0 | Accepted |
+| [ADR-0003](ADR-0003-sqlite-driver.md) | SQLite driver: modernc.org/sqlite (pure Go, CGO-free builds) | Accepted |
+| [ADR-0004](ADR-0004-local-data-model.md) | Local data model: SQLite as control-plane DB; project-centric schema standards | Accepted |
 | — | Desktop stack selections made in the PRD (Wails v3, Go, React/TS, SQLite) are recorded there and considered approved baseline. | — |
 
 ## Decisions pending (do not guess — PRD section 23)

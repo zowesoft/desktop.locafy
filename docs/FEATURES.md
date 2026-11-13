@@ -9,8 +9,9 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 | ID | Feature | Repository | Phase | Status | Dependencies |
 |---|---|---|---|---|---|
 | LOC-FOUND-001 | Repository and engineering standards (shared) | All | 0 | NOT_STARTED | — |
-| DESK-BOOT-001 | Wails desktop bootstrap | desktop.locafy | 1 | NOT_STARTED | LOC-FOUND-001 |
-| DESK-DB-001 | SQLite persistence and migrations | desktop.locafy | 1 | NOT_STARTED | LOC-FOUND-001 |
+| DESK-BOOT-001 | Wails desktop bootstrap | desktop.locafy | 1 | IN_PROGRESS | LOC-FOUND-001 |
+| DESK-DB-001 | SQLite persistence and migrations | desktop.locafy | 1 | IN_PROGRESS | LOC-FOUND-001 |
+| DESK-DB-002 | Control-plane schema foundation | desktop.locafy | 1 | NOT_STARTED | DESK-DB-001 |
 | DESK-UI-001 | Navigation and design system | desktop.locafy | 1 | NOT_STARTED | DESK-BOOT-001 |
 | DESK-PROJ-001 | Create and import projects | desktop.locafy | 2 | NOT_STARTED | DESK-BOOT-001, DESK-DB-001, DESK-UI-001 |
 | DESK-PROJ-002 | Project overview and lifecycle | desktop.locafy | 2 | NOT_STARTED | DESK-PROJ-001 |
@@ -57,15 +58,28 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 ### DESK-DB-001 — SQLite persistence and migrations
 
 - **Repository:** desktop.locafy
-- **Description:** SQLite database with safe, documented migrations as the desktop's local persistence layer.
+- **Description:** SQLite database with safe, documented migrations as the desktop's local persistence layer. Includes the storage-path policy from ADR-0004 (xdg-resolved `Locafy/data/locafy.db`), a transaction helper, and UUID generation for schema records.
 - **Dependencies:** LOC-FOUND-001
-- **Acceptance criteria:** Local state persists across restarts; migrations run safely and repeatably; upgrade/migration path documented (PRD section 18.3).
+- **Acceptance criteria:** Local state persists across restarts; migrations run safely and repeatably; the database resolves to the platform-correct data directory on Windows, macOS, and Linux; upgrade/migration path documented (PRD section 18.3).
 - **Status:** IN_PROGRESS
 - **Assigned agent:** —
 - **Files/modules:** `internal/db/`
-- **Tests:** Migration tests (fresh install, upgrade, rollback)
-- **Blockers:** Wiring into the running application happens with the settings service (DESK-BOOT-001); SQLite driver choice recorded in ADR-0003.
-- **Evidence:** `go test ./internal/...` passes: schema created via embedded ordered migrations, data persists across reopen, migrations idempotent, error paths covered.
+- **Tests:** Migration tests (fresh install, upgrade, rollback); path-resolution test per platform
+- **Blockers:** Wiring into the running application happens with the settings service (DESK-BOOT-001); SQLite driver choice recorded in ADR-0003; data model recorded in ADR-0004.
+- **Evidence:** `go test ./internal/...` passes: schema created via embedded ordered migrations, data persists across reopen, migrations idempotent, error paths covered. Remaining: xdg-based `data/` path, transaction and UUID helpers.
+
+### DESK-DB-002 — Control-plane schema foundation
+
+- **Repository:** desktop.locafy
+- **Description:** First control-plane tables per ADR-0004: `machine` (single-row machine record), `settings` and `project_settings` (typed key-value preferences), and `activity_logs` (engine action history, not application output).
+- **Dependencies:** DESK-DB-001
+- **Acceptance criteria:** Machine record is a single-row upsert reflecting hostname, platform, architecture, and OS version; settings values are typed (`string`, `boolean`, `number`, `JSON`) and unique per key; activity log entries record scope, action, and timestamp; all state columns carry CHECK constraints; table access lives behind a settings/machine service module, never in UI code.
+- **Status:** NOT_STARTED
+- **Assigned agent:** —
+- **Files/modules:** `internal/db/migrations/`, `internal/settings/`, `internal/machine/`
+- **Tests:** Upsert/uniqueness tests; typed-value round-trip tests; activity-log append tests
+- **Blockers:** —
+- **Evidence:** —
 
 ### DESK-UI-001 — Navigation and design system
 
@@ -84,13 +98,13 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 
 - **Repository:** desktop.locafy
 - **Description:** Create and import projects; project listing, metadata, configuration, and persistence; renaming a project; changing a project's root path with validation; safe project removal.
-- **Dependencies:** DESK-BOOT-001, DESK-DB-001, DESK-UI-001
+- **Dependencies:** DESK-BOOT-001, DESK-DB-001, DESK-DB-002, DESK-UI-001
 - **Acceptance criteria:** Users can create/import and manage projects (create, import, rename, change root path, remove from Locafy); changing the root path validates the selected directory, reports conflicts, and never moves, copies, or deletes files; project data persists; project boundaries are enforced; removing a project from Locafy does not delete its source files (PRD sections 7.2, 20).
 - **Status:** NOT_STARTED
 - **Assigned agent:** —
-- **Files/modules:** —
+- **Files/modules:** `internal/projects/`, `internal/db/migrations/` (projects table per ADR-0004)
 - **Tests:** Project CRUD + boundary enforcement tests; root-path change validation tests (missing directory, conflicting project, unreadable path); removal-does-not-delete-sources test
-- **Blockers:** —
+- **Blockers:** The project manifest format (portable project configuration, per ADR-0004) must be designed and recorded before project creation is implemented; a separate manifest decision and feature will be added for it.
 - **Evidence:** —
 
 ### DESK-PROJ-002 — Project overview and lifecycle
