@@ -15,7 +15,9 @@ Architecture decision records (ADRs) for this repository.
 |---|---|
 | Verified Wails v3 / Go / React versions | Phase 0 |
 | Service packaging and installation strategy | Phases 4–5 |
+| Initial runtime list and supported versions (PRD section 9.1) | Phase 4 |
 | Object storage engine | Phase 5 |
+| Cloud credential and device-identity storage (joint with `api.locafy` auth design) | Phase 8 |
 | Reverse proxy (Caddy candidate) validation | Phase 6 |
 | Local certificate tooling (mkcert candidate) validation | Phase 6 |
 | Auto-update mechanism | Phase 10 |

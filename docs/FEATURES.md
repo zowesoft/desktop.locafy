@@ -83,13 +83,13 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 ### DESK-PROJ-001 — Create and import projects
 
 - **Repository:** desktop.locafy
-- **Description:** Create and import projects; project listing, metadata, configuration, and persistence; safe project removal.
+- **Description:** Create and import projects; project listing, metadata, configuration, and persistence; renaming a project; changing a project's root path with validation; safe project removal.
 - **Dependencies:** DESK-BOOT-001, DESK-DB-001, DESK-UI-001
-- **Acceptance criteria:** Users can create/import and manage projects; project data persists; project boundaries are enforced; removing a project from Locafy does not delete its source files (PRD section 20, Phase 2 exit criteria).
+- **Acceptance criteria:** Users can create/import and manage projects (create, import, rename, change root path, remove from Locafy); changing the root path validates the selected directory, reports conflicts, and never moves, copies, or deletes files; project data persists; project boundaries are enforced; removing a project from Locafy does not delete its source files (PRD sections 7.2, 20).
 - **Status:** NOT_STARTED
 - **Assigned agent:** —
 - **Files/modules:** —
-- **Tests:** Project CRUD + boundary enforcement tests; removal-does-not-delete-sources test
+- **Tests:** Project CRUD + boundary enforcement tests; root-path change validation tests (missing directory, conflicting project, unreadable path); removal-does-not-delete-sources test
 - **Blockers:** —
 - **Evidence:** —
 

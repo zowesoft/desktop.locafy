@@ -10,6 +10,15 @@ Locafy desktop application: the desktop UI and local engine for managing project
 **Approved technology (do not change without a recorded decision):**
 Wails v3 · Go · React + TypeScript · Tailwind CSS · shadcn/ui · Lucide · Zustand (client state) · TanStack Query (async state) · SQLite (local database) · xterm.js (terminal) · Go platform-specific process/PTY facilities.
 
+## Local-first (non-negotiable)
+
+Core desktop functionality must work with no Locafy account, no cloud API, and no Internet connection.
+
+- Never require sign-in, cloud reachability, or a network round trip to create or import a project, start or stop applications and services, use local domains, read logs, open a terminal, or view monitoring.
+- Cloud features (device registration, tunnels, reserved domains, synchronization) are optional layers on top. When the account, device, or network is unavailable, they degrade to a clearly explained disabled state — never to a broken or blocked local experience.
+- Local state is authoritative. Cloud state must never overwrite local project configuration without an explicit user-initiated action.
+- A cloud or authentication failure must never abort a local operation that does not inherently depend on it (PRD sections 3.1, 14.3, 25).
+
 ## Current status
 
 Repository scaffolded — **no implementation yet** (Phase 0/1 pending per PRD section 20).
@@ -55,10 +64,15 @@ Do not implement features before the repository foundation feature `LOC-FOUND-00
 - Auto-update mechanism — undecided (Phase 10).
 - Tunnel gateway technology and transport/protocol — intentionally undecided; do not select them.
 - API database and authentication/session design — owned by `api.locafy`; do not assume them here.
+- Initial runtime list and supported versions are not finalised (PRD section 9.1) — resolve in Phase 4.
+- Where cloud credentials and device identity are stored, and in what form, is undecided — resolve with the cross-client authentication design in Phase 8.
 
-## Safety invariants (PRD sections 3.6, 7.2, 8.3, 11.4, 12, 18.1)
+## Safety invariants (PRD sections 3.1, 3.6, 7.2, 8.3, 11.4, 12, 14.3, 18.1)
 
 - Never silently delete project source files or persistent service data; removal from Locafy and data deletion are separate, confirmed operations.
+- Store cloud credentials and device tokens using operating-system-appropriate secure storage. Never place them in project files, repository contents, generated logs, or unencrypted application data.
+- Never collect or upload project source code, environment files, or logs. Any transfer is an explicit user action with clear disclosure of exactly what is sent.
+- Validate user-supplied paths before reading, writing, or executing against them; never follow a path outside the location the user confirmed.
 - Bind services to loopback by default; never expose databases or management ports publicly by default.
 - Never terminate unrelated processes to resolve port conflicts.
 - Framework/language detection is advisory; users must review and confirm before first execution of detected commands.
@@ -81,6 +95,7 @@ Optional body explaining what changed and why.
 - Subject: imperative mood, no trailing period, 72 characters or fewer.
 - Body: separated from the subject by a blank line, wrapped at 72 characters, and explains the motivation and notable decisions. Omit it for trivial changes.
 - One logical change per commit. Never mix unrelated work.
+- Never add `Co-Authored-By`, `Signed-off-by`, `Generated with`, or any other attribution, trailer, or signature to a commit message. A commit message is the Conventional Commits subject plus an optional explanatory body, and nothing else.
 
 Example:
 
