@@ -8,6 +8,6 @@ Expected contents (from PRD):
 - Initial domain model and local SQLite migration approach
 - Project/application/service state and lifecycle model
 - Local networking and reverse-proxy integration design
-- Platform-specific behavior documentation (process lifecycle, PTY, runtime installation, service management, paths/permissions, local DNS resolution, certificate trust stores, packaging) — PRD section 19
+- Platform-specific behavior documentation for Windows, macOS, and Linux (process lifecycle, PTY, runtime installation, service management, paths/permissions, local DNS resolution, certificate trust stores, packaging) — PRD section 19
 
 Related decisions: `docs/decisions/`

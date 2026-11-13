@@ -36,9 +36,17 @@ Do not implement features before the repository foundation feature `LOC-FOUND-00
 - The tunnel protocol is specified and versioned in Phase 9 (`TUN-PROTO-001`); do not improvise it.
 - Do not copy implementation code between repositories. Shared contracts over shared source.
 
+## Platform policy
+
+**Cross-platform from day one — decided, do not revisit.** Every build must support Windows, macOS, and Linux. Wails v3 is cross-platform, so:
+
+- Platform-specific behavior (process lifecycle and signals, PTY, runtime installation, service management, paths and permissions, local DNS resolution, certificate trust stores, packaging) is implemented and tested per platform as each feature is built — never deferred to a later phase.
+- CI builds and tests on all three platforms; a feature is not complete if it works on only one.
+- Avoid Windows-only or Unix-only assumptions outside clearly isolated, per-platform code paths.
+
 ## Decisions you must NOT guess (PRD section 23)
 
-- First supported desktop OS — undecided; Windows is a practical development target, not a support commitment. Resolve in Phase 0.
+- ~~First supported desktop OS~~ — resolved: cross-platform from day one (see Platform policy and ADR-0001).
 - Wails v3 / Go / React versions — verify against official compatibility sources when initializing; do not hardcode unverified versions into scripts.
 - Service packaging and installation strategy — undecided (evaluate native vs container-backed in Phases 4–5).
 - Object storage engine — MinIO is a candidate, not a decision (Phase 5).

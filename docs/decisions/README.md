@@ -6,13 +6,13 @@ Architecture decision records (ADRs) for this repository.
 
 | ADR | Decision | Status |
 |---|---|---|
-| — | None yet. Desktop stack selections made in the PRD (Wails v3, Go, React/TS, SQLite) are recorded there and considered approved baseline. | — |
+| [ADR-0001](ADR-0001-desktop-platform-support.md) | Cross-platform desktop support from day one (Windows, macOS, Linux) | Accepted |
+| — | Desktop stack selections made in the PRD (Wails v3, Go, React/TS, SQLite) are recorded there and considered approved baseline. | — |
 
 ## Decisions pending (do not guess — PRD section 23)
 
 | Decision | Resolve in |
 |---|---|
-| First supported desktop OS | Phase 0 |
 | Verified Wails v3 / Go / React versions | Phase 0 |
 | Service packaging and installation strategy | Phases 4–5 |
 | Object storage engine | Phase 5 |
