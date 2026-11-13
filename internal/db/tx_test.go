@@ -18,7 +18,7 @@ func TestWithTxCommitsOnSuccess(t *testing.T) {
 	}
 
 	err = WithTx(database, func(tx *sql.Tx) error {
-		_, err := tx.Exec(`INSERT INTO settings (key, value) VALUES ('a', '1')`)
+		_, err := tx.Exec(`INSERT INTO settings (key, value, value_type) VALUES ('a', '1', 'string')`)
 		return err
 	})
 	if err != nil {
@@ -46,7 +46,7 @@ func TestWithTxRollsBackOnError(t *testing.T) {
 
 	wantErr := errors.New("boom")
 	err = WithTx(database, func(tx *sql.Tx) error {
-		if _, err := tx.Exec(`INSERT INTO settings (key, value) VALUES ('b', '1')`); err != nil {
+		if _, err := tx.Exec(`INSERT INTO settings (key, value, value_type) VALUES ('b', '1', 'string')`); err != nil {
 			return err
 		}
 		return wantErr

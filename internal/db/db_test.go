@@ -15,7 +15,7 @@ func TestMigrateCreatesSchemaAndPersistsData(t *testing.T) {
 	if err := Migrate(database); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	if _, err := database.Exec(`INSERT INTO settings (key, value) VALUES ('test', 'value')`); err != nil {
+	if _, err := database.Exec(`INSERT INTO settings (key, value, value_type) VALUES ('test', 'value', 'string')`); err != nil {
 		t.Fatalf("insert setting: %v", err)
 	}
 	database.Close()
@@ -56,8 +56,8 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	if err := database.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if count != 1 {
-		t.Fatalf("schema_migrations rows = %d, want 1", count)
+	if count != 2 {
+		t.Fatalf("schema_migrations rows = %d, want 2", count)
 	}
 }
 
