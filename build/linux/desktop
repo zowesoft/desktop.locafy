@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Name=Locafy
+Comment=Local-first development environment control plane
+# The Exec line includes %u to pass the URL to the application
+Exec=/usr/local/bin/locafy.exe %u
+Terminal=false
+Type=Application
+Icon=locafy.exe
+Categories=Utility;
+StartupWMClass=locafy.exe
+
+ 
