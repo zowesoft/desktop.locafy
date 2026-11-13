@@ -39,7 +39,7 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 - **Files/modules:** Repository root, CI configuration, `docs/`
 - **Tests:** CI pipeline runs build + tests
 - **Blockers:** — (Verified toolchain recorded in ADR-0002 — Wails v3.0.0, Go 1.27.1, Node 22.14.0; desktop platform support decided in ADR-0001.)
-- **Evidence:** —
+- **Evidence:** desktop.locafy builds independently — `wails3 build` compiles the Go binary and frontend, producing `bin/locafy.exe`. Build/test matrix for web.locafy, api.locafy, and gateway.locafy still pending.
 
 ### DESK-BOOT-001 — Wails desktop bootstrap
 
@@ -47,12 +47,12 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 - **Description:** Wails v3 application bootstrap; Go backend ↔ React/TypeScript frontend integration; settings and structured logging; native OS information and basic monitoring; packaging/development workflow.
 - **Dependencies:** LOC-FOUND-001
 - **Acceptance criteria:** Desktop app launches reliably on Windows, macOS, and Linux; frontend can invoke approved Go backend operations; local state persists across restarts; logging and error reporting work (PRD section 20, Phase 1 exit criteria).
-- **Status:** NOT_STARTED
+- **Status:** IN_PROGRESS
 - **Assigned agent:** —
 - **Files/modules:** —
 - **Tests:** Launch/reliability test; backend operation invocation tests
-- **Blockers:** Toolchain versions unverified
-- **Evidence:** —
+- **Blockers:** Cross-platform launch validation requires CI (ADR-0001); Windows build verified locally
+- **Evidence:** `wails3 build` on Windows produces `bin/locafy.exe` (v3.0.0, Go 1.27.1); TypeScript bindings generated from Go services into `frontend/bindings/`.
 
 ### DESK-DB-001 — SQLite persistence and migrations
 
