@@ -44,7 +44,7 @@ Each feature owns its tables and migration, keeping migrations small and reviewa
 
 | Feature | Tables |
 |---|---|
-| DESK-DB-002 | `machine`, `settings`, `project_settings`, `activity_logs` |
+| DESK-DB-002 | `machine`, `settings`, `activity_logs` (`project_settings` moves to DESK-PROJ-001, which owns the `projects` FK) |
 | DESK-PROJ-001/002 | `projects` |
 | DESK-APP-001, DESK-RUN-001 | `applications`, `runtimes` |
 | DESK-SVC-001 | `services`, `service_templates` |

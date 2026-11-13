@@ -11,7 +11,7 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 | LOC-FOUND-001 | Repository and engineering standards (shared) | All | 0 | NOT_STARTED | — |
 | DESK-BOOT-001 | Wails desktop bootstrap | desktop.locafy | 1 | IN_PROGRESS | LOC-FOUND-001 |
 | DESK-DB-001 | SQLite persistence and migrations | desktop.locafy | 1 | IN_PROGRESS | LOC-FOUND-001 |
-| DESK-DB-002 | Control-plane schema foundation | desktop.locafy | 1 | NOT_STARTED | DESK-DB-001 |
+| DESK-DB-002 | Control-plane schema foundation | desktop.locafy | 1 | IN_PROGRESS | DESK-DB-001 |
 | DESK-UI-001 | Navigation and design system | desktop.locafy | 1 | NOT_STARTED | DESK-BOOT-001 |
 | DESK-PROJ-001 | Create and import projects | desktop.locafy | 2 | NOT_STARTED | DESK-BOOT-001, DESK-DB-001, DESK-UI-001 |
 | DESK-PROJ-002 | Project overview and lifecycle | desktop.locafy | 2 | NOT_STARTED | DESK-PROJ-001 |
@@ -71,15 +71,15 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 ### DESK-DB-002 — Control-plane schema foundation
 
 - **Repository:** desktop.locafy
-- **Description:** First control-plane tables per ADR-0004: `machine` (single-row machine record), `settings` and `project_settings` (typed key-value preferences), and `activity_logs` (engine action history, not application output).
+- **Description:** First control-plane tables per ADR-0004: `machine` (single-row machine record), `settings` (typed key-value preferences), and `activity_logs` (engine action history, not application output). `project_settings` is deferred to the DESK-PROJ-001 migration because it needs the `projects` foreign key.
 - **Dependencies:** DESK-DB-001
 - **Acceptance criteria:** Machine record is a single-row upsert reflecting hostname, platform, architecture, and OS version; settings values are typed (`string`, `boolean`, `number`, `JSON`) and unique per key; activity log entries record scope, action, and timestamp; all state columns carry CHECK constraints; table access lives behind a settings/machine service module, never in UI code.
-- **Status:** NOT_STARTED
+- **Status:** IN_PROGRESS
 - **Assigned agent:** —
-- **Files/modules:** `internal/db/migrations/`, `internal/settings/`, `internal/machine/`
+- **Files/modules:** `internal/db/migrations/`, `internal/settings/`, `internal/machine/`, `internal/activity/`
 - **Tests:** Upsert/uniqueness tests; typed-value round-trip tests; activity-log append tests
-- **Blockers:** —
-- **Evidence:** —
+- **Blockers:** Registering the machine record at engine startup and exposing settings to the UI happen with DESK-BOOT-001; macOS/Linux verification of the per-platform OS version code lands with CI (ADR-0001).
+- **Evidence:** `go vet . ./internal/...` and `go test ./internal/...` pass on Windows: migration 0002 creates `machine` and `activity_logs` with CHECK constraints, triggers, and index; machine registration upserts exactly one row; settings round-trip string/boolean/number/JSON, reject type mismatches, and return `ErrNotFound` for missing keys; activity entries append with scope/scopeID and read back newest-first with limits; invalid scopes are rejected by the schema CHECK (test-verified).
 
 ### DESK-UI-001 — Navigation and design system
 
