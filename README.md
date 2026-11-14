@@ -8,7 +8,7 @@ Locafy turns a developer's computer into a manageable local development environm
 
 ## Status
 
-🚧 Scaffolded, not yet implemented. Delivery follows the phased plan in the PRD (section 20). See `docs/FEATURES.md` for the feature tracker.
+🚧 In active development (Phase 0/1). The app builds and runs on Windows with SQLite persistence, navigation, the dashboard, settings, and engine status in the top bar; macOS and Linux verification awaits CI. Delivery follows the phased plan in the PRD (section 20). See `docs/FEATURES.md` for the feature tracker.
 
 ## Documentation
 
@@ -23,4 +23,4 @@ Locafy turns a developer's computer into a manageable local development environm
 
 ## Development
 
-To be established in Phase 0/1 (toolchain versions must be verified against official sources before being recorded here — see `AGENTS.md`).
+Verified toolchain versions and the local development workflow are documented in [`docs/development/README.md`](docs/development/README.md); the verification evidence is recorded in [`docs/decisions/ADR-0002-verified-toolchain.md`](docs/decisions/ADR-0002-verified-toolchain.md).
