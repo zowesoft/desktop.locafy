@@ -1,6 +1,7 @@
 import { createHashRouter } from "react-router-dom";
 import App from "@/App";
 import { Dashboard } from "@/screens/dashboard";
+import { NotFound } from "@/screens/not-found";
 import { Placeholder } from "@/screens/placeholder";
 import { RouteError } from "@/screens/route-error";
 import { SettingsScreen } from "@/screens/settings";
@@ -30,7 +31,7 @@ export const router = createHashRouter([
       { path: "extensions", element: <Placeholder name="Extensions" planned /> },
       { path: "help", element: <Placeholder name="Help & Support" /> },
       { path: "settings", element: <SettingsScreen /> },
-      { path: "*", element: <Placeholder name="Not found" /> },
+      { path: "*", element: <NotFound /> },
     ],
   },
 ]);
