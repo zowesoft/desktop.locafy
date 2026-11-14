@@ -2,6 +2,7 @@ import { createHashRouter } from "react-router-dom";
 import App from "@/App";
 import { Dashboard } from "@/screens/dashboard";
 import { Placeholder } from "@/screens/placeholder";
+import { RouteError } from "@/screens/route-error";
 import { SettingsScreen } from "@/screens/settings";
 
 /*
@@ -12,6 +13,8 @@ export const router = createHashRouter([
   {
     path: "/",
     element: <App />,
+    // Catches failures from any nested route, including the layout itself.
+    errorElement: <RouteError />,
     children: [
       { index: true, element: <Dashboard /> },
       { path: "projects", element: <Placeholder name="Projects" /> },
