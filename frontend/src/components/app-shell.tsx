@@ -1,11 +1,12 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import {
+  Bell,
   Blocks,
   ChartColumn,
+  ChevronDown,
   CircleQuestionMark,
   FolderKanban,
-  Hexagon,
   LayoutDashboard,
   Network,
   Search,
@@ -77,9 +78,17 @@ export function AppShell({
     <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
       <aside className="flex w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
         <div className="flex h-16 items-center gap-2.5 px-4">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-accent">
-            <Hexagon className="size-4 text-primary-foreground" strokeWidth={2.5} />
-          </span>
+          <svg viewBox="0 0 32 32" aria-hidden className="size-8 shrink-0">
+            <defs>
+              <linearGradient id="locafy-mark" x1="2" y1="2" x2="30" y2="30" gradientUnits="userSpaceOnUse">
+                <stop stopColor="#FF873D" />
+                <stop offset="1" stopColor="#F05252" />
+              </linearGradient>
+            </defs>
+            <path d="M16 1.5 29 9v14L16 30.5 3 23V9Z" fill="url(#locafy-mark)" />
+            <path d="M16 1.5 29 9 16 16.5 3 9Z" fill="#F5F3F8" fillOpacity="0.22" />
+            <path d="M16 16.5 29 9v14L16 30.5Z" fill="#111116" fillOpacity="0.18" />
+          </svg>
           <span className="text-lg font-semibold tracking-tight">Locafy</span>
         </div>
 
@@ -128,9 +137,18 @@ export function AppShell({
               Ctrl K
             </kbd>
           </div>
-          {topbarActions && (
-            <div className="ml-auto flex shrink-0 items-center gap-2">{topbarActions}</div>
-          )}
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <span className="flex h-8 items-center gap-2 rounded-full border border-border bg-card px-3 text-xs font-medium">
+              <span className="size-2 shrink-0 rounded-full bg-success" />
+              Locafy Running
+              <ChevronDown className="size-3.5 text-muted-foreground" />
+            </span>
+            <Button variant="ghost" size="icon" aria-label="Notifications" className="relative">
+              <Bell className="size-4.5" />
+              <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-accent ring-2 ring-background" />
+            </Button>
+            {topbarActions}
+          </div>
         </header>
 
         <main className="flex-1 overflow-y-auto">{children}</main>

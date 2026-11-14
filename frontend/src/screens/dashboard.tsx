@@ -114,9 +114,9 @@ export function Dashboard() {
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-primary/25 via-transparent to-accent/25" />
         <div className="pointer-events-none absolute -right-16 -top-24 size-72 rounded-full bg-primary/25 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-24 right-40 size-56 rounded-full bg-accent/20 blur-3xl" />
-        <div className="relative flex items-center justify-between gap-8">
-          <div className="max-w-xl space-y-3">
-            <h1 className="text-4xl font-semibold leading-[1.1] tracking-tight">
+        <div className="relative flex flex-wrap items-center justify-between gap-8">
+          <div className="max-w-2xl space-y-3">
+            <h1 className="text-[clamp(1.5rem,3vw,2.25rem)] font-semibold leading-[1.1] tracking-tight">
               Your Local VPS.
               <br />
               Your Development Environment.
@@ -125,15 +125,15 @@ export function Dashboard() {
               Develop, test, and share your applications with ease using Locafy.
             </p>
           </div>
-          <div className="hidden shrink-0 rotate-[-6deg] rounded-xl border border-border bg-background/90 p-3 shadow-2xl lg:block">
+          <div className="hidden shrink-0 rotate-[-6deg] rounded-xl border border-border bg-background/90 p-4 shadow-2xl min-[560px]:block">
             <div className="mb-3 flex gap-1.5">
               <span className="size-2.5 rounded-full bg-destructive" />
               <span className="size-2.5 rounded-full bg-accent" />
               <span className="size-2.5 rounded-full bg-success" />
             </div>
             <div className="flex items-center gap-2 font-mono text-sm text-muted-foreground">
-              <span className="text-success">›</span>
-              locafy up
+              <span className="text-success">{'>'}</span>
+              <span className="tracking-[0.2em]">locafy up</span>
             </div>
           </div>
         </div>
