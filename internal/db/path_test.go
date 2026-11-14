@@ -1,6 +1,7 @@
 package db
 
 import (
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -64,5 +65,38 @@ func TestDefaultPathCreatesDirectory(t *testing.T) {
 	}
 	if want := DataPath(home); path != want {
 		t.Fatalf("DefaultPath = %q, want %q", path, want)
+	}
+}
+
+func TestDefaultProjectsDirIsFixedPlatformLocation(t *testing.T) {
+	dir, err := DefaultProjectsDir()
+	if err != nil {
+		t.Fatalf("DefaultProjectsDir: %v", err)
+	}
+	if !filepath.IsAbs(dir) {
+		t.Fatalf("DefaultProjectsDir = %q, want an absolute path", dir)
+	}
+	if filepath.Base(dir) != "projects" {
+		t.Fatalf("DefaultProjectsDir = %q, want the projects directory", dir)
+	}
+
+	switch runtime.GOOS {
+	case "windows":
+		want := filepath.Join(os.Getenv("SystemDrive")+string(os.PathSeparator), "locafy", "projects")
+		if dir != want {
+			t.Fatalf("DefaultProjectsDir on Windows = %q, want %q", dir, want)
+		}
+	default:
+		home, err := os.UserHomeDir()
+		if err != nil {
+			t.Fatalf("UserHomeDir: %v", err)
+		}
+		if want := filepath.Join(home, "locafy", "projects"); dir != want {
+			t.Fatalf("DefaultProjectsDir = %q, want %q", dir, want)
+		}
+	}
+
+	if home, err := DataHome(); err == nil && strings.HasPrefix(strings.ToLower(dir), strings.ToLower(home)) {
+		t.Fatalf("DefaultProjectsDir = %q must not live under the data home %q", dir, home)
 	}
 }
