@@ -54,12 +54,12 @@ Expect the first dev build to take noticeably longer than later ones: it compile
 ## Verification commands
 
 ```
-go test ./internal/...    # engine package tests
-go vet . ./internal/...   # static checks
-go build . ./internal/... # compile check
+go test ./...    # engine package tests
+go vet ./...     # static checks
+go build ./...   # compile check
 ```
 
-Note: `build/ios` and `build/android` contain mobile build scaffolding that only compiles under `ios`/`android` build tags, so `go build ./...` reports an empty `main` package there. Scope vet/build/test to `.` and `./internal/...`; `wails3 build` handles platform targets itself.
+All three cover the whole module, including the mobile scaffolding in `build/`. Those directories hold glue that only compiles under the `ios`/`android` build tags and is built as a C archive rather than an executable; `build/ios/main_default.go` supplies the no-op entry point that keeps the package buildable on desktop, so `go build ./...` stays clean without excluding anything. `wails3 build` still handles platform targets itself.
 
 Rules:
 
