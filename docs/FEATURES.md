@@ -50,10 +50,10 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 - **Acceptance criteria:** Desktop app launches reliably on Windows, macOS, and Linux; frontend can invoke approved Go backend operations; local state persists across restarts; logging and error reporting work (PRD section 20, Phase 1 exit criteria).
 - **Status:** IN_PROGRESS
 - **Assigned agent:** —
-- **Files/modules:** —
+- **Files/modules:** `main.go`, `internal/settings/` (binding service), `internal/logs/`, `frontend/bindings/`
 - **Tests:** Launch/reliability test; backend operation invocation tests
-- **Blockers:** Cross-platform launch validation requires CI (ADR-0001); Windows build verified locally
-- **Evidence:** `wails3 build` on Windows produces `bin/locafy.exe` (v3.0.0, Go 1.27.1); TypeScript bindings generated from Go services into `frontend/bindings/`.
+- **Blockers:** Cross-platform launch validation requires CI (ADR-0001); Windows launch verified locally. Frontend visual design and navigation are DESK-UI-001; the current page is a functional placeholder proving the settings round trip. The shadcn design-system setup (`frontend/src/index.css`, `components.json`, Tailwind config) is in place but intentionally not wired into the build yet.
+- **Evidence:** Windows: `wails3 build` produces `bin/locafy.exe`; TypeScript bindings generated for the settings service into `frontend/bindings/`. Two consecutive launches verified: startup log sequence (engine starting → database ready → machine record registered) in `%APPDATA%/Locafy/logs/locafy.log` (JSON, rotating file); database created at the ADR-0004 path `%APPDATA%/Locafy/data/locafy.db` with WAL sidecars; machine table holds exactly one upserted row (`hostname`, `windows`, `10.0.22000`) after both launches; `activity_logs` gains one `Engine started` entry per launch; `go vet . ./internal/...` and `go test ./internal/...` pass, including the rotating-log and settings-service tests.
 
 ### DESK-DB-001 — SQLite persistence and migrations
 
