@@ -46,6 +46,11 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	}
 	defer database.Close()
 
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+
 	for i := 0; i < 3; i++ {
 		if err := Migrate(database); err != nil {
 			t.Fatalf("migrate run %d: %v", i+1, err)
@@ -56,8 +61,8 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	if err := database.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if count != 2 {
-		t.Fatalf("schema_migrations rows = %d, want 2", count)
+	if count != len(migrations) {
+		t.Fatalf("schema_migrations rows = %d, want %d", count, len(migrations))
 	}
 }
 
