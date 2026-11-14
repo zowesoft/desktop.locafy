@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Bell, CircleCheck, HardDrive, Monitor, Clock } from "lucide-react";
 import * as StatusService from "../../bindings/locafy.dev/desktop/internal/status/service";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import {
   Popover,
   PopoverContent,
@@ -124,28 +124,28 @@ export function EngineStatus() {
 
   return (
     <Popover>
+      {/* The trigger is the button itself: passing a component through `render`
+          would drop the anchor ref it needs to position the popover. */}
       <PopoverTrigger
-        render={
-          <Button variant="secondary" size="sm" className="gap-2 font-normal">
-            <span
-              className={cn(
-                "size-1.5 rounded-full",
-                status.isPending
-                  ? "bg-muted-foreground"
-                  : healthy
-                    ? "bg-success"
-                    : "bg-destructive",
-              )}
-            />
-            {label}
-            {healthy && status.data && (
-              <span className="tabular-nums text-muted-foreground">
-                {Math.round(status.data.CPUPercent)}% CPU
-              </span>
-            )}
-          </Button>
-        }
-      />
+        className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "gap-2 font-normal")}
+      >
+        <span
+          className={cn(
+            "size-1.5 rounded-full",
+            status.isPending
+              ? "bg-muted-foreground"
+              : healthy
+                ? "bg-success"
+                : "bg-destructive",
+          )}
+        />
+        {label}
+        {healthy && status.data && (
+          <span className="tabular-nums text-muted-foreground">
+            {Math.round(status.data.CPUPercent)}% CPU
+          </span>
+        )}
+      </PopoverTrigger>
       <PopoverContent align="end" className="w-80">
         <PopoverHeader>
           <PopoverTitle className="flex items-center gap-2">
@@ -222,22 +222,16 @@ export function Notifications() {
   return (
     <Popover>
       <PopoverTrigger
-        render={
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={count > 0 ? `Notifications, ${count} recent entries` : "Notifications"}
-            className="relative"
-          >
-            <Bell />
-            {count > 0 && (
-              <span className="absolute -right-0.5 -top-0.5 flex min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[0.6rem] font-medium leading-4 text-accent-foreground">
-                {count > 9 ? "9+" : count}
-              </span>
-            )}
-          </Button>
-        }
-      />
+        aria-label={count > 0 ? `Notifications, ${count} recent entries` : "Notifications"}
+        className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "relative")}
+      >
+        <Bell />
+        {count > 0 && (
+          <span className="absolute -right-0.5 -top-0.5 flex min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[0.6rem] font-medium leading-4 text-accent-foreground">
+            {count > 9 ? "9+" : count}
+          </span>
+        )}
+      </PopoverTrigger>
       <PopoverContent align="end" className="w-80">
         <PopoverHeader>
           <PopoverTitle>Notifications</PopoverTitle>
