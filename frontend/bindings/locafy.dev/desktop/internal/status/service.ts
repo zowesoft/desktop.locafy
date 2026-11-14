@@ -15,6 +15,13 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
+ * Close releases the background resource sampler.
+ */
+export function Close(): $CancellablePromise<void> {
+    return $Call.ByID(3622666651);
+}
+
+/**
  * Health reports the engine state, checking the database rather than assuming
  * it is reachable.
  */

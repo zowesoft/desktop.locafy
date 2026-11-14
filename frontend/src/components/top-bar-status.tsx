@@ -14,6 +14,23 @@ import { cn } from "@/lib/utils";
 
 const statusKey = ["engine-status"] as const;
 const notificationsKey = ["notifications"] as const;
+const gibibyte = 1024 ** 3;
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 GB";
+  if (bytes >= gibibyte) {
+    const value = bytes / gibibyte;
+    return `${value >= 10 ? Math.round(value) : value.toFixed(1)} GB`;
+  }
+  return `${Math.round(bytes / 1024 ** 2)} MB`;
+}
+
+/** Pressure is shown as colour plus the percentage, so it never relies on colour alone. */
+function usageTone(percent: number): string {
+  if (percent >= 90) return "bg-destructive";
+  if (percent >= 75) return "bg-accent";
+  return "bg-success";
+}
 
 function formatUptime(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
@@ -53,6 +70,41 @@ function DetailRow({
   );
 }
 
+function ResourceBar({
+  label,
+  percent,
+  detail,
+}: {
+  label: string;
+  percent: number;
+  detail: string;
+}) {
+  const bounded = Math.min(100, Math.max(0, Math.round(percent)));
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-baseline justify-between gap-2 text-xs">
+        <span className="text-muted-foreground">{label}</span>
+        <span className="font-medium tabular-nums">{bounded}%</span>
+      </div>
+      <div
+        role="progressbar"
+        aria-label={label}
+        aria-valuenow={bounded}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        className="h-1.5 overflow-hidden rounded-full bg-muted"
+      >
+        <div
+          className={cn("h-full rounded-full transition-[width]", usageTone(bounded))}
+          style={{ width: `${bounded}%` }}
+        />
+      </div>
+      <p className="text-[0.7rem] text-muted-foreground">{detail}</p>
+    </div>
+  );
+}
+
 /** Engine and machine state, read from the backend rather than assumed. */
 export function EngineStatus() {
   const status = useQuery({
@@ -86,6 +138,11 @@ export function EngineStatus() {
               )}
             />
             {label}
+            {healthy && status.data && (
+              <span className="tabular-nums text-muted-foreground">
+                {Math.round(status.data.CPUPercent)}% CPU
+              </span>
+            )}
           </Button>
         }
       />
@@ -123,6 +180,26 @@ export function EngineStatus() {
               icon={Clock}
               label="Uptime"
               value={formatUptime(status.data.UptimeSeconds)}
+            />
+          </div>
+        )}
+
+        {status.data && (
+          <div className="mt-4 space-y-3 border-t border-border pt-3">
+            <ResourceBar
+              label="CPU"
+              percent={status.data.CPUPercent}
+              detail="Averaged over the last few seconds"
+            />
+            <ResourceBar
+              label="Memory"
+              percent={status.data.Memory.Percent}
+              detail={`${formatBytes(status.data.Memory.UsedBytes)} of ${formatBytes(status.data.Memory.TotalBytes)} in use`}
+            />
+            <ResourceBar
+              label="Disk"
+              percent={status.data.Disk.Percent}
+              detail={`${formatBytes(status.data.Disk.UsedBytes)} of ${formatBytes(status.data.Disk.TotalBytes)} on the data volume`}
             />
           </div>
         )}

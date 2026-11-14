@@ -29,6 +29,7 @@ func openDatabase(t *testing.T) *sql.DB {
 func TestHealthReportsTheRunningEngine(t *testing.T) {
 	database := openDatabase(t)
 	service := NewService(database, time.Now().Add(-90*time.Second))
+	t.Cleanup(service.Close)
 
 	health := service.Health()
 
@@ -53,11 +54,24 @@ func TestHealthReportsTheRunningEngine(t *testing.T) {
 	if _, err := time.Parse(time.RFC3339, health.StartedAt); err != nil {
 		t.Fatalf("started at = %q, want an RFC 3339 timestamp: %v", health.StartedAt, err)
 	}
+	if health.Memory.TotalBytes == 0 {
+		t.Error("memory total is zero, want the machine's installed memory")
+	}
+	if health.Memory.UsedBytes > health.Memory.TotalBytes {
+		t.Errorf("memory used %d exceeds total %d", health.Memory.UsedBytes, health.Memory.TotalBytes)
+	}
+	if health.Disk.TotalBytes == 0 {
+		t.Error("disk total is zero, want the volume holding the database")
+	}
+	if health.CPUPercent < 0 || health.CPUPercent > 100 {
+		t.Errorf("cpu = %v, want 0-100", health.CPUPercent)
+	}
 }
 
 func TestNotificationsReturnRecentActivityNewestFirst(t *testing.T) {
 	database := openDatabase(t)
 	service := NewService(database, time.Now())
+	t.Cleanup(service.Close)
 
 	for _, action := range []string{"Engine started", "Machine registered"} {
 		if err := activity.Log(database, activity.ScopeMachine, "", action, ""); err != nil {
@@ -83,6 +97,7 @@ func TestNotificationsReturnRecentActivityNewestFirst(t *testing.T) {
 func TestNotificationsRespectTheLimit(t *testing.T) {
 	database := openDatabase(t)
 	service := NewService(database, time.Now())
+	t.Cleanup(service.Close)
 
 	for _, action := range []string{"first", "second", "third"} {
 		if err := activity.Log(database, activity.ScopeMachine, "", action, ""); err != nil {

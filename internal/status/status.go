@@ -5,11 +5,13 @@ package status
 import (
 	"database/sql"
 	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 
 	"locafy.dev/desktop/internal/activity"
 	"locafy.dev/desktop/internal/db"
+	"locafy.dev/desktop/internal/monitor"
 )
 
 // Health is the engine and machine state shown in the top bar.
@@ -24,6 +26,9 @@ type Health struct {
 	DatabaseOK    bool
 	StartedAt     string
 	UptimeSeconds int
+	CPUPercent    float64
+	Memory        monitor.Usage
+	Disk          monitor.Usage
 }
 
 // Notification is one recent engine action surfaced in the top bar. Entries
@@ -41,11 +46,32 @@ type Notification struct {
 type Service struct {
 	database  *sql.DB
 	startedAt time.Time
+	resources *monitor.Sampler
 }
 
-// NewService returns a status service for the running engine.
+// NewService returns a status service for the running engine. Resource usage
+// is sampled in the background so status reads stay fast.
 func NewService(database *sql.DB, startedAt time.Time) *Service {
-	return &Service{database: database, startedAt: startedAt}
+	return &Service{
+		database:  database,
+		startedAt: startedAt,
+		resources: monitor.NewSampler(dataVolumePath()),
+	}
+}
+
+// Close releases the background resource sampler.
+func (s *Service) Close() {
+	s.resources.Close()
+}
+
+// dataVolumePath is the directory whose volume the disk reading describes: the
+// drive holding the engine's data, which is the one Locafy fills.
+func dataVolumePath() string {
+	if path, err := db.DefaultPath(); err == nil {
+		return filepath.Dir(path)
+	}
+
+	return "."
 }
 
 // Health reports the engine state, checking the database rather than assuming
@@ -73,6 +99,11 @@ func (s *Service) Health() Health {
 	} else {
 		health.Summary = "Database unavailable"
 	}
+
+	usage := s.resources.Snapshot()
+	health.CPUPercent = usage.CPUPercent
+	health.Memory = usage.Memory
+	health.Disk = usage.Disk
 
 	return health
 }
