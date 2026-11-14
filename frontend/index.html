@@ -11,6 +11,15 @@
         }
       } catch (_) {}
     </script>
+    <!--
+      The stylesheet arrives with the script bundle, so paint the theme colour
+      inline. Without it a light-theme user sees the dark window background
+      until the bundle loads.
+    -->
+    <style>
+      html { background: #111116; }
+      html:not(.dark) { background: #f5f3f8; }
+    </style>
     <title>Locafy</title>
   </head>
   <body>

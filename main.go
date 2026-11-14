@@ -102,7 +102,9 @@ func run() error {
 			Backdrop:                application.MacBackdropTranslucent,
 			TitleBar:                application.MacTitleBarHiddenInset,
 		},
-		BackgroundColour: application.NewRGB(6, 7, 15),
+		// Matches the dark palette's background, which is the default theme, so
+		// the webview never paints a different colour than the page.
+		BackgroundColour: application.NewRGB(0x11, 0x11, 0x16),
 		URL:              "/",
 		// The caption bar is drawn by Windows, so it ignores the app theme
 		// unless it is told otherwise. These are the palette's background,

@@ -70,12 +70,12 @@
     --secondary: #ECEAF2;               /* Elevated */
     --secondary-foreground: #111116;
     --muted: #ECEAF2;
-    --muted-foreground: #6B6878;        /* Muted: secondary text */
+    --muted-foreground: #5C596B;        /* Muted: darkened for legible secondary text on tints */
     --accent: #E86A17;                  /* Tangerine: deepened for light contrast */
     --accent-foreground: #111116;
     --destructive: #F05252;             /* Danger: errors, destructive */
     --destructive-foreground: #F5F3F8;
-    --success: #15803D;                 /* Emerald: darkened for legible status text */
+    --success: #0B6B33;                 /* Emerald: dark enough for status text on success tints */
     --success-foreground: #F5F3F8;
     --border: #D8D5E2;                  /* Border: separators */
     --input: #D8D5E2;
