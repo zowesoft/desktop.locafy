@@ -11,6 +11,7 @@ Architecture decision records (ADRs) for this repository.
 | [ADR-0003](ADR-0003-sqlite-driver.md) | SQLite driver: modernc.org/sqlite (pure Go, CGO-free builds) | Accepted |
 | [ADR-0004](ADR-0004-local-data-model.md) | Local data model: SQLite as control-plane DB; project-centric schema standards | Accepted |
 | [ADR-0005](ADR-0005-machine-monitoring.md) | Machine monitoring: gopsutil sampled in the background, CGO-free | Accepted |
+| [ADR-0006](ADR-0006-light-theme.md) | Light theme alongside the dark default, and the caption-bar limitation it accepts | Accepted |
 | — | Desktop stack selections made in the PRD (Wails v3, Go, React/TS, SQLite) are recorded there and considered approved baseline. | — |
 
 ## Decisions pending (do not guess — PRD section 23)
