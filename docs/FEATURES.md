@@ -18,12 +18,16 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 | DESK-APP-001 | Add and detect applications | desktop.locafy | 3 | NOT_STARTED | DESK-PROJ-002 |
 | DESK-APP-002 | Application process lifecycle | desktop.locafy | 3 | NOT_STARTED | DESK-APP-001 |
 | DESK-RUN-001 | Runtime detection and assignment | desktop.locafy | 4 | NOT_STARTED | DESK-APP-002 |
+| DESK-DL-001 | Downloads view for install jobs | desktop.locafy | 4 | NOT_STARTED | DESK-RUN-001 |
 | DESK-SVC-001 | Service catalogue and lifecycle | desktop.locafy | 5 | NOT_STARTED | DESK-APP-002 |
 | DESK-NET-001 | Local domains and reverse proxy | desktop.locafy | 6 | NOT_STARTED | DESK-APP-002, DESK-SVC-001 |
 | DESK-DEVX-001 | Integrated terminal and logs | desktop.locafy | 7 | NOT_STARTED | DESK-PROJ-002, DESK-APP-002, DESK-SVC-001 |
+| DESK-ANAL-001 | Analytics views | desktop.locafy | 7 | NOT_STARTED | DESK-DB-002, DESK-DEVX-001 |
 | TUN-PROTO-001 | Tunnel threat model and protocol (shared) | Gateway · Desktop · API | 9 | NOT_STARTED | API-AUTH-001, API-DEVICE-001, DESK-NET-001 |
 | TUN-AGENT-001 | Desktop tunnel agent | desktop.locafy | 9 | NOT_STARTED | TUN-PROTO-001 |
 | TUN-E2E-001 | End-to-end public tunnel flow (shared) | Gateway · Desktop · API | 9 | NOT_STARTED | TUN-PROTO-001, TUN-AGENT-001, TUN-GATE-001 |
+| DESK-HELP-001 | Help and diagnostics export | desktop.locafy | 10 | NOT_STARTED | DESK-BOOT-001 |
+| DESK-EXT-001 | Extensions platform | desktop.locafy | 11 | NOT_STARTED | DESK-UI-001, DESK-DB-001 |
 
 ---
 
@@ -84,9 +88,9 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 ### DESK-UI-001 — Navigation and design system
 
 - **Repository:** desktop.locafy
-- **Description:** Main navigation (Overview, Projects, Applications, Services, Runtimes, Domains, Tunnels as planned/disabled, Logs, Terminal, Settings) and the Locafy design system on shadcn/ui + Tailwind with PRD section 17.2 tokens.
+- **Description:** Main navigation (Overview, Projects, Applications, Services, Runtimes, Downloads, Domains, Analytics, Tunnels as planned/disabled, Logs, Terminal, Extensions as planned/disabled, Help and support, Settings) and the Locafy design system on shadcn/ui + Tailwind with PRD section 17.2 tokens.
 - **Dependencies:** DESK-BOOT-001
-- **Acceptance criteria:** Navigation matches PRD section 6.2; design tokens per section 17.2; project view is the primary working area; global vs project-scoped settings distinguishable; status never by color alone.
+- **Acceptance criteria:** Navigation matches PRD section 6.2, with the planned/disabled treatment applied everywhere tunnels and extensions appear (dashboard metrics, quick actions, project tabs), not only in navigation; design tokens per section 17.2 with a dark-only theme until a light-mode decision exists; shortcut hints use platform-appropriate modifiers; project view is the primary working area; global vs project-scoped settings distinguishable; status never by color alone.
 - **Status:** NOT_STARTED
 - **Assigned agent:** —
 - **Files/modules:** —
@@ -159,6 +163,19 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 - **Blockers:** Initial runtime list and per-OS installation strategy undecided (PRD section 23)
 - **Evidence:** —
 
+### DESK-DL-001 — Downloads view for install jobs
+
+- **Repository:** desktop.locafy
+- **Description:** Global machine-scoped view of in-progress and completed download/install jobs — runtimes and other Locafy-managed components — with progress, outcome, and retry (PRD section 6.5).
+- **Dependencies:** DESK-RUN-001
+- **Acceptance criteria:** Install jobs appear with live progress; completed and failed jobs are retained with their outcome; retry re-runs a failed job; the view is machine-scoped and works without an account (PRD sections 6.5, 9, Phase 4).
+- **Status:** NOT_STARTED
+- **Assigned agent:** —
+- **Files/modules:** —
+- **Tests:** Job list and progress updates; retry flow; history retention
+- **Blockers:** Job creation depends on the runtime installation strategy (PRD section 23)
+- **Evidence:** —
+
 ### DESK-SVC-001 — Service catalogue and lifecycle
 
 - **Repository:** desktop.locafy
@@ -198,6 +215,19 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 - **Blockers:** Platform PTY behavior must be documented (PRD section 19)
 - **Evidence:** —
 
+### DESK-ANAL-001 — Analytics views
+
+- **Repository:** desktop.locafy
+- **Description:** Local historical views: activity over time derived from the engine action history, resource usage trends with explicit scope labels, and application/service status history including restarts and failures (PRD section 13.4).
+- **Dependencies:** DESK-DB-002, DESK-DEVX-001
+- **Acceptance criteria:** Activity trend view works from local history without an account; every metric states its scope (machine-wide, Locafy-managed, or project-specific); status history covers restarts and failures; retention is bounded and configurable (PRD sections 6.3, 13.3, 13.4).
+- **Status:** NOT_STARTED
+- **Assigned agent:** —
+- **Files/modules:** —
+- **Tests:** Trend queries over stored history; retention pruning; scope-label presence
+- **Blockers:** Metric collection arrives with Phase 7 monitoring (DESK-DEVX-001)
+- **Evidence:** —
+
 ### TUN-PROTO-001 — Tunnel threat model and protocol (shared: Gateway/Desktop/API)
 
 - **Repository:** Gateway · Desktop · API — shared. The canonical protocol specification is maintained in `gateway.locafy/docs/architecture/`; this repository records the agent-side obligations it must satisfy.
@@ -235,4 +265,30 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 - **Files/modules:** —
 - **Tests:** Agent-side end-to-end tests; revocation and reconnection scenarios
 - **Blockers:** TUN-AGENT-001 and TUN-GATE-001 not implemented; section 16.4 delivery gate not satisfied
+- **Evidence:** —
+
+### DESK-HELP-001 — Help and diagnostics export
+
+- **Repository:** desktop.locafy
+- **Description:** Offline help entry point: built-in guidance for common tasks and problems, a way to open the documentation, and an exportable diagnostics bundle for reporting issues (PRD section 6.4).
+- **Dependencies:** DESK-BOOT-001
+- **Acceptance criteria:** Help content is usable without a network connection; a diagnostics bundle can be exported only after explicit user review; secrets and environment values are masked in the bundle (PRD sections 6.4, 12, 18.1).
+- **Status:** NOT_STARTED
+- **Assigned agent:** —
+- **Files/modules:** —
+- **Tests:** Offline help rendering; bundle export; secret-masking checks on bundle contents
+- **Blockers:** —
+- **Evidence:** —
+
+### DESK-EXT-001 — Extensions platform
+
+- **Repository:** desktop.locafy
+- **Description:** Extension model with a built-in catalogue that works offline; install, enable, disable, and uninstall flows with clear permission disclosure; an optional online catalogue layered on the account system later (PRD Phase 11).
+- **Dependencies:** DESK-UI-001, DESK-DB-001
+- **Acceptance criteria:** Extensions can be managed without an account or network connection; uninstalling an extension leaves user projects and data intact; extensions operate under the same safety invariants as the core application (PRD Phase 11).
+- **Status:** NOT_STARTED
+- **Assigned agent:** —
+- **Files/modules:** —
+- **Tests:** Install/enable/disable/uninstall flows; offline catalogue; data-integrity checks after uninstall
+- **Blockers:** The extension model and API definition must be recorded as a decision before implementation (PRD Phase 11)
 - **Evidence:** —
