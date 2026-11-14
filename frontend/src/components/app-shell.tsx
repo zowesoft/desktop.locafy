@@ -1,5 +1,5 @@
-import { useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import {
   Blocks,
   Box,
@@ -48,6 +48,18 @@ type NavItem = {
   /** Available in a later phase; shown but not selectable. */
   planned?: boolean;
 };
+
+// The input is looked up by id rather than by ref: the generated Input
+// component does not forward refs, and the shortcut has to reach the field.
+const searchFieldId = "topbar-search";
+
+function focusSearch() {
+  const field = document.getElementById(searchFieldId);
+  if (field instanceof HTMLInputElement) {
+    field.focus();
+    field.select();
+  }
+}
 
 const NAV: ReadonlyArray<NavItem> = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -98,10 +110,67 @@ export function AppShell({
   const [isDark, setIsDark] = useState(() =>
     document.documentElement.classList.contains("dark"),
   );
+  const [query, setQuery] = useState("");
+  const [highlighted, setHighlighted] = useState(0);
+
+  const matches = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return [];
+
+    return NAV.filter(
+      (item) => !item.planned && item.label.toLowerCase().includes(needle),
+    );
+  }, [query]);
+  const searching = query.trim().length > 0;
 
   const select = (id: NavId) => {
     setSelected(id);
     onNavigate?.(id);
+  };
+
+  // Ctrl K reaches the search field from anywhere on the screen, which is what
+  // the hint in it promises.
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        focusSearch();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  useEffect(() => setHighlighted(0), [query]);
+
+  const goTo = (id: NavId) => {
+    select(id);
+    setQuery("");
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  };
+
+  const onSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Escape") {
+      setQuery("");
+      return;
+    }
+    if (!searching || matches.length === 0) return;
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setHighlighted((current) => (current + 1) % matches.length);
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setHighlighted((current) => (current - 1 + matches.length) % matches.length);
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      goTo(matches[highlighted].id);
+    }
   };
 
   const toggleTheme = () => {
@@ -182,17 +251,82 @@ export function AppShell({
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-16 shrink-0 items-center gap-3 border-b border-border px-6">
           {context}
-          <div className="relative w-full max-w-md">
+          <div
+            className="relative w-full max-w-md"
+            onBlur={(event) => {
+              // Tabbing away abandons the search; clicking a result keeps it
+              // because that result is still inside this wrapper.
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                setQuery("");
+              }
+            }}
+          >
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
+              id={searchFieldId}
               type="search"
+              role="combobox"
               aria-label="Search"
+              aria-expanded={searching}
+              aria-controls="search-results"
+              aria-autocomplete="list"
+              aria-activedescendant={
+                searching && matches[highlighted]
+                  ? `search-result-${matches[highlighted].id}`
+                  : undefined
+              }
+              autoComplete="off"
               placeholder={searchPlaceholder}
               className="h-9 pl-9 pr-14"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={onSearchKeyDown}
             />
             <Kbd className="absolute right-3 top-1/2 -translate-y-1/2">
               Ctrl K
             </Kbd>
+
+            {searching && (
+              <div className="absolute inset-x-0 top-full z-50 mt-2 overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-md">
+                {matches.length === 0 ? (
+                  <p className="px-3 py-2.5 text-xs text-muted-foreground">
+                    No screens match “{query.trim()}”.
+                  </p>
+                ) : (
+                  <ul
+                    id="search-results"
+                    role="listbox"
+                    aria-label="Screens"
+                    className="max-h-72 overflow-y-auto p-1"
+                  >
+                    {matches.map((item, index) => {
+                      const Icon = item.icon;
+                      const isHighlighted = index === highlighted;
+
+                      return (
+                        <li key={item.id}>
+                          <button
+                            type="button"
+                            id={`search-result-${item.id}`}
+                            role="option"
+                            aria-selected={isHighlighted}
+                            onMouseEnter={() => setHighlighted(index)}
+                            onClick={() => goTo(item.id)}
+                            className={cn(
+                              "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm",
+                              isHighlighted ? "bg-secondary text-secondary-foreground" : "text-foreground",
+                            )}
+                          >
+                            <Icon className="size-4 shrink-0 text-muted-foreground" />
+                            {item.label}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
           {/* State first, then the control that only affects appearance. */}
           <div className="ml-auto flex shrink-0 items-center gap-2">

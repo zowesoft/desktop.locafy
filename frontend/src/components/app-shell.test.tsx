@@ -1,6 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppShell } from "./app-shell";
 
@@ -33,6 +33,82 @@ describe("AppShell top bar", () => {
     const slot = screen.getByText("Status slot");
     const toggle = await screen.findByRole("button", { name: /Switch to (light|dark) theme/ });
     expect(slot.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+describe("AppShell search", () => {
+  const renderShell = () => {
+    const onNavigate = vi.fn();
+    render(
+      <AppShell onNavigate={onNavigate}>
+        <p>content</p>
+      </AppShell>,
+    );
+
+    return { onNavigate, field: screen.getByRole("combobox", { name: "Search" }) };
+  };
+
+  it("filters the navigation to the matching screens", async () => {
+    const user = userEvent.setup();
+    const { field } = renderShell();
+
+    await user.type(field, "set");
+
+    expect(await screen.findByRole("option", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Projects" })).toBeNull();
+  });
+
+  it("jumps to the highlighted screen on Enter", async () => {
+    const user = userEvent.setup();
+    const { onNavigate, field } = renderShell();
+
+    await user.type(field, "set{Enter}");
+
+    expect(onNavigate).toHaveBeenCalledWith("settings");
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("moves the highlight with the arrow keys", async () => {
+    const user = userEvent.setup();
+    const { onNavigate, field } = renderShell();
+
+    await user.type(field, "se");
+    expect(await screen.findByRole("option", { name: "Services" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    await user.keyboard("{ArrowDown}{Enter}");
+
+    expect(onNavigate).toHaveBeenCalledWith("settings");
+  });
+
+  it("does not offer a screen that is still planned", async () => {
+    const user = userEvent.setup();
+    const { field } = renderShell();
+
+    await user.type(field, "tunn");
+
+    expect(await screen.findByText(/No screens match/)).toBeInTheDocument();
+    expect(screen.queryByRole("option")).toBeNull();
+  });
+
+  it("reaches the field with Ctrl K", async () => {
+    renderShell();
+
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+
+    expect(screen.getByRole("combobox", { name: "Search" })).toHaveFocus();
+  });
+
+  it("clears the search with Escape", async () => {
+    const user = userEvent.setup();
+    const { field } = renderShell();
+
+    await user.type(field, "set{Escape}");
+
+    expect(field).toHaveValue("");
+    expect(screen.queryByRole("listbox")).toBeNull();
   });
 });
 
