@@ -21,8 +21,10 @@ import {
   Terminal,
   Zap,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
 
 export type NavId =
@@ -190,9 +192,9 @@ export function AppShell({
               placeholder={searchPlaceholder}
               className="h-9 pl-9 pr-14"
             />
-            <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border border-border px-1.5 py-0.5 font-mono text-[0.65rem] text-muted-foreground">
+            <Kbd className="absolute right-3 top-1/2 -translate-y-1/2">
               Ctrl K
-            </kbd>
+            </Kbd>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-2">
             <span className="flex h-8 items-center gap-2 rounded-full border border-border bg-card px-3 text-xs font-medium">
@@ -228,13 +230,11 @@ export function AppShell({
  */
 export function PlannedTag({ className }: { className?: string }) {
   return (
-    <span
-      className={cn(
-        "ml-auto shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[0.6rem] font-medium uppercase tracking-wide text-muted-foreground",
-        className,
-      )}
+    <Badge
+      variant="outline"
+      className={cn("ml-auto uppercase tracking-wide text-muted-foreground", className)}
     >
       Planned
-    </span>
+    </Badge>
   );
 }
