@@ -13,9 +13,11 @@ import {
   FileText,
   FolderKanban,
   LayoutDashboard,
+  Moon,
   Network,
   Search,
   Settings as SettingsIcon,
+  Sun,
   Terminal,
   Zap,
 } from "lucide-react";
@@ -93,10 +95,24 @@ export function AppShell({
 }: AppShellProps) {
   const [selected, setSelected] = useState<NavId>("overview");
   const current = active ?? selected;
+  const [isDark, setIsDark] = useState(() =>
+    document.documentElement.classList.contains("dark"),
+  );
 
   const select = (id: NavId) => {
     setSelected(id);
     onNavigate?.(id);
+  };
+
+  const toggleTheme = () => {
+    const next = !isDark;
+    document.documentElement.classList.toggle("dark", next);
+    try {
+      localStorage.setItem("locafy-theme", next ? "dark" : "light");
+    } catch {
+      // Storage can be unavailable in a packaged webview; the choice still holds for the session.
+    }
+    setIsDark(next);
   };
 
   return (
@@ -187,6 +203,14 @@ export function AppShell({
             <Button variant="ghost" size="icon" aria-label="Notifications" className="relative">
               <Bell className="size-4.5" />
               <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-accent ring-2 ring-background" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleTheme}
+              aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
+            >
+              {isDark ? <Sun className="size-4.5" /> : <Moon className="size-4.5" />}
             </Button>
             {topbarActions}
           </div>
