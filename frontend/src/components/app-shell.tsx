@@ -1,12 +1,10 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import {
-  Bell,
   Blocks,
   Box,
   Boxes,
   ChartColumn,
-  ChevronDown,
   CircleQuestionMark,
   Database,
   Download,
@@ -197,15 +195,6 @@ export function AppShell({
             </Kbd>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-2">
-            <span className="flex h-8 items-center gap-2 rounded-full border border-border bg-card px-3 text-xs font-medium">
-              <span className="size-2 shrink-0 rounded-full bg-success" />
-              Locafy Running
-              <ChevronDown className="size-3.5 text-muted-foreground" />
-            </span>
-            <Button variant="ghost" size="icon" aria-label="Notifications" className="relative">
-              <Bell className="size-4.5" />
-              <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-accent ring-2 ring-background" />
-            </Button>
             <Button
               variant="ghost"
               size="icon"
