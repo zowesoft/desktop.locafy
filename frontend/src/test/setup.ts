@@ -1,8 +1,12 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach } from "vitest";
 
 afterEach(cleanup);
+
+// Queries wait for state that usually lands in a microtask. The default second
+// is tight when several jsdom environments run at once.
+configure({ asyncUtilTimeout: 3000 });
 
 // jsdom implements neither of these, and the popover primitives use them to
 // measure and position their content.
