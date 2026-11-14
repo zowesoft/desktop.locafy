@@ -65,16 +65,18 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-      # A bare ./... fails on the platform trees under build/, so the Go checks
-      # stay scoped to the application root and internal packages.
+      - name: Frontend tests
+        working-directory: frontend
+        run: npm test
+
       - name: Vet
-        run: go vet . ./internal/...
+        run: go vet ./...
 
       - name: Build (Go)
-        run: go build . ./internal/...
+        run: go build ./...
 
       - name: Test
-        run: go test ./internal/...
+        run: go test ./...
 
       # The full application build: production frontend bundle plus the Go
       # binary, exactly as a local build produces it.
