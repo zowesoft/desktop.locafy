@@ -1,34 +1,45 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as SettingsService from "../bindings/locafy.dev/desktop/internal/settings/service";
-import type { Setting } from "../bindings/locafy.dev/desktop/internal/settings/models";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
+const settingsKey = ["settings"] as const;
+
 function App() {
-  const [settings, setSettings] = useState<Setting[]>([]);
+  const queryClient = useQueryClient();
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
-  const [error, setError] = useState<string | null>(null);
 
-  const refresh = () => {
-    SettingsService.All()
-      .then((result) => setSettings(result ?? []))
-      .catch((err) => setError(String(err)));
-  };
+  const settings = useQuery({
+    queryKey: settingsKey,
+    queryFn: async () => (await SettingsService.All()) ?? [],
+  });
 
-  useEffect(refresh, []);
+  const saveSetting = useMutation({
+    mutationFn: (setting: { key: string; value: string }) =>
+      SettingsService.SetString(setting.key, setting.value),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: settingsKey }),
+  });
 
-  const addSetting = () => {
-    if (!key.trim() || !value.trim()) return;
-    SettingsService.SetString(key.trim(), value.trim())
-      .then(() => {
-        setKey("");
-        setValue("");
-        refresh();
-      })
-      .catch((err) => setError(String(err)));
+  const canSubmit = key.trim() !== "" && value.trim() !== "" && !saveSetting.isPending;
+  const rows = settings.data ?? [];
+  const error = settings.error ?? saveSetting.error;
+
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!canSubmit) return;
+    saveSetting.mutate(
+      { key: key.trim(), value: value.trim() },
+      {
+        onSuccess: () => {
+          setKey("");
+          setValue("");
+        },
+      },
+    );
   };
 
   return (
@@ -46,15 +57,14 @@ function App() {
           <CardDescription>Persisted in SQLite</CardDescription>
         </CardHeader>
         <CardContent>
-          {settings.length === 0 ? (
+          {settings.isPending ? (
+            <p className="py-2 text-sm text-muted-foreground">Loading settings…</p>
+          ) : rows.length === 0 ? (
             <p className="py-2 text-sm text-muted-foreground">No settings stored yet.</p>
           ) : (
             <ul className="divide-y divide-border">
-              {settings.map((setting) => (
-                <li
-                  key={setting.Key}
-                  className="flex items-center gap-4 py-2.5"
-                >
+              {rows.map((setting) => (
+                <li key={setting.Key} className="flex items-center gap-4 py-2.5">
                   <span className="font-mono text-sm text-accent">{setting.Key}</span>
                   <span className="min-w-0 flex-1 truncate text-right text-sm">
                     {setting.Value}
@@ -67,13 +77,7 @@ function App() {
         </CardContent>
       </Card>
 
-      <form
-        className="mt-6 flex flex-col gap-2 sm:flex-row"
-        onSubmit={(event) => {
-          event.preventDefault();
-          addSetting();
-        }}
-      >
+      <form className="mt-6 flex flex-col gap-2 sm:flex-row" onSubmit={submit}>
         <Input
           aria-label="Setting key"
           placeholder="Key"
@@ -86,12 +90,14 @@ function App() {
           value={value}
           onChange={(event) => setValue(event.target.value)}
         />
-        <Button type="submit">Save</Button>
+        <Button type="submit" disabled={!canSubmit}>
+          {saveSetting.isPending ? "Saving…" : "Save"}
+        </Button>
       </form>
 
       {error && (
         <p role="alert" className="mt-4 text-sm text-destructive">
-          {error}
+          {String(error)}
         </p>
       )}
     </main>
