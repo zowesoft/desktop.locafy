@@ -90,7 +90,7 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 - **Repository:** desktop.locafy
 - **Description:** Main navigation (Overview, Projects, Applications, Services, Runtimes, Downloads, Domains, Analytics, Tunnels as planned/disabled, Logs, Terminal, Extensions as planned/disabled, Help and support, Settings) and the Locafy design system on shadcn/ui + Tailwind with PRD section 17.2 tokens.
 - **Dependencies:** DESK-BOOT-001
-- **Acceptance criteria:** Navigation matches PRD section 6.2, with the planned/disabled treatment applied everywhere tunnels and extensions appear (dashboard metrics, quick actions, project tabs), not only in navigation; design tokens per section 17.2 with a dark-only theme until a light-mode decision exists; shortcut hints use platform-appropriate modifiers; project view is the primary working area; global vs project-scoped settings distinguishable; status never by color alone.
+- **Acceptance criteria:** Navigation matches PRD section 6.2, with the planned/disabled treatment applied everywhere tunnels and extensions appear (dashboard metrics, quick actions, project tabs), not only in navigation; design tokens per section 17.2 with a dark-only theme until a light-mode decision exists; shortcut hints use platform-appropriate modifiers; project view is the primary working area; global vs project-scoped settings distinguishable; status never by color alone; the top bar carries machine status and a notification entry point (PRD section 6.3); the brand mark matches the mockup's orange-red hexagon.
 - **Status:** NOT_STARTED
 - **Assigned agent:** —
 - **Files/modules:** —
