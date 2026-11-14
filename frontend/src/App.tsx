@@ -1,8 +1,17 @@
-import { useState } from "react";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { AppShell } from "@/components/app-shell";
 import type { NavId } from "@/components/app-shell";
-import { Dashboard } from "@/screens/dashboard";
-import { SettingsScreen } from "@/screens/settings";
+
+/** The route each navigation entry points at. */
+const navPaths: Record<NavId, string> = {
+  dashboard: "/",
+  projects: "/projects",
+  tunnels: "/tunnels",
+  analytics: "/analytics",
+  settings: "/settings",
+  extensions: "/extensions",
+  help: "/help",
+};
 
 const searchPlaceholders: Record<NavId, string> = {
   dashboard: "Search projects, apps…",
@@ -14,26 +23,30 @@ const searchPlaceholders: Record<NavId, string> = {
   help: "Search help…",
 };
 
-function App() {
-  const [view, setView] = useState<NavId>("dashboard");
+function navForPath(pathname: string): NavId {
+  const match = (Object.entries(navPaths) as [NavId, string][]).find(
+    ([, path]) => path === pathname,
+  );
+  return match?.[0] ?? "dashboard";
+}
+
+/**
+ * Route layout: keeps the shell mounted across screens and derives the active
+ * navigation entry from the current location, so the sidebar and the content
+ * cannot disagree.
+ */
+export default function App() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const view = navForPath(location.pathname);
 
   return (
     <AppShell
       active={view}
-      onNavigate={setView}
+      onNavigate={(id) => navigate(navPaths[id])}
       searchPlaceholder={searchPlaceholders[view]}
     >
-      {view === "dashboard" ? (
-        <Dashboard />
-      ) : view === "settings" ? (
-        <SettingsScreen />
-      ) : (
-        <div className="mx-auto max-w-md px-6 py-24 text-center">
-          <p className="text-sm text-muted-foreground">This screen is not built yet.</p>
-        </div>
-      )}
+      <Outlet />
     </AppShell>
   );
 }
-
-export default App;
