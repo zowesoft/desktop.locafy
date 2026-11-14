@@ -54,7 +54,6 @@
 /*
  * Locafy is a dark-only product, so the palette lives on :root and .dark
  * exists only as a hook for components that scope their styles to it.
- * Sources: Locafy PRD section 17.2.
  */
 :root {
     color-scheme: dark;
