@@ -67,6 +67,26 @@ Rules:
 - Build orchestration lives in `Taskfile.yml`; prefer adding tasks there over ad-hoc scripts.
 - Cross-platform builds (per ADR-0001) follow the official cross-platform guide; CI builds and tests on Windows, macOS, and Linux.
 
+## Inspecting the live window
+
+There is no view into the running webview by default. Set `LOCAFY_DEBUG_PORT` to
+open WebView2's debugging port on the window:
+
+```
+LOCAFY_DEBUG_PORT=9333 ./bin/locafy.exe            # bash
+$env:LOCAFY_DEBUG_PORT=9333; .\bin\locafy.exe      # PowerShell
+```
+
+`curl http://127.0.0.1:9333/json/list` then lists the page with its
+`webSocketDebuggerUrl`, which a CDP client can drive: `Runtime.evaluate` to read
+or change state, `Page.captureScreenshot` to capture what the window renders.
+
+This is a browser argument rather than an environment variable because Wails
+clears `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` before creating the WebView2
+environment. The port stays closed unless `LOCAFY_DEBUG_PORT` is set: anyone who
+can reach it can drive the interface, so it is a development affordance and not
+a shipped setting.
+
 ## Packaging (later phase)
 
 Windows installers require NSIS; MSIX requires MakeAppx/SignTool. These are not required for development and are addressed in Phase 10.

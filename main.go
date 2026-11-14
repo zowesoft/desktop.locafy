@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -88,6 +89,9 @@ func run() error {
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
+		Windows: application.WindowsOptions{
+			AdditionalBrowserArgs: debugBrowserArgs(),
+		},
 	})
 
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
@@ -134,6 +138,20 @@ func run() error {
 	})
 
 	return app.Run()
+}
+
+// debugBrowserArgs opens a local debugging port on the webview when
+// LOCAFY_DEBUG_PORT is set, which lets a developer inspect or capture the live
+// window. It stays closed otherwise: the port would let any local process drive
+// the interface. Wails clears the equivalent environment variable, so the port
+// has to be passed as a browser argument.
+func debugBrowserArgs() []string {
+	port := strings.TrimSpace(os.Getenv("LOCAFY_DEBUG_PORT"))
+	if port == "" {
+		return nil
+	}
+
+	return []string{"--remote-debugging-port=" + port}
 }
 
 // fitToWorkArea shrinks the window to the primary screen's work area. Window
