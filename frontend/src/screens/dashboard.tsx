@@ -17,6 +17,7 @@ import {
   Terminal,
   Zap,
 } from "lucide-react";
+import { PlannedTag } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,23 +54,30 @@ const applications = [
 ];
 
 const quickActions = [
-  { label: "Create New Project", icon: FolderKanban },
-  { label: "Start Tunnel", icon: Zap },
-  { label: "View Logs", icon: FileText },
-  { label: "Manage Extensions", icon: Puzzle },
+  { label: "Create New Project", icon: FolderKanban, planned: false },
+  { label: "Start Tunnel", icon: Zap, planned: true },
+  { label: "View Logs", icon: FileText, planned: false },
+  { label: "Manage Extensions", icon: Puzzle, planned: true },
 ];
 
 const activity = [
   { text: "Project ‘Etugora’ started", time: "2m ago", tone: "bg-primary" },
-  { text: "Tunnel active", time: "5m ago", tone: "bg-success" },
+  { text: "Application ‘auth’ restarted", time: "5m ago", tone: "bg-success" },
   { text: "Application ‘api’ deployed", time: "12m ago", tone: "bg-accent" },
 ];
 
 const metrics = [
-  { label: "Projects", value: "2", delta: "+1 new", icon: FolderKanban, tone: "text-primary bg-primary/15" },
-  { label: "Applications", value: "5", delta: "+2 running", icon: Boxes, tone: "text-success bg-success/15" },
-  { label: "Active Tunnels", value: "1", delta: "+24h active", icon: Zap, tone: "text-success bg-success/15" },
-  { label: "Uptime", value: "12h 34m", delta: "+12%", icon: Clock, tone: "text-accent bg-accent/15" },
+  { label: "Projects", value: "2", delta: "+1 new", icon: FolderKanban, tone: "text-primary bg-primary/15", planned: false },
+  { label: "Applications", value: "5", delta: "+2 running", icon: Boxes, tone: "text-success bg-success/15", planned: false },
+  { label: "Tunnels", value: "—", delta: "Planned", icon: Zap, tone: "text-muted-foreground bg-muted", planned: true },
+  { label: "Uptime", value: "12h 34m", delta: "+12%", icon: Clock, tone: "text-accent bg-accent/15", planned: false },
+];
+
+const projectTabs = [
+  { label: "Applications", planned: false },
+  { label: "Tunnels", planned: true },
+  { label: "Logs", planned: false },
+  { label: "Settings", planned: false },
 ];
 
 function Sparkline({ points, className }: { points: number[]; className?: string }) {
@@ -149,7 +157,9 @@ export function Dashboard() {
               <div className="min-w-0">
                 <p className="text-xs text-muted-foreground">{metric.label}</p>
                 <p className="text-xl font-semibold tracking-tight">{metric.value}</p>
-                <p className="text-xs text-success">{metric.delta}</p>
+                <p className={cn("text-xs", metric.planned ? "text-muted-foreground" : "text-success")}>
+                  {metric.delta}
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -255,17 +265,24 @@ export function Dashboard() {
               </div>
 
               <div className="flex gap-6 border-b border-border">
-                {["Applications", "Tunnels", "Logs", "Settings"].map((tab, index) => (
+                {projectTabs.map((tab, index) => (
                   <span
-                    key={tab}
+                    key={tab.label}
+                    aria-disabled={tab.planned || undefined}
+                    title={tab.planned ? `${tab.label} is planned for a later phase` : undefined}
                     className={cn(
                       "-mb-px cursor-default border-b-2 pb-2 text-sm",
                       index === 0
                         ? "border-primary text-foreground"
-                        : "border-transparent text-muted-foreground",
+                        : tab.planned
+                          ? "border-transparent text-muted-foreground/60"
+                          : "border-transparent text-muted-foreground",
                     )}
                   >
-                    {tab}
+                    {tab.label}
+                    {tab.planned && (
+                      <span className="ml-1 text-[0.6rem] uppercase tracking-wide">planned</span>
+                    )}
                   </span>
                 ))}
               </div>
@@ -310,10 +327,16 @@ export function Dashboard() {
                 <Button
                   key={action.label}
                   variant="ghost"
-                  className="h-9 w-full justify-start gap-2.5 px-2 font-normal text-muted-foreground"
+                  disabled={action.planned}
+                  title={action.planned ? `${action.label} is planned for a later phase` : undefined}
+                  className={cn(
+                    "h-9 w-full justify-start gap-2.5 px-2 font-normal text-muted-foreground",
+                    action.planned && "opacity-60",
+                  )}
                 >
                   <action.icon className="size-4" />
                   {action.label}
+                  {action.planned && <PlannedTag />}
                 </Button>
               ))}
             </CardContent>
@@ -321,21 +344,15 @@ export function Dashboard() {
 
           <Card className="py-0">
             <CardContent className="space-y-3 p-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <p className="text-base font-medium">Local Tunnel</p>
-                <Badge variant="outline" className="gap-1.5 border-success/30 text-success">
-                  <span className="size-1.5 rounded-full bg-success" />
-                  Active
-                </Badge>
+                <PlannedTag className="ml-0 border-border" />
               </div>
-              <p className="text-xs text-muted-foreground">Share your local app with the world.</p>
-              <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-background px-2.5 py-1.5">
-                <span className="truncate font-mono text-xs text-muted-foreground">
-                  https://etugora.locafy.dev
-                </span>
-                <Copy className="size-3.5 shrink-0 text-muted-foreground" />
-              </div>
-              <Button variant="outline" className="w-full border-accent/40 text-accent hover:bg-accent/10 hover:text-accent">
+              <p className="text-xs text-muted-foreground">
+                Sharing a local app on a public address arrives in a later phase. Nothing is
+                exposed today.
+              </p>
+              <Button variant="outline" disabled className="w-full opacity-60">
                 Manage Tunnel
                 <ArrowRight />
               </Button>

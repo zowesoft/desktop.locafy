@@ -4,30 +4,44 @@ import type { NavId } from "@/components/app-shell";
 
 /** The route each navigation entry points at. */
 const navPaths: Record<NavId, string> = {
-  dashboard: "/",
+  overview: "/",
   projects: "/projects",
-  tunnels: "/tunnels",
+  applications: "/applications",
+  services: "/services",
+  runtimes: "/runtimes",
+  downloads: "/downloads",
+  domains: "/domains",
   analytics: "/analytics",
-  settings: "/settings",
+  tunnels: "/tunnels",
+  logs: "/logs",
+  terminal: "/terminal",
   extensions: "/extensions",
   help: "/help",
+  settings: "/settings",
 };
 
 const searchPlaceholders: Record<NavId, string> = {
-  dashboard: "Search projects, apps…",
+  overview: "Search projects, apps…",
   projects: "Search projects…",
-  tunnels: "Search tunnels…",
+  applications: "Search applications…",
+  services: "Search services…",
+  runtimes: "Search runtimes…",
+  downloads: "Search downloads…",
+  domains: "Search domains…",
   analytics: "Search analytics…",
-  settings: "Search settings…",
+  tunnels: "Search tunnels…",
+  logs: "Search logs…",
+  terminal: "Search terminal history…",
   extensions: "Search extensions…",
   help: "Search help…",
+  settings: "Search settings…",
 };
 
 function navForPath(pathname: string): NavId {
   const match = (Object.entries(navPaths) as [NavId, string][]).find(
     ([, path]) => path === pathname,
   );
-  return match?.[0] ?? "dashboard";
+  return match?.[0] ?? "overview";
 }
 
 /**

@@ -1,42 +1,66 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import {
-  Bell,
   Blocks,
+  Box,
+  Boxes,
   ChartColumn,
-  ChevronDown,
   CircleQuestionMark,
+  Database,
+  Download,
+  FileText,
   FolderKanban,
+  Hexagon,
   LayoutDashboard,
   Network,
   Search,
   Settings as SettingsIcon,
+  Terminal,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 export type NavId =
-  | "dashboard"
+  | "overview"
   | "projects"
-  | "tunnels"
+  | "applications"
+  | "services"
+  | "runtimes"
+  | "downloads"
+  | "domains"
   | "analytics"
-  | "settings"
+  | "tunnels"
+  | "logs"
+  | "terminal"
   | "extensions"
-  | "help";
+  | "help"
+  | "settings";
 
-const NAV: ReadonlyArray<{
+type NavItem = {
   id: NavId;
   label: string;
   icon: typeof LayoutDashboard;
-}> = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  /** Available in a later phase; shown but not selectable. */
+  planned?: boolean;
+};
+
+const NAV: ReadonlyArray<NavItem> = [
+  { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "projects", label: "Projects", icon: FolderKanban },
-  { id: "tunnels", label: "Tunnels", icon: Network },
+  { id: "applications", label: "Applications", icon: Boxes },
+  { id: "services", label: "Services", icon: Database },
+  { id: "runtimes", label: "Runtimes", icon: Box },
+  { id: "downloads", label: "Downloads", icon: Download },
+  { id: "domains", label: "Domains", icon: Network },
   { id: "analytics", label: "Analytics", icon: ChartColumn },
-  { id: "settings", label: "Settings", icon: SettingsIcon },
-  { id: "extensions", label: "Extensions", icon: Blocks },
+  { id: "tunnels", label: "Tunnels", icon: Zap, planned: true },
+  { id: "logs", label: "Logs", icon: FileText },
+  { id: "terminal", label: "Terminal", icon: Terminal },
+  { id: "extensions", label: "Extensions", icon: Blocks, planned: true },
   { id: "help", label: "Help & Support", icon: CircleQuestionMark },
+  { id: "settings", label: "Settings", icon: SettingsIcon },
 ];
 
 export interface AppShellProps {
@@ -66,7 +90,7 @@ export function AppShell({
   searchPlaceholder = "Search…",
   sidebarFooter,
 }: AppShellProps) {
-  const [selected, setSelected] = useState<NavId>("dashboard");
+  const [selected, setSelected] = useState<NavId>("overview");
   const current = active ?? selected;
 
   const select = (id: NavId) => {
@@ -78,17 +102,9 @@ export function AppShell({
     <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
       <aside className="flex w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
         <div className="flex h-16 items-center gap-2.5 px-4">
-          <svg viewBox="0 0 32 32" aria-hidden className="size-8 shrink-0">
-            <defs>
-              <linearGradient id="locafy-mark" x1="2" y1="2" x2="30" y2="30" gradientUnits="userSpaceOnUse">
-                <stop stopColor="#FF873D" />
-                <stop offset="1" stopColor="#F05252" />
-              </linearGradient>
-            </defs>
-            <path d="M16 1.5 29 9v14L16 30.5 3 23V9Z" fill="url(#locafy-mark)" />
-            <path d="M16 1.5 29 9 16 16.5 3 9Z" fill="#F5F3F8" fillOpacity="0.22" />
-            <path d="M16 16.5 29 9v14L16 30.5Z" fill="#111116" fillOpacity="0.18" />
-          </svg>
+          <span className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-accent">
+            <Hexagon className="size-4 text-primary-foreground" strokeWidth={2.5} />
+          </span>
           <span className="text-lg font-semibold tracking-tight">Locafy</span>
         </div>
 
@@ -96,6 +112,22 @@ export function AppShell({
           {NAV.map((item) => {
             const Icon = item.icon;
             const isCurrent = item.id === current;
+
+            if (item.planned) {
+              return (
+                <div
+                  key={item.id}
+                  aria-disabled="true"
+                  title={`${item.label} is planned for a later phase`}
+                  className="flex h-10 w-full cursor-default items-center gap-2.5 rounded-lg px-3 text-sm text-muted-foreground/60"
+                >
+                  <Icon className="size-4" />
+                  <span className="truncate">{item.label}</span>
+                  <PlannedTag />
+                </div>
+              );
+            }
+
             return (
               <Button
                 key={item.id}
@@ -111,7 +143,7 @@ export function AppShell({
                   <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-primary" />
                 )}
                 <Icon className="size-4" />
-                {item.label}
+                <span className="truncate">{item.label}</span>
               </Button>
             );
           })}
@@ -137,22 +169,30 @@ export function AppShell({
               Ctrl K
             </kbd>
           </div>
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            <span className="flex h-8 items-center gap-2 rounded-full border border-border bg-card px-3 text-xs font-medium">
-              <span className="size-2 shrink-0 rounded-full bg-success" />
-              Locafy Running
-              <ChevronDown className="size-3.5 text-muted-foreground" />
-            </span>
-            <Button variant="ghost" size="icon" aria-label="Notifications" className="relative">
-              <Bell className="size-4.5" />
-              <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-accent ring-2 ring-background" />
-            </Button>
-            {topbarActions}
-          </div>
+          {topbarActions && (
+            <div className="ml-auto flex shrink-0 items-center gap-2">{topbarActions}</div>
+          )}
         </header>
 
         <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
     </div>
+  );
+}
+
+/**
+ * Marks a capability that is visible but not yet available. The label carries
+ * the meaning so the state is never conveyed by colour alone.
+ */
+export function PlannedTag({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "ml-auto shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[0.6rem] font-medium uppercase tracking-wide text-muted-foreground",
+        className,
+      )}
+    >
+      Planned
+    </span>
   );
 }
