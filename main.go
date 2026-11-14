@@ -99,6 +99,24 @@ func run() error {
 		},
 		BackgroundColour: application.NewRGB(6, 7, 15),
 		URL:              "/",
+		// The caption bar is drawn by Windows, so it ignores the app theme
+		// unless it is told otherwise. These are the palette's background,
+		// border and text colours.
+		Windows: application.WindowsWindow{
+			Theme: application.Dark,
+			CustomTheme: application.ThemeSettings{
+				DarkModeActive: &application.WindowTheme{
+					TitleBarColour:  application.NewRGBPtr(0x11, 0x11, 0x16),
+					BorderColour:    application.NewRGBPtr(0x34, 0x34, 0x40),
+					TitleTextColour: application.NewRGBPtr(0xF5, 0xF3, 0xF8),
+				},
+				DarkModeInactive: &application.WindowTheme{
+					TitleBarColour:  application.NewRGBPtr(0x11, 0x11, 0x16),
+					BorderColour:    application.NewRGBPtr(0x34, 0x34, 0x40),
+					TitleTextColour: application.NewRGBPtr(0xA5, 0xA1, 0xB2),
+				},
+			},
+		},
 	})
 
 	// A fixed size overflows a scaled display: the values are device
