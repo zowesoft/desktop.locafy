@@ -12,7 +12,7 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 | DESK-BOOT-001 | Wails desktop bootstrap | desktop.locafy | 1 | IN_PROGRESS | LOC-FOUND-001 |
 | DESK-DB-001 | SQLite persistence and migrations | desktop.locafy | 1 | IN_PROGRESS | LOC-FOUND-001 |
 | DESK-DB-002 | Control-plane schema foundation | desktop.locafy | 1 | IN_PROGRESS | DESK-DB-001 |
-| DESK-UI-001 | Navigation and design system | desktop.locafy | 1 | NOT_STARTED | DESK-BOOT-001 |
+| DESK-UI-001 | Navigation and design system | desktop.locafy | 1 | IN_PROGRESS | DESK-BOOT-001 |
 | DESK-PROJ-001 | Create and import projects | desktop.locafy | 2 | NOT_STARTED | DESK-BOOT-001, DESK-DB-001, DESK-UI-001 |
 | DESK-PROJ-002 | Project overview and lifecycle | desktop.locafy | 2 | NOT_STARTED | DESK-PROJ-001 |
 | DESK-APP-001 | Add and detect applications | desktop.locafy | 3 | NOT_STARTED | DESK-PROJ-002 |
@@ -91,12 +91,12 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 - **Description:** Main navigation (Overview, Projects, Applications, Services, Runtimes, Downloads, Domains, Analytics, Tunnels as planned/disabled, Logs, Terminal, Extensions as planned/disabled, Help and support, Settings) and the Locafy design system on shadcn/ui + Tailwind with PRD section 17.2 tokens.
 - **Dependencies:** DESK-BOOT-001
 - **Acceptance criteria:** Navigation matches PRD section 6.2, with the planned/disabled treatment applied everywhere tunnels and extensions appear (dashboard metrics, quick actions, project tabs), not only in navigation; design tokens per section 17.2 with a dark-only theme until a light-mode decision exists; shortcut hints use platform-appropriate modifiers; project view is the primary working area; global vs project-scoped settings distinguishable; status never by color alone; the top bar carries machine status and a notification entry point (PRD section 6.3); the brand mark matches the mockup's orange-red hexagon.
-- **Status:** NOT_STARTED
+- **Status:** IN_PROGRESS
 - **Assigned agent:** —
 - **Files/modules:** —
-- **Tests:** UI component/snapshot tests
-- **Blockers:** —
-- **Evidence:** —
+- **Tests:** UI component/snapshot tests — not written yet; current verification is manual build and browser inspection.
+- **Blockers:** Navigation covers 7 of the 14 entries in PRD section 6.2 (missing Overview, Applications, Services, Runtimes, Downloads, Domains, Logs, Terminal). The planned/disabled treatment for tunnels and extensions is not applied anywhere — the dashboard currently presents tunnels as active, which contradicts their Phase 9 delivery. The top bar has no Locafy status or notification entry point (PRD section 6.3) because no monitoring data is exposed yet. The project view, which section 6.2 makes the primary working area, does not exist. The brand mark is a violet-to-tangerine hexagon rather than the mockup's orange-red mark. This work began while `LOC-FOUND-001` is still incomplete (no CI workflow), against that feature's documented gate.
+- **Evidence:** Design tokens from PRD section 17.2 applied in `frontend/src/index.css` (dark-only, `--success` added for healthy state). `AppShell` provides the shared sidebar and top bar; `createHashRouter` maps each navigation entry to a route with placeholder screens for unbuilt sections; the dashboard screen implements the global mockup's hero, metrics, project cards, application list and activity rail. Verified: `npm run build` (tsc + vite) and `wails3 build` exit 0; the app launches and persists state; browser checks at 1508x1000 and 813x408 show no horizontal overflow; muted text on card surfaces measures 6.87:1; platform-appropriate shortcut hint (Ctrl K); status shown with text and colour. Window chrome themed to the palette so the caption bar matches the content.
 
 ### DESK-PROJ-001 — Create and import projects
 
