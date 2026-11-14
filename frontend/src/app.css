@@ -5,8 +5,8 @@
 
 body {
   margin: 0;
-  background: #06070f;
-  color: #e6e8f0;
+  background: #111116;
+  color: #F5F3F8;
 }
 
 main {
@@ -21,7 +21,7 @@ h1 {
 }
 
 .subtitle {
-  color: #8b90a0;
+  color: #A5A1B2;
   margin: 0 0 32px;
 }
 
@@ -29,7 +29,7 @@ h1 {
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: #8b90a0;
+  color: #A5A1B2;
   margin: 24px 0 8px;
 }
 
@@ -45,17 +45,17 @@ li {
   gap: 16px;
   padding: 8px 12px;
   border-radius: 6px;
-  background: #12141f;
+  background: #1A1A22;
   margin-bottom: 4px;
 }
 
 .key {
   font-family: monospace;
-  color: #9db8ff;
+  color: #FF873D;
 }
 
 .type {
-  color: #8b90a0;
+  color: #A5A1B2;
   font-size: 12px;
 }
 
@@ -69,8 +69,8 @@ input {
   flex: 1;
   padding: 8px 12px;
   border-radius: 6px;
-  border: 1px solid #2a2d3d;
-  background: #12141f;
+  border: 1px solid #343440;
+  background: #1A1A22;
   color: inherit;
 }
 
@@ -78,21 +78,21 @@ button {
   padding: 8px 16px;
   border-radius: 6px;
   border: none;
-  background: #3b64f5;
+  background: #8B3DFF;
   color: white;
   cursor: pointer;
 }
 
 button:hover {
-  background: #4d74ff;
+  background: #9B57FF;
 }
 
 .error {
-  color: #ff7a8a;
+  color: #F05252;
   margin-top: 16px;
 }
 
 .empty {
-  color: #565b6b;
+  color: #A5A1B2;
   padding: 8px 12px;
 }
