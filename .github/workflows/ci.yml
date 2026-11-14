@@ -55,6 +55,16 @@ jobs:
       - name: Install the Wails CLI
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
 
+      # The frontend builds before any Go command: main.go embeds frontend/dist,
+      # which is gitignored and therefore absent on a fresh checkout.
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Type-check and bundle the frontend
+        working-directory: frontend
+        run: npm run build
+
       # A bare ./... fails on the platform trees under build/, so the Go checks
       # stay scoped to the application root and internal packages.
       - name: Vet
@@ -65,14 +75,6 @@ jobs:
 
       - name: Test
         run: go test ./internal/...
-
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
-
-      - name: Type-check and bundle the frontend
-        working-directory: frontend
-        run: npm run build
 
       # The full application build: production frontend bundle plus the Go
       # binary, exactly as a local build produces it.
