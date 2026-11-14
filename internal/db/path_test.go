@@ -9,9 +9,22 @@ import (
 
 func TestDataPathLayout(t *testing.T) {
 	got := DataPath("HOME")
-	want := filepath.Join("HOME", "locafy", "data", "locafy.db")
+	want := filepath.Join("HOME", AppDirName(), "data", "locafy.db")
 	if got != want {
 		t.Fatalf("DataPath = %q, want %q", got, want)
+	}
+}
+
+func TestAppDirNameFollowsPlatform(t *testing.T) {
+	name := AppDirName()
+	if runtime.GOOS == "linux" {
+		if name != "locafy" {
+			t.Fatalf("AppDirName on Linux = %q, want the lowercase XDG name", name)
+		}
+		return
+	}
+	if name != "Locafy" {
+		t.Fatalf("AppDirName = %q, want the branded directory name", name)
 	}
 }
 

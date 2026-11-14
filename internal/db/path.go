@@ -20,9 +20,19 @@ func DataHome() (string, error) {
 	}
 }
 
+// AppDirName returns the directory Locafy owns inside the platform data
+// home. It is branded on Windows and macOS and lowercase on Linux, where
+// XDG expects directory names to be lowercase.
+func AppDirName() string {
+	if runtime.GOOS == "linux" {
+		return "locafy"
+	}
+	return "Locafy"
+}
+
 // DataPath returns the database file path under a data home directory.
 func DataPath(dataHome string) string {
-	return filepath.Join(dataHome, "locafy", "data", "locafy.db")
+	return filepath.Join(dataHome, AppDirName(), "data", "locafy.db")
 }
 
 // DefaultPath resolves the database path for this machine and creates the
