@@ -1,0 +1,80 @@
+# Build and test on every supported platform, so a change that breaks one of
+# them fails here instead of on a user's machine. Runs on pushes to main and
+# on pull requests; release packaging is a separate tag-triggered workflow.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Kept in step with the wails/v3 version in go.mod.
+  WAILS_VERSION: v3.0.0
+
+jobs:
+  verify:
+    name: verify (${{ matrix.os }})
+    strategy:
+      # One platform failing must not hide the others' results.
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          # The verified frontend toolchain; package.json declares no engines.
+          node-version: 22.14.0
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # The Wails CLI links against GTK on Linux, so the libraries have to be
+      # in pkg-config's search path before the CLI is compiled.
+      - name: Install GTK/WebKitGTK development libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev pkg-config
+
+      - name: Install the Wails CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+
+      # A bare ./... fails on the platform trees under build/, so the Go checks
+      # stay scoped to the application root and internal packages.
+      - name: Vet
+        run: go vet . ./internal/...
+
+      - name: Build (Go)
+        run: go build . ./internal/...
+
+      - name: Test
+        run: go test ./internal/...
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Type-check and bundle the frontend
+        working-directory: frontend
+        run: npm run build
+
+      # The full application build: production frontend bundle plus the Go
+      # binary, exactly as a local build produces it.
+      - name: Build the application
+        run: wails3 build
