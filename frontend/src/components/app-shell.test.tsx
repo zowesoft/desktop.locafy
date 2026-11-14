@@ -28,7 +28,11 @@ describe("AppShell top bar", () => {
 
     expect(screen.getByText("Status slot")).toBeInTheDocument();
     expect(screen.getAllByText("Status slot")).toHaveLength(1);
-    expect(await screen.findByRole("button", { name: /Switch to (light|dark) theme/ })).toBeInTheDocument();
+
+    // Status reads before appearance: the supplied controls come first.
+    const slot = screen.getByText("Status slot");
+    const toggle = await screen.findByRole("button", { name: /Switch to (light|dark) theme/ });
+    expect(slot.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 

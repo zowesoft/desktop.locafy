@@ -194,7 +194,9 @@ export function AppShell({
               Ctrl K
             </Kbd>
           </div>
+          {/* State first, then the control that only affects appearance. */}
           <div className="ml-auto flex shrink-0 items-center gap-2">
+            {topbarActions}
             <Button
               variant="ghost"
               size="icon"
@@ -203,7 +205,6 @@ export function AppShell({
             >
               {isDark ? <Sun className="size-4.5" /> : <Moon className="size-4.5" />}
             </Button>
-            {topbarActions}
           </div>
         </header>
 
