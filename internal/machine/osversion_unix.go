@@ -9,7 +9,7 @@ import (
 )
 
 func osVersion() (string, error) {
-	if product, err := unix.Sysctl("kern.osproductversion"); err == nil && product != "" {
+	if product := osProductVersion(); product != "" {
 		return product, nil
 	}
 	var uname unix.Utsname
