@@ -1,12 +1,21 @@
 package main
 
 import (
+	"database/sql"
 	"embed"
-
-	"log"
-	"time"
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+
+	"locafy.dev/desktop/internal/activity"
+	"locafy.dev/desktop/internal/db"
+	"locafy.dev/desktop/internal/logs"
+	"locafy.dev/desktop/internal/machine"
+	"locafy.dev/desktop/internal/settings"
 )
 
 // Wails uses Go's `embed` package to embed the frontend files into the binary.
@@ -17,28 +26,48 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
-func init() {
-	// Register a custom event whose associated data type is string.
-	// This is not required, but the binding generator will pick up registered events
-	// and provide a strongly typed JS/TS API for them.
-	application.RegisterEvent[string]("time")
+const (
+	logMaxBytes = 10 << 20 // rotate at 10 MiB
+	logBackups  = 3
+)
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "locafy: startup failed:", err)
+		os.Exit(1)
+	}
 }
 
-// main function serves as the application's entry point. It initializes the application, creates a window,
-// and starts a goroutine that emits a time-based event every second. It subsequently runs the application and
-// logs any error that might occur.
-func main() {
+// run performs engine startup in order — logging, persistence, machine
+// registration — and then runs the application until exit.
+func run() error {
+	logFile, err := setupLogging()
+	if err != nil {
+		return err
+	}
+	defer logFile.Close()
+	slog.Info("engine starting")
 
-	// Create a new Wails application by providing the necessary options.
-	// Variables 'Name' and 'Description' are for application metadata.
-	// 'Assets' configures the asset server with the 'FS' variable pointing to the frontend files.
-	// 'Bind' is a list of Go struct instances. The frontend has access to the methods of these instances.
-	// 'Mac' options tailor the application when running an macOS.
+	database, err := openDatabase()
+	if err != nil {
+		return err
+	}
+	defer database.Close()
+
+	if err := machine.Register(database); err != nil {
+		return err
+	}
+	slog.Info("machine record registered")
+
+	if err := activity.Log(database, activity.ScopeMachine, "", "Engine started", ""); err != nil {
+		return err
+	}
+
 	app := application.New(application.Options{
 		Name:        "Locafy",
 		Description: "Local-first development environment control plane",
 		Services: []application.Service{
-			application.NewService(&GreetService{}),
+			application.NewService(settings.NewService(database)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -48,16 +77,10 @@ func main() {
 		},
 	})
 
-	// Create a new window with the necessary options.
-	// 'Title' is the title of the window.
-	// 'Mac' options tailor the window when running on macOS.
-	// 'BackgroundColour' is the background colour of the window.
-	// 'URL' is the URL that will be loaded into the webview.
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title: "Locafy",
-		// Window sized to the golden ratio (1000 / 618 ≈ 1.618).
-		Width:  1000,
-		Height: 618,
+		Width:  1280,
+		Height: 800,
 		Mac: application.MacWindow{
 			InvisibleTitleBarHeight: 50,
 			Backdrop:                application.MacBackdropTranslucent,
@@ -67,21 +90,43 @@ func main() {
 		URL:              "/",
 	})
 
-	// Create a goroutine that emits an event containing the current time every second.
-	// The frontend can listen to this event and update the UI accordingly.
-	go func() {
-		for {
-			now := time.Now().Format(time.RFC1123)
-			app.Event.Emit("time", now)
-			time.Sleep(time.Second)
-		}
-	}()
+	return app.Run()
+}
 
-	// Run the application. This blocks until the application has been exited.
-	err := app.Run()
-
-	// If an error occurred while running the application, log it and exit.
+// openDatabase opens the control-plane database at its platform location
+// and brings the schema up to date.
+func openDatabase() (*sql.DB, error) {
+	path, err := db.DefaultPath()
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("resolve database path: %w", err)
 	}
+	database, err := db.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Migrate(database); err != nil {
+		database.Close()
+		return nil, err
+	}
+	slog.Info("database ready", "path", path)
+	return database, nil
+}
+
+// setupLogging installs structured logging into a rotating file under the
+// Locafy data directory, mirrored to stderr for development runs.
+func setupLogging() (*logs.Rotator, error) {
+	home, err := db.DataHome()
+	if err != nil {
+		return nil, fmt.Errorf("resolve data directory: %w", err)
+	}
+	dir := filepath.Join(home, db.AppDirName(), "logs")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("create log directory: %w", err)
+	}
+	logFile, err := logs.New(filepath.Join(dir, "locafy.log"), logMaxBytes, logBackups)
+	if err != nil {
+		return nil, err
+	}
+	slog.SetDefault(slog.New(slog.NewJSONHandler(io.MultiWriter(logFile, os.Stderr), nil)))
+	return logFile, nil
 }
