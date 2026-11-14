@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -17,6 +18,7 @@ import (
 	"locafy.dev/desktop/internal/logs"
 	"locafy.dev/desktop/internal/machine"
 	"locafy.dev/desktop/internal/settings"
+	"locafy.dev/desktop/internal/status"
 )
 
 // Wails uses Go's `embed` package to embed the frontend files into the binary.
@@ -49,6 +51,8 @@ func main() {
 // run performs engine startup in order — logging, persistence, machine
 // registration — and then runs the application until exit.
 func run() error {
+	startedAt := time.Now()
+
 	logFile, err := setupLogging()
 	if err != nil {
 		return err
@@ -76,6 +80,7 @@ func run() error {
 		Description: "Local-first development environment control plane",
 		Services: []application.Service{
 			application.NewService(settings.NewService(database)),
+			application.NewService(status.NewService(database, startedAt)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

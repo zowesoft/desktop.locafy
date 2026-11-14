@@ -1,6 +1,7 @@
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { AppShell } from "@/components/app-shell";
 import type { NavId } from "@/components/app-shell";
+import { EngineStatus, Notifications } from "@/components/top-bar-status";
 
 /** The route each navigation entry points at. */
 const navPaths: Record<NavId, string> = {
@@ -59,6 +60,12 @@ export default function App() {
       active={view}
       onNavigate={(id) => navigate(navPaths[id])}
       searchPlaceholder={searchPlaceholders[view]}
+      topbarActions={
+        <>
+          <EngineStatus />
+          <Notifications />
+        </>
+      }
     >
       <Outlet />
     </AppShell>
