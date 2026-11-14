@@ -7,13 +7,11 @@ import {
   Clock,
   Copy,
   EllipsisVertical,
-  ExternalLink,
   FileText,
   FolderKanban,
   Globe,
   Plus,
   Puzzle,
-  Rocket,
   Server,
   ShieldCheck,
   Terminal,
@@ -162,7 +160,7 @@ export function Dashboard() {
         <div className="space-y-4">
           <div className="flex items-start justify-between gap-4">
             <div className="space-y-1">
-              <h2 className="text-xl font-semibold tracking-tight">Your Projects</h2>
+              <h2 className="text-2xl font-semibold tracking-tight">Your Projects</h2>
               <p className="text-sm text-muted-foreground">
                 Manage your development projects and their applications.
               </p>
@@ -195,18 +193,23 @@ export function Dashboard() {
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap gap-1.5">
-                    {project.tags.map((tag) => (
-                      <Badge key={tag} variant="secondary" className="font-normal">
-                        {tag}
-                      </Badge>
-                    ))}
-                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex flex-wrap gap-1.5">
+                      {project.tags.map((tag) => (
+                        <Badge key={tag} variant="secondary" className="font-normal">
+                          {tag}
+                        </Badge>
+                      ))}
+                    </div>
 
-                  <Sparkline
-                    points={project.trend}
-                    className={project.tone === "primary" ? "text-primary" : "text-accent"}
-                  />
+                    <Sparkline
+                      points={project.trend}
+                      className={cn(
+                        "h-9 w-28 shrink-0",
+                        project.tone === "primary" ? "text-primary" : "text-accent",
+                      )}
+                    />
+                  </div>
 
                   <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
                     <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
@@ -273,7 +276,7 @@ export function Dashboard() {
                     <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent">
                       <app.icon className="size-4" />
                     </span>
-                    <div className="min-w-0 w-36 shrink-0">
+                    <div className="min-w-28 shrink-0">
                       <p className="truncate text-sm font-medium">{app.name}</p>
                     </div>
                     <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
@@ -355,26 +358,12 @@ export function Dashboard() {
                   </li>
                 ))}
               </ul>
-              <Button variant="link" className="h-auto px-0 text-xs text-primary">
-                View All
-                <ArrowRight />
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card className="border-accent/30 py-0">
-            <CardContent className="space-y-2 p-4">
-              <div className="flex items-center gap-1.5 text-accent">
-                <Rocket className="size-4" />
-                <p className="text-sm font-medium">Start a tunnel</p>
+              <div className="flex justify-end">
+                <Button variant="link" className="h-auto px-0 text-xs text-primary">
+                  View All
+                  <ArrowRight />
+                </Button>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Expose a running application on a public https URL.
-              </p>
-              <Button size="sm" className="w-full">
-                <ExternalLink />
-                Open tunnels
-              </Button>
             </CardContent>
           </Card>
         </aside>

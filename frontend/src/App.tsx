@@ -22,11 +22,6 @@ function App() {
       active={view}
       onNavigate={setView}
       searchPlaceholder={searchPlaceholders[view]}
-      context={
-        view === "settings" ? (
-          <p className="text-sm text-muted-foreground">Settings</p>
-        ) : null
-      }
     >
       {view === "dashboard" ? (
         <Dashboard />

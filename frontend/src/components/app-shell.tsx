@@ -94,7 +94,7 @@ export function AppShell({
                 aria-current={isCurrent ? "page" : undefined}
                 onClick={() => select(item.id)}
                 className={cn(
-                  "relative h-9 w-full justify-start gap-2.5 px-3 font-normal text-muted-foreground",
+                  "relative h-10 w-full justify-start gap-2.5 px-3 font-normal text-muted-foreground",
                   isCurrent && "bg-sidebar-accent text-sidebar-accent-foreground",
                 )}
               >
@@ -116,7 +116,7 @@ export function AppShell({
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-16 shrink-0 items-center gap-3 border-b border-border px-6">
           {context}
-          <div className="relative ml-auto w-full max-w-sm">
+          <div className="relative w-full max-w-md">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               type="search"
@@ -128,7 +128,9 @@ export function AppShell({
               Ctrl K
             </kbd>
           </div>
-          {topbarActions}
+          {topbarActions && (
+            <div className="ml-auto flex shrink-0 items-center gap-2">{topbarActions}</div>
+          )}
         </header>
 
         <main className="flex-1 overflow-y-auto">{children}</main>
