@@ -29,12 +29,18 @@ const health: Health = {
   Disk: { UsedBytes: 280 * 1024 ** 3, TotalBytes: 500 * 1024 ** 3, Percent: 56 },
 };
 
-const notification = (id: string, action: string, minutesAgo: number): Notification => ({
+const notification = (
+  id: string,
+  action: string,
+  minutesAgo: number,
+  severity = "info",
+): Notification => ({
   ID: id,
   Scope: "machine",
   Action: action,
   Detail: "",
   CreatedAt: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
+  Severity: severity,
 });
 
 function renderWithQuery(ui: ReactNode) {
@@ -161,6 +167,37 @@ describe("Notifications", () => {
     expect(screen.getByText("Engine started")).toBeInTheDocument();
     expect(screen.getByText("5m ago")).toBeInTheDocument();
     expect(screen.getByText("2h ago")).toBeInTheDocument();
+  });
+
+  it("marks a warning and counts it in the bell's name", async () => {
+    const user = userEvent.setup();
+    vi.mocked(StatusService.Notifications).mockResolvedValue([
+      notification("disk-space", "Low disk space", 0, "warning"),
+      notification("b", "Engine started", 30),
+    ]);
+
+    renderWithQuery(<Notifications />);
+
+    const trigger = await screen.findByRole("button", {
+      name: "Notifications, 2 recent entries, 1 warning",
+    });
+    await user.click(trigger);
+
+    expect(await screen.findByText("Low disk space")).toBeInTheDocument();
+    expect(screen.getByText("Warning")).toBeInTheDocument();
+    expect(screen.getByText("Engine started")).toBeInTheDocument();
+  });
+
+  it("leaves the bell name unchanged when nothing needs acting on", async () => {
+    vi.mocked(StatusService.Notifications).mockResolvedValue([
+      notification("a", "Machine registered", 5),
+    ]);
+
+    renderWithQuery(<Notifications />);
+
+    expect(
+      await screen.findByRole("button", { name: "Notifications, 1 recent entries" }),
+    ).toBeInTheDocument();
   });
 
   it("caps the badge at nine plus", async () => {

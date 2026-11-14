@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Bell, CircleCheck, HardDrive, Monitor, Clock } from "lucide-react";
+import { Bell, CircleCheck, HardDrive, Monitor, Clock, TriangleExclamationPoint } from "lucide-react";
 import * as StatusService from "../../bindings/locafy.dev/desktop/internal/status/service";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -218,11 +218,16 @@ export function Notifications() {
 
   const entries = notifications.data ?? [];
   const count = entries.length;
+  const warnings = entries.filter((entry) => entry.Severity === "warning").length;
+  const label =
+    count > 0
+      ? `Notifications, ${count} recent entries${warnings > 0 ? `, ${warnings} warning` : ""}`
+      : "Notifications";
 
   return (
     <Popover>
       <PopoverTrigger
-        aria-label={count > 0 ? `Notifications, ${count} recent entries` : "Notifications"}
+        aria-label={label}
         className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "relative")}
       >
         <Bell />
@@ -250,11 +255,25 @@ export function Notifications() {
           <p className="mt-3 text-xs text-muted-foreground">Nothing recorded yet.</p>
         ) : (
           <ul className="mt-3 max-h-64 divide-y divide-border overflow-y-auto">
-            {entries.map((entry) => (
+            {entries.map((entry) => {
+              const isWarning = entry.Severity === "warning";
+
+              return (
               <li key={entry.ID} className="flex items-start gap-2 py-2">
-                <span className="mt-1 size-1.5 shrink-0 rounded-full bg-muted-foreground/60" />
+                {isWarning ? (
+                  <TriangleExclamationPoint className="mt-0.5 size-3.5 shrink-0 text-accent" />
+                ) : (
+                  <span className="mt-1 size-1.5 shrink-0 rounded-full bg-muted-foreground/60" />
+                )}
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs">{entry.Action}</p>
+                  <p className="flex items-center gap-1.5 truncate text-xs">
+                    {entry.Action}
+                    {isWarning && (
+                      <span className="shrink-0 text-[0.65rem] font-medium uppercase tracking-wide text-accent">
+                        Warning
+                      </span>
+                    )}
+                  </p>
                   <p className="truncate text-[0.7rem] text-muted-foreground">
                     {entry.Scope}
                     {entry.Detail ? ` · ${entry.Detail}` : ""}
@@ -264,7 +283,8 @@ export function Notifications() {
                   {formatRelative(entry.CreatedAt)}
                 </span>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </PopoverContent>

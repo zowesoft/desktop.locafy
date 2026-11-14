@@ -35,4 +35,10 @@ export interface Notification {
     "Action": string;
     "Detail": string;
     "CreatedAt": string;
+
+    /**
+     * Severity is "warning" for conditions the user has to act on and "info"
+     * for everything recorded in the activity history.
+     */
+    "Severity": string;
 }
