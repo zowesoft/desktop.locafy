@@ -14,7 +14,7 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 | DESK-DB-002 | Control-plane schema foundation | desktop.locafy | 1 | IN_PROGRESS | DESK-DB-001 |
 | DESK-UI-001 | Navigation and design system | desktop.locafy | 1 | IN_PROGRESS | DESK-BOOT-001 |
 | DESK-PROJ-001 | Create and import projects | desktop.locafy | 2 | COMPLETED | DESK-BOOT-001, DESK-DB-001, DESK-UI-001 |
-| DESK-PROJ-002 | Project overview and lifecycle | desktop.locafy | 2 | NOT_STARTED | DESK-PROJ-001 |
+| DESK-PROJ-002 | Project overview and lifecycle | desktop.locafy | 2 | IN_PROGRESS | DESK-PROJ-001 |
 | DESK-APP-001 | Add and detect applications | desktop.locafy | 3 | NOT_STARTED | DESK-PROJ-002 |
 | DESK-APP-002 | Application process lifecycle | desktop.locafy | 3 | NOT_STARTED | DESK-APP-001 |
 | DESK-RUN-001 | Runtime detection and assignment | desktop.locafy | 4 | NOT_STARTED | DESK-APP-002 |
@@ -88,7 +88,7 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 ### DESK-UI-001 — Navigation and design system
 
 - **Repository:** desktop.locafy
-- **Description:** Main navigation (Overview, Projects, Applications, Services, Runtimes, Downloads, Domains, Analytics, Tunnels as planned/disabled, Logs, Terminal, Extensions as planned/disabled, Help and support, Settings) and the Locafy design system on shadcn/ui + Tailwind with PRD section 17.2 tokens.
+- **Description:** Global navigation (Overview, Projects, Runtimes, Downloads, Analytics, Logs, Terminal, Tunnels as planned/disabled, Extensions as planned/disabled, Help and support, Settings), with Applications, Services and Domains moved into the project workspace per ADR-0009, and the Locafy design system on shadcn/ui + Tailwind with PRD section 17.2 tokens.
 - **Dependencies:** DESK-BOOT-001
 - **Acceptance criteria:** Navigation matches PRD section 6.2, with the planned/disabled treatment applied everywhere tunnels and extensions appear (dashboard metrics, quick actions, project tabs), not only in navigation; design tokens per section 17.2 with dark and light themes and a persisted theme toggle in the top bar; shortcut hints use platform-appropriate modifiers; project view is the primary working area; global vs project-scoped settings distinguishable; status never by color alone; the top bar carries machine status and a notification entry point (PRD section 6.3); the brand mark matches the mockup's orange-red hexagon.
 - **Status:** IN_PROGRESS
@@ -114,15 +114,15 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 ### DESK-PROJ-002 — Project overview and lifecycle
 
 - **Repository:** desktop.locafy
-- **Description:** Project overview screen (PRD section 17.3) and start/stop/restart orchestration foundation; project-scoped terminal/logging context foundations.
+- **Description:** Projects dashboard and project workspace with project-scoped tabs (ADR-0009); project overview screen (PRD section 17.3) and start/stop/restart orchestration foundation; project-scoped terminal/logging context foundations.
 - **Dependencies:** DESK-PROJ-001
 - **Acceptance criteria:** Lifecycle follows PRD section 7.3 order (validate → check runtimes → check ports → services → readiness → applications → health checks → report); component-level status is reported, not a misleading single status; partial running states visible; stop order is safe and managed processes are distinguishable from unrelated ones.
-- **Status:** NOT_STARTED
+- **Status:** IN_PROGRESS
 - **Assigned agent:** —
-- **Files/modules:** —
-- **Tests:** Lifecycle orchestration tests; partial-failure state tests
-- **Blockers:** —
-- **Evidence:** —
+- **Files/modules:** `frontend/src/screens/projects.tsx` (projects dashboard), `frontend/src/screens/project-workspace.tsx` (workspace and tabs), `frontend/src/components/lifecycle-badge.tsx`, `frontend/src/lib/projects-query.ts`, `frontend/src/components/app-shell.tsx`, `frontend/src/App.tsx`, `frontend/src/router.tsx`
+- **Tests:** Frontend only so far: dashboard cards, filtering and links; workspace header, overview, tabs, planned tunnels tab, section switching, unknown project and read failure; shell navigation limited to global entries. Lifecycle orchestration tests and partial-failure state tests are still to write.
+- **Blockers:** Start, stop and restart, component-level status, and the lifecycle order from PRD section 7.3 are not built; they need applications and services to exist (DESK-APP-002, DESK-SVC-001). Every workspace tab except Overview is a not-built-yet section. The project switcher in the top bar and a Processes tab are undecided (ADR-0009). The UI has been verified by tests and a production build only; it has not been launched and inspected in the running window.
+- **Evidence:** The sidebar holds the 11 global entries from ADR-0009 and no project list. `/projects` is a dashboard of project cards (name, folder, Managed or Linked, lifecycle state in words, Open, rename, change folder for linked projects, remove) with a filter by name or folder. `/projects/:projectId` is the workspace: header with name, state, origin and folder, then tabs for Overview, Applications, Services, Domains, Tunnels (planned, not selectable), Environment, Logs, Terminal and Settings, each addressable by URL. The Overview tab shows the record's real fields and no invented counts. The Projects sidebar entry stays selected inside a workspace. `npx tsc --noEmit`, `npx vitest run` and `npm run build` pass.
 
 ### DESK-APP-001 — Add and detect applications
 

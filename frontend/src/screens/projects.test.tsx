@@ -2,10 +2,12 @@ import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/projects/service";
 import type { Project } from "../../bindings/locafy.dev/desktop/internal/projects/models";
+
 import { ProjectsScreen } from "./projects";
 
 vi.mock("../../bindings/locafy.dev/desktop/internal/projects/service", () => ({
@@ -37,7 +39,11 @@ function renderWithQuery(ui: ReactNode) {
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
   });
 
-  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>{ui}</MemoryRouter>
+    </QueryClientProvider>,
+  );
 }
 
 beforeEach(() => {
@@ -76,6 +82,63 @@ describe("ProjectsScreen", () => {
     expect(screen.getByText("2 projects")).toBeInTheDocument();
   });
 
+  it("opens a project's workspace from its card", async () => {
+    vi.mocked(ProjectsService.List).mockResolvedValue([project()]);
+
+    renderWithQuery(<ProjectsScreen />);
+
+    expect(await screen.findByRole("link", { name: "Etugora" })).toHaveAttribute(
+      "href",
+      "/projects/p1",
+    );
+    expect(screen.getByRole("link", { name: "Open Etugora" })).toHaveAttribute(
+      "href",
+      "/projects/p1",
+    );
+  });
+
+  it("states each project's lifecycle in words", async () => {
+    vi.mocked(ProjectsService.List).mockResolvedValue([
+      project(),
+      project({ ID: "p2", Name: "checkout", LifecycleState: "running" }),
+    ]);
+
+    renderWithQuery(<ProjectsScreen />);
+
+    expect(await screen.findByText("Stopped")).toBeInTheDocument();
+    expect(screen.getByText("Running")).toBeInTheDocument();
+  });
+
+  it("filters projects by name or folder", async () => {
+    const user = userEvent.setup();
+    vi.mocked(ProjectsService.List).mockResolvedValue([
+      project(),
+      project({ ID: "p2", Name: "checkout", Kind: "linked", RootPath: "D:\\work\\shop" }),
+    ]);
+
+    renderWithQuery(<ProjectsScreen />);
+
+    const filter = await screen.findByRole("searchbox", { name: "Filter projects" });
+    await user.type(filter, "shop");
+
+    expect(screen.getByText("checkout")).toBeInTheDocument();
+    expect(screen.queryByText("Etugora")).toBeNull();
+    expect(screen.getByText("1 of 2 projects")).toBeInTheDocument();
+
+    await user.clear(filter);
+    await user.type(filter, "nothing");
+
+    expect(screen.getByText(/No project matches/)).toBeInTheDocument();
+  });
+
+
+  it("offers no filter before a project exists", async () => {
+    renderWithQuery(<ProjectsScreen />);
+
+    await screen.findByText("No projects yet");
+    expect(screen.queryByRole("searchbox", { name: "Filter projects" })).toBeNull();
+  });
+
   it("creates a managed project from a name", async () => {
     const user = userEvent.setup();
     vi.mocked(ProjectsService.Create).mockResolvedValue(project());
@@ -88,6 +151,7 @@ describe("ProjectsScreen", () => {
 
     expect(ProjectsService.Create).toHaveBeenCalledWith("Etugora");
   });
+
 
   it("links an existing folder by path", async () => {
     const user = userEvent.setup();
