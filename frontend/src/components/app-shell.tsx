@@ -3,16 +3,13 @@ import type { KeyboardEvent, ReactNode } from "react";
 import {
   Blocks,
   Box,
-  Boxes,
   ChartColumn,
   CircleQuestionMark,
-  Database,
   Download,
   FileText,
   FolderKanban,
   LayoutDashboard,
   Moon,
-  Network,
   Search,
   Settings as SettingsIcon,
   Sun,
@@ -28,11 +25,8 @@ import { cn } from "@/lib/utils";
 export type NavId =
   | "overview"
   | "projects"
-  | "applications"
-  | "services"
   | "runtimes"
   | "downloads"
-  | "domains"
   | "analytics"
   | "tunnels"
   | "logs"
@@ -61,14 +55,13 @@ function focusSearch() {
   }
 }
 
+// Machine-level entries only. Applications, services and domains belong to a
+// project and live in its workspace, not here.
 const NAV: ReadonlyArray<NavItem> = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "projects", label: "Projects", icon: FolderKanban },
-  { id: "applications", label: "Applications", icon: Boxes },
-  { id: "services", label: "Services", icon: Database },
   { id: "runtimes", label: "Runtimes", icon: Box },
   { id: "downloads", label: "Downloads", icon: Download },
-  { id: "domains", label: "Domains", icon: Network },
   { id: "analytics", label: "Analytics", icon: ChartColumn },
   { id: "tunnels", label: "Tunnels", icon: Zap, planned: true },
   { id: "logs", label: "Logs", icon: FileText },

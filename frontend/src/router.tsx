@@ -3,6 +3,7 @@ import App from "@/App";
 import { Dashboard } from "@/screens/dashboard";
 import { NotFound } from "@/screens/not-found";
 import { Placeholder } from "@/screens/placeholder";
+import { projectWorkspaceRoute } from "@/screens/project-workspace";
 import { ProjectsScreen } from "@/screens/projects";
 import { RouteError } from "@/screens/route-error";
 import { SettingsScreen } from "@/screens/settings";
@@ -20,11 +21,9 @@ export const router = createHashRouter([
     children: [
       { index: true, element: <Dashboard /> },
       { path: "projects", element: <ProjectsScreen /> },
-      { path: "applications", element: <Placeholder name="Applications" /> },
-      { path: "services", element: <Placeholder name="Services" /> },
+      projectWorkspaceRoute,
       { path: "runtimes", element: <Placeholder name="Runtimes" /> },
       { path: "downloads", element: <Placeholder name="Downloads" /> },
-      { path: "domains", element: <Placeholder name="Domains" /> },
       { path: "analytics", element: <Placeholder name="Analytics" /> },
       { path: "logs", element: <Placeholder name="Logs" /> },
       { path: "terminal", element: <Placeholder name="Terminal" /> },

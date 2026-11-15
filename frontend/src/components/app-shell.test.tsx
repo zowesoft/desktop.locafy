@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -33,6 +33,56 @@ describe("AppShell top bar", () => {
     const slot = screen.getByText("Status slot");
     const toggle = await screen.findByRole("button", { name: /Switch to (light|dark) theme/ });
     expect(slot.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+describe("AppShell navigation", () => {
+  const renderShell = () =>
+    render(
+      <AppShell>
+        <p>content</p>
+      </AppShell>,
+    );
+
+  it("lists only machine-level entries", () => {
+    renderShell();
+
+    const nav = within(screen.getByRole("navigation", { name: "Main" }));
+    const labels = nav.getAllByRole("button").map((button) => button.textContent);
+
+    expect(labels).toEqual([
+      "Overview",
+      "Projects",
+      "Runtimes",
+      "Downloads",
+      "Analytics",
+      "Logs",
+      "Terminal",
+      "Help & Support",
+      "Settings",
+    ]);
+  });
+
+  it("leaves project resources to the project workspace", () => {
+    renderShell();
+
+    const nav = within(screen.getByRole("navigation", { name: "Main" }));
+
+    for (const name of ["Applications", "Services", "Domains"]) {
+      expect(nav.queryByText(name)).toBeNull();
+    }
+  });
+
+  it("shows planned entries as disabled instead of dropping them", () => {
+    renderShell();
+
+    const nav = screen.getByRole("navigation", { name: "Main" });
+    const planned = nav.querySelectorAll('[aria-disabled="true"]');
+
+    expect(Array.from(planned).map((item) => item.textContent)).toEqual([
+      "TunnelsPlanned",
+      "ExtensionsPlanned",
+    ]);
   });
 });
 
@@ -72,15 +122,15 @@ describe("AppShell search", () => {
     const user = userEvent.setup();
     const { onNavigate, field } = renderShell();
 
-    await user.type(field, "se");
-    expect(await screen.findByRole("option", { name: "Services" })).toHaveAttribute(
+    await user.type(field, "lo");
+    expect(await screen.findByRole("option", { name: "Downloads" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
 
     await user.keyboard("{ArrowDown}{Enter}");
 
-    expect(onNavigate).toHaveBeenCalledWith("settings");
+    expect(onNavigate).toHaveBeenCalledWith("logs");
   });
 
   it("does not offer a screen that is still planned", async () => {

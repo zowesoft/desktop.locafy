@@ -7,11 +7,8 @@ import { EngineStatus, Notifications } from "@/components/top-bar-status";
 const navPaths: Record<NavId, string> = {
   overview: "/",
   projects: "/projects",
-  applications: "/applications",
-  services: "/services",
   runtimes: "/runtimes",
   downloads: "/downloads",
-  domains: "/domains",
   analytics: "/analytics",
   tunnels: "/tunnels",
   logs: "/logs",
@@ -24,11 +21,8 @@ const navPaths: Record<NavId, string> = {
 const searchPlaceholders: Record<NavId, string> = {
   overview: "Search projects, apps…",
   projects: "Search projects…",
-  applications: "Search applications…",
-  services: "Search services…",
   runtimes: "Search runtimes…",
   downloads: "Search downloads…",
-  domains: "Search domains…",
   analytics: "Search analytics…",
   tunnels: "Search tunnels…",
   logs: "Search logs…",
@@ -38,9 +32,10 @@ const searchPlaceholders: Record<NavId, string> = {
   settings: "Search settings…",
 };
 
+/** A project workspace lives below `/projects`, so it keeps that entry selected. */
 function navForPath(pathname: string): NavId {
   const match = (Object.entries(navPaths) as [NavId, string][]).find(
-    ([, path]) => path === pathname,
+    ([, path]) => path === pathname || (path !== "/" && pathname.startsWith(`${path}/`)),
   );
   return match?.[0] ?? "overview";
 }
