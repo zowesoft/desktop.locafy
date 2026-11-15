@@ -13,7 +13,7 @@ Architecture decision records (ADRs) for this repository.
 | [ADR-0005](ADR-0005-machine-monitoring.md) | Machine monitoring: gopsutil sampled in the background, CGO-free | Accepted |
 | [ADR-0006](ADR-0006-light-theme.md) | Light theme alongside the dark default, and the caption-bar limitation it accepts | Accepted |
 | [ADR-0007](ADR-0007-project-manifest-and-storage.md) | Managed and linked projects, and the portable project manifest | Accepted |
-| [ADR-0008](ADR-0008-service-engines-and-instances.md) | Service engines are machine-level; instances are isolated per project by default, with explicit opt-in shared instances (packaging left open) | Proposed |
+| [ADR-0008](ADR-0008-service-engines-and-instances.md) | Service engines are machine-level; instances are shared by default, with isolated per-project instances as the alternative (packaging left open) | Accepted |
 | — | Desktop stack selections made in the PRD (Wails v3, Go, React/TS, SQLite) are recorded there and considered approved baseline. | — |
 
 ## Decisions pending (do not guess — PRD section 23)

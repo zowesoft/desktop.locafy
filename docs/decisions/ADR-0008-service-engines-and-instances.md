@@ -1,8 +1,9 @@
 # ADR-0008: Service engines and service instances
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-15
 - **Depends on:** ADR-0001 (cross-platform), ADR-0004 (local data model), ADR-0007 (project storage)
+- **Related:** ADR-0009 (navigation and project workspace)
 - **Affects:** DESK-SVC-001, DESK-NET-001, DESK-RUN-001, DESK-DL-001
 
 ## Context
@@ -14,9 +15,9 @@ system ties an installed engine to a single project, so the question is what
 makes a service project-scoped.
 
 Installing an engine and running a service are different operations. This
-record separates them and settles how projects get isolated services, and how
-they can opt into sharing one. It does not decide how engines are obtained or
-packaged, which remains open.
+record separates them and settles how projects get service instances: through
+one shared instance, or through an isolated instance of their own. It does not
+decide how engines are obtained or packaged, which remains open.
 
 ## Decision
 
@@ -27,9 +28,9 @@ packaged, which remains open.
 | | Engine | Service instance |
 |---|---|---|
 | What it is | An installed program at a specific version | One configured, runnable server of an engine |
-| Scope | Machine | Project (isolated) or machine (shared) |
-| Examples | PostgreSQL 17 binaries | Etugora's PostgreSQL |
-| Cardinality | One per engine and version | Any number |
+| Scope | Machine | Machine (shared) or project (isolated) |
+| Examples | PostgreSQL 17 binaries | The shared PostgreSQL, or Etugora's own PostgreSQL |
+| Cardinality | One per engine and version | At most one shared instance per engine version; any number of isolated ones |
 
 This mirrors runtimes and applications: a runtime is machine-level, and an
 application selects one. A service instance selects an engine version.
@@ -40,8 +41,8 @@ An engine is never started directly. Only instances run.
 
 Every instance owns four things that no other instance shares:
 
-1. **Data directory.** One per instance, never shared. Its location and
-   persistence behaviour are visible to the operator.
+1. **Data directory.** One per instance, never shared between instances. Its
+   location and persistence behaviour are visible to the operator.
 2. **Ports.** One or more named ports (for example `smtp` and `web` for a mail
    service, `api` and `console` for object storage), allocated by Locafy,
    recorded, and checked for conflicts before start. Instances prefer the
@@ -56,8 +57,23 @@ Every instance owns four things that no other instance shares:
 
 ### Isolation modes
 
-**Isolated (default).** The instance is owned by exactly one project. Two
-projects using the same engine version share binaries and nothing else:
+**Shared (default where the engine supports it).** One instance is owned by the
+machine, and several projects bind to it. Each binding gives a project its own
+logical tenant on the server: a database and role for relational engines, a
+bucket and credentials for object storage. Binding credentials go to the
+credential store.
+
+- A shared instance stops only when the operator stops it. Stopping or removing
+  a project never stops it, and there is no automatic idle stop.
+- Server-level configuration, engine version, restarts and resource use are
+  shared by every bound project, and the interface says so wherever the mode is
+  chosen.
+- Removing a project or a binding never drops its databases or buckets. That is
+  a separate, confirmed data-deletion action, consistent with ADR-0007.
+- A binding never grants access to another project's tenant.
+
+**Isolated.** The instance is owned by exactly one project. Two projects using
+the same engine version share binaries and nothing else:
 
 ```text
 engines/postgresql/17/bin/                  one installed engine
@@ -66,27 +82,25 @@ services/<instance-b>/data                  project B: own port, process, secret
 ```
 
 Project lifecycle is the instance lifecycle: starting a project starts its
-instances, and stopping it stops only those.
+isolated instances, and stopping it stops only those.
 
-**Shared (explicit opt-in).** One instance is owned by the machine, and several
-projects bind to it. Each binding gives a project its own logical tenant on the
-server: a database and role for relational engines, a bucket and credentials
-for object storage. Binding credentials go to the credential store.
+Moving a project between modes is a dump-and-restore migration, never a toggle.
 
-- Stopping a project never stops a shared instance. The operator stops it
-  explicitly. Whether an idle shared instance may stop automatically is open.
-- Server-level configuration, engine version, restarts and resource use are
-  shared by every bound project, and the interface says so when the operator
-  opts in.
-- Removing a project or a binding never drops its databases or buckets. That is
-  a separate, confirmed data-deletion action, consistent with ADR-0007.
-- Shared mode is offered only for engines whose capabilities declare real
-  tenancy: PostgreSQL and MySQL/MariaDB through databases and roles, and
-  object storage through buckets and users. Redis and mail capture offer no
-  meaningful per-project separation and are isolated-only unless a template
-  proves otherwise.
-- Moving a project between modes is a dump-and-restore migration, never a
-  toggle.
+### Default mode
+
+The default is a stored preference with two values: **shared** and **isolated**.
+It starts as shared.
+
+- It applies when a service is attached to a project. An engine whose template
+  declares tenancy follows the preference. An engine without tenancy is always
+  isolated, whatever the preference says, because there is nothing to share
+  safely.
+- The operator can override the mode for a single service when attaching it.
+- Changing the preference affects only services attached afterwards. Existing
+  instances keep their mode.
+- First-run onboarding is one place to ask. The preference is also changeable at
+  any time in settings, and Locafy works with the shared default if onboarding
+  is skipped. It never requires an account.
 
 ### Engine capabilities
 
@@ -98,11 +112,14 @@ assumes that every engine behaves like PostgreSQL:
 - independent data directories
 - automatic initialisation
 - health checks
-- shared mode, and the kind of tenant it provides
+- tenancy, and the kind of tenant it provides (database and role, or bucket and
+  user), which is what makes shared mode available
 
-Instance creation, mode selection and the interface are driven by these
-declarations. An engine that cannot run more than one instance, or has fixed
-ports, is reported as such rather than failing at start.
+PostgreSQL and MySQL/MariaDB provide databases and roles, and object storage
+provides buckets and users. Redis and mail capture offer no meaningful
+per-project separation and are isolated-only unless a template proves
+otherwise. An engine that cannot run more than one instance, or has fixed ports,
+is reported as such rather than failing at start.
 
 ### Data location
 
@@ -113,12 +130,12 @@ data home, keyed by instance ID so a rename does not move it:
 <data home>/Locafy/services/<instance-id>/
 ```
 
-The location is configurable per instance, with a sensible default. Locafy
-never places service data inside a linked project directory unless the operator
-chooses that location explicitly, because ADR-0007 forbids writing into
-directories Locafy does not own. When the operator chooses a project directory
-or a cloud-synchronised folder, the interface warns that database files in
-version-controlled or synchronised locations can be committed or corrupted.
+The location is configurable per instance. Locafy never places service data
+inside a linked project directory unless the operator chooses that location
+explicitly, because ADR-0007 forbids writing into directories Locafy does not
+own. When the operator chooses a project directory or a cloud-synchronised
+folder, the interface warns that database files in version-controlled or
+synchronised locations can be committed or corrupted.
 
 ### Rules
 
@@ -130,9 +147,10 @@ version-controlled or synchronised locations can be committed or corrupted.
   versions is an explicit operation, because data directories are not portable
   across major versions.
 - Removing an instance configuration never deletes its data directory.
-- Isolation is by separate directories, ports, processes and loopback binding.
-  It is not enforced by the operating system, and the interface and
-  documentation must not describe it as sandboxing.
+- Isolation is by separate directories, ports, processes and loopback binding,
+  and in shared mode by separate tenants. It is not enforced by the operating
+  system, and the interface and documentation must not describe it as
+  sandboxing.
 - Missing engines are reported with an offer to install them through the
   downloads view, never installed silently as a side effect of starting a
   project.
@@ -147,7 +165,7 @@ Consistent with ADR-0004, with these additions:
 - Installed engines are machine-level records with the version, the executable
   path, and whether they are Locafy-managed or system installations.
 - `services` holds instances. Each records its engine and version, data
-  directory, configuration, and a scope of `project` or `shared`. Project
+  directory, configuration, and a scope of `project` or `shared`. Isolated
   instances reference `project_id` with `ON DELETE CASCADE`; shared instances
   have no project and are owned by the machine.
 - A binding table links a project to a shared instance and records the tenant
@@ -157,6 +175,8 @@ Consistent with ADR-0004, with these additions:
 - Running processes are recorded in the existing planned `processes` table,
   shared with applications, including process identity.
 - Configured `status` and runtime `lifecycle_state` stay separate columns.
+- The default-mode preference is a typed value in the existing `settings`
+  table.
 
 Final column definitions belong to the DESK-SVC-001 migration. Container-style
 volumes and mount paths are not modelled, because there are no mounts without
@@ -174,29 +194,32 @@ These stay open and must not be guessed (PRD section 23):
   a choice is made. Known concerns include Redis on Windows, Erlang for
   RabbitMQ, and MinIO licensing.
 - **Object storage engine.** MinIO remains a candidate only.
-- **Where engines appear in the interface.** Installed engines are
-  machine-level and sit naturally beside runtimes, with instances inside the
-  project. That is a navigation decision and is recorded separately.
-- **Idle shared instances.** Whether they auto-stop.
 - **Engine acquisition and download jobs.** Handled with runtime installation in
   Phase 4 and surfaced in the downloads view.
 
 ## Consequences
 
-- Services remain project-first without requiring containers: the project owns
-  its data, ports, process and credentials, while binaries are shared.
+- Services remain project-first without requiring containers: each project has
+  its own tenant or its own instance, with its own credentials, while binaries
+  are shared.
+- Making shared the default favours a light machine: one server process per
+  engine rather than one per project. It also weakens isolation compared with
+  isolated instances. Projects on one shared server share its configuration,
+  version, restarts and failures, and a heavy query or a crash in one project
+  can affect another. The interface must make this visible where the mode is
+  chosen. PRD section 10.4 is met through separate tenants for engines that
+  support them.
 - Locafy takes on bookkeeping that containers would otherwise provide:
-  allocating and tracking ports, supervising processes, and creating and
-  initialising data directories per engine. This is substantial per-platform
-  work and belongs to DESK-SVC-001 and DESK-APP-002.
-- Shared mode trades isolation for memory. It adds a machine-owned instance, a
-  binding model and a lifecycle that no single project controls, which makes
-  its tests and interface more involved than isolated mode.
-- Memory use in isolated mode grows with the number of running instances.
-  Stopping a project releases its instances, which keeps idle projects cheap.
+  allocating and tracking ports, supervising processes, creating and
+  initialising data directories per engine, and provisioning and tracking
+  tenants. This is substantial per-platform work and belongs to DESK-SVC-001
+  and DESK-APP-002.
+- A shared instance has a lifecycle that no single project controls, so
+  project start must start or reuse it, and project stop must leave it running.
+  Memory is released only when the operator stops it.
 - Conflicts with a system-installed engine are avoided by port allocation, but
   port owners must still be shown to the operator (PRD section 11.4).
 - Because isolation is by convention, tests for DESK-SVC-001 must prove two
   projects can run the same engine simultaneously without sharing data, ports
-  or lifecycle, and that a shared binding never grants access to another
-  project's tenant.
+  or lifecycle in isolated mode, and that a shared binding never reaches
+  another project's tenant.
