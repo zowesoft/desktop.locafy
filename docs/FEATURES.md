@@ -186,7 +186,7 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 - **Assigned agent:** —
 - **Files/modules:** —
 - **Tests:** Service lifecycle tests; isolation tests; data-retention tests
-- **Blockers:** Service packaging strategy (native versus container-backed) and object storage engine undecided (PRD section 23). The engine and instance model, with a shared default and isolated opt-in, is recorded in ADR-0008.
+- **Blockers:** Service packaging strategy (native versus container-backed) and object storage engine undecided (PRD section 23). The engine and instance model, with a shared default and isolated opt-in, is recorded in ADR-0008. Services are delivered as a project tab, not a global screen (ADR-0009).
 - **Evidence:** —
 
 ### DESK-NET-001 — Local domains and reverse proxy
