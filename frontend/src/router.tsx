@@ -3,6 +3,7 @@ import App from "@/App";
 import { Dashboard } from "@/screens/dashboard";
 import { NotFound } from "@/screens/not-found";
 import { Placeholder } from "@/screens/placeholder";
+import { ProjectsScreen } from "@/screens/projects";
 import { RouteError } from "@/screens/route-error";
 import { SettingsScreen } from "@/screens/settings";
 
@@ -18,7 +19,7 @@ export const router = createHashRouter([
     errorElement: <RouteError />,
     children: [
       { index: true, element: <Dashboard /> },
-      { path: "projects", element: <Placeholder name="Projects" /> },
+      { path: "projects", element: <ProjectsScreen /> },
       { path: "applications", element: <Placeholder name="Applications" /> },
       { path: "services", element: <Placeholder name="Services" /> },
       { path: "runtimes", element: <Placeholder name="Runtimes" /> },
