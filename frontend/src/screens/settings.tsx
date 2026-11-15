@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/projects/service";
 import * as SettingsService from "../../bindings/locafy.dev/desktop/internal/settings/service";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,11 +8,29 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 
 const settingsKey = ["settings"] as const;
+const workspaceKey = ["projects", "workspace"] as const;
 
 export function SettingsScreen() {
   const queryClient = useQueryClient();
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
+  const [workspaceDraft, setWorkspaceDraft] = useState("");
+
+  const workspace = useQuery({
+    queryKey: workspaceKey,
+    queryFn: () => ProjectsService.WorkspaceDir(),
+  });
+
+  // The field shows the effective location, so it fills in once resolved and
+  // again after a save or reset returns the new answer.
+  useEffect(() => {
+    if (workspace.data !== undefined) setWorkspaceDraft(workspace.data);
+  }, [workspace.data]);
+
+  const saveWorkspace = useMutation({
+    mutationFn: (path: string) => ProjectsService.SetWorkspaceDir(path),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: workspaceKey }),
+  });
 
   const settings = useQuery({
     queryKey: settingsKey,
@@ -52,6 +71,61 @@ export function SettingsScreen() {
       </header>
 
       <Card>
+        <CardHeader>
+          <CardTitle>Projects workspace</CardTitle>
+          <CardDescription>
+            New Locafy-managed projects are created in this folder
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            className="flex flex-col gap-2 sm:flex-row"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (workspaceDraft.trim() === "" || saveWorkspace.isPending) return;
+              saveWorkspace.mutate(workspaceDraft.trim());
+            }}
+          >
+            <Input
+              aria-label="Workspace folder"
+              className="font-mono text-xs"
+              placeholder="C:\\locafy\\projects"
+              value={workspaceDraft}
+              onChange={(event) => setWorkspaceDraft(event.target.value)}
+            />
+            <Button
+              type="submit"
+              aria-label="Save workspace folder"
+              disabled={
+                workspaceDraft.trim() === "" ||
+                workspaceDraft.trim() === workspace.data ||
+                saveWorkspace.isPending
+              }
+            >
+              {saveWorkspace.isPending ? "Saving…" : "Save"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={saveWorkspace.isPending}
+              onClick={() => saveWorkspace.mutate("")}
+            >
+              Use default
+            </Button>
+          </form>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Projects already created keep their folders. Linked projects are always wherever you
+            pointed them.
+          </p>
+          {saveWorkspace.error && (
+            <p role="alert" className="mt-2 text-sm text-destructive">
+              Could not save the workspace folder: {String(saveWorkspace.error)}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="mt-6">
         <CardHeader>
           <CardTitle>Stored settings</CardTitle>
           <CardDescription>Persisted in SQLite</CardDescription>
