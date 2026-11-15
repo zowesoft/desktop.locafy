@@ -58,3 +58,19 @@ export function Remove(id: string): $CancellablePromise<void> {
 export function Rename(id: string, name: string): $CancellablePromise<$models.Project> {
     return $Call.ByID(2965260831, id, name);
 }
+
+/**
+ * SetWorkspaceDir stores the operator's default location for new managed
+ * projects. An empty path restores the platform default. Existing projects
+ * keep their recorded root.
+ */
+export function SetWorkspaceDir(path: string): $CancellablePromise<void> {
+    return $Call.ByID(3431808531, path);
+}
+
+/**
+ * WorkspaceDir returns where new managed projects are created.
+ */
+export function WorkspaceDir(): $CancellablePromise<string> {
+    return $Call.ByID(2914056969);
+}

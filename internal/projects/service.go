@@ -42,6 +42,25 @@ func (s *Service) Create(name string) (Project, error) {
 	return Create(s.database, dir, name)
 }
 
+// WorkspaceDir returns where new managed projects are created.
+func (s *Service) WorkspaceDir() (string, error) {
+	return s.workspaceDir()
+}
+
+// SetWorkspaceDir stores the operator's default location for new managed
+// projects. An empty path restores the platform default. Existing projects
+// keep their recorded root.
+func (s *Service) SetWorkspaceDir(path string) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return settings.SetString(s.database, WorkspaceRootKey, "")
+	}
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("%w: %q", ErrWorkspaceInvalid, path)
+	}
+	return settings.SetString(s.database, WorkspaceRootKey, path)
+}
+
 // workspaceDir returns the stored workspace root when one is set, and the
 // platform default otherwise.
 func (s *Service) workspaceDir() (string, error) {
