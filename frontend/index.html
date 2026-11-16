@@ -21,9 +21,48 @@
       html:not(.dark) { background: #f5f3f8; }
     </style>
     <title>Locafy</title>
+    <style>
+      #splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #111116 url("/splash.png") center/cover no-repeat;
+        transition: opacity 180ms ease-out;
+      }
+      #splash.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+    </style>
   </head>
   <body>
+    <div id="splash" aria-hidden="true"></div>
     <div id="root"></div>
+    <script>
+      // Hide the splash as soon as the app's first paint is observed in
+      // #root, so it never flashes over a loaded window.
+      (function () {
+        var splash = document.getElementById("splash");
+        function hide() {
+          if (!splash) return;
+          splash.classList.add("hidden");
+          splash = null;
+        }
+        var observer = new MutationObserver(function () {
+          if (document.getElementById("root").childElementCount > 0) {
+            observer.disconnect();
+            requestAnimationFrame(hide);
+          }
+        });
+        observer.observe(document.getElementById("root"), { childList: true });
+        splash.addEventListener("transitionend", function () {
+          splash.remove();
+        });
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
