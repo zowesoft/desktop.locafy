@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,7 +8,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as DialogsService from "../../bindings/locafy.dev/desktop/internal/dialogs/service";
 import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/projects/service";
 import type { Project } from "../../bindings/locafy.dev/desktop/internal/projects/models";
-
 import { ProjectsScreen } from "./projects";
 
 vi.mock("../../bindings/locafy.dev/desktop/internal/dialogs/service", () => ({
@@ -113,8 +112,35 @@ describe("ProjectsScreen", () => {
 
     renderWithQuery(<ProjectsScreen />);
 
-    expect(await screen.findByText("Stopped")).toBeInTheDocument();
-    expect(screen.getByText("Running")).toBeInTheDocument();
+    const cards = await screen.findAllByRole("listitem");
+    expect(within(cards[0]).getByText("Stopped")).toBeInTheDocument();
+    expect(within(cards[1]).getByText("Running")).toBeInTheDocument();
+  });
+
+  it("summarizes the portfolio in a row of stats", async () => {
+    vi.mocked(ProjectsService.List).mockResolvedValue([
+      project(),
+      project({ ID: "p2", Name: "checkout", LifecycleState: "running" }),
+      project({ ID: "p3", Name: "billing", LifecycleState: "error" }),
+    ]);
+
+    renderWithQuery(<ProjectsScreen />);
+
+    expect(await screen.findByRole("group", { name: "Total Projects: 3" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Running: 1" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Stopped: 1" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "With Issues: 1" })).toBeInTheDocument();
+  });
+
+  it("offers a quick start tile beside the last project", async () => {
+    const user = userEvent.setup();
+    vi.mocked(ProjectsService.List).mockResolvedValue([project()]);
+
+    renderWithQuery(<ProjectsScreen />);
+
+    expect(await screen.findByText("Quick Start")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "New Project" }));
+    expect(await screen.findByLabelText("Project name")).toBeInTheDocument();
   });
 
   it("filters projects by name or folder", async () => {
@@ -139,7 +165,6 @@ describe("ProjectsScreen", () => {
     expect(screen.getByText(/No project matches/)).toBeInTheDocument();
   });
 
-
   it("offers no filter before a project exists", async () => {
     renderWithQuery(<ProjectsScreen />);
 
@@ -159,7 +184,6 @@ describe("ProjectsScreen", () => {
 
     expect(ProjectsService.Create).toHaveBeenCalledWith("Etugora");
   });
-
 
   it("links an existing folder by path", async () => {
     const user = userEvent.setup();
@@ -232,7 +256,8 @@ describe("ProjectsScreen", () => {
 
     renderWithQuery(<ProjectsScreen />);
 
-    await user.click(await screen.findByRole("button", { name: "Change folder for checkout" }));
+    await user.click(await screen.findByRole("button", { name: "More for checkout" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Change folder" }));
     await user.click(await screen.findByRole("button", { name: /Browse/ }));
 
     expect(await screen.findByLabelText("Folder path")).toHaveValue("D:\\work\\moved");
@@ -257,7 +282,8 @@ describe("ProjectsScreen", () => {
 
     renderWithQuery(<ProjectsScreen />);
 
-    await user.click(await screen.findByRole("button", { name: "Remove Etugora" }));
+    await user.click(await screen.findByRole("button", { name: "More for Etugora" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Remove" }));
 
     expect(await screen.findByText("Remove Etugora?")).toBeInTheDocument();
     expect(screen.getByText(/nothing is deleted/i)).toBeInTheDocument();
@@ -274,7 +300,8 @@ describe("ProjectsScreen", () => {
 
     renderWithQuery(<ProjectsScreen />);
 
-    await user.click(await screen.findByRole("button", { name: "Rename Etugora" }));
+    await user.click(await screen.findByRole("button", { name: "More for Etugora" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Rename" }));
     const field = await screen.findByLabelText("Project name");
     await user.clear(field);
     await user.type(field, "Platform");
@@ -284,6 +311,7 @@ describe("ProjectsScreen", () => {
   });
 
   it("offers a folder change for linked projects only", async () => {
+    const user = userEvent.setup();
     vi.mocked(ProjectsService.List).mockResolvedValue([
       project(),
       project({ ID: "p2", Name: "checkout", Kind: "linked", RootPath: "D:\\work\\checkout" }),
@@ -291,8 +319,12 @@ describe("ProjectsScreen", () => {
 
     renderWithQuery(<ProjectsScreen />);
 
-    expect(await screen.findByRole("button", { name: "Change folder for checkout" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Change folder for Etugora" })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "More for checkout" }));
+    expect(await screen.findByRole("menuitem", { name: "Change folder" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+
+    await user.click(await screen.findByRole("button", { name: "More for Etugora" }));
+    expect(screen.queryByRole("menuitem", { name: "Change folder" })).not.toBeInTheDocument();
   });
 
   it("reports a rejected action inside the dialog", async () => {

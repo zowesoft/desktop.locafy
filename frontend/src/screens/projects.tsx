@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, FolderInput, FolderKanban, FolderOpen, FolderPlus, Link2, Pencil, Trash2 } from "lucide-react";
+import { ArrowRight, CalendarDays, ChevronDown, CircleExclamationPoint, FolderInput, FolderKanban, FolderOpen, FolderPlus, Link2, Pause, Pencil, Play, Plus, Trash2, type LucideIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import * as DialogsService from "../../bindings/locafy.dev/desktop/internal/dialogs/service";
@@ -8,7 +8,6 @@ import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/pro
 import type { Project } from "../../bindings/locafy.dev/desktop/internal/projects/models";
 import { LifecycleBadge } from "@/components/lifecycle-badge";
 import { ImportDialog } from "./projects-import";
-
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,10 +30,64 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { projectsKey, useProjects } from "@/lib/projects-query";
 import { cn } from "@/lib/utils";
 
 const workspaceKey = ["projects", "workspace"] as const;
+
+/** A stable decorative accent per project; status itself is always words. */
+const accents = ["border-l-primary", "border-l-accent", "border-l-success", "border-l-muted-foreground"];
+function accentFor(id: string): string {
+  let hash = 0;
+  for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) | 0;
+  return accents[Math.abs(hash) % accents.length];
+}
+
+function createdAge(iso: string): string {
+  const created = Date.parse(iso);
+  if (Number.isNaN(created)) return "";
+  const minutes = Math.max(0, Math.floor((Date.now() - created) / 60_000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} ${minutes === 1 ? "minute" : "minutes"} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} ${hours === 1 ? "hour" : "hours"} ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days} ${days === 1 ? "day" : "days"} ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months} ${months === 1 ? "month" : "months"} ago`;
+  const years = Math.floor(days / 365);
+  return `${years} ${years === 1 ? "year" : "years"} ago`;
+}
+
+function StatTile({
+  icon: Icon,
+  tone,
+  value,
+  label,
+}: {
+  icon: LucideIcon;
+  tone: string;
+  value: number;
+  label: string;
+}) {
+  return (
+    <Card role="group" aria-label={`${label}: ${value}`}>
+      <CardContent className="flex items-center gap-4">
+        <Icon className={cn("size-7 shrink-0", tone)} aria-hidden />
+        <div>
+          <p className="text-2xl font-semibold leading-none">{value}</p>
+          <p className="mt-1.5 text-sm text-muted-foreground">{label}</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 /*
  * Which dialog is open. One at a time keeps the screen's state small: the
@@ -98,6 +151,8 @@ export function ProjectsScreen() {
           project.RootPath.toLowerCase().includes(needle),
       )
     : rows;
+  const lifecycleCount = (state: string) =>
+    rows.filter((project) => project.LifecycleState === state).length;
 
   const busy = create.isPending || link.isPending || rename.isPending || changeRoot.isPending || remove.isPending;
 
@@ -190,6 +245,20 @@ export function ProjectsScreen() {
       </header>
 
       {rows.length > 0 && (
+        <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatTile icon={FolderKanban} tone="text-primary" value={rows.length} label="Total Projects" />
+          <StatTile icon={Play} tone="text-success" value={lifecycleCount("running")} label="Running" />
+          <StatTile icon={Pause} tone="text-accent" value={lifecycleCount("stopped")} label="Stopped" />
+          <StatTile
+            icon={CircleExclamationPoint}
+            tone="text-destructive"
+            value={lifecycleCount("error")}
+            label="With Issues"
+          />
+        </div>
+      )}
+
+      {rows.length > 0 && (
         <Input
           aria-label="Filter projects"
           type="search"
@@ -219,10 +288,10 @@ export function ProjectsScreen() {
           No project matches “{filter.trim()}”.
         </p>
       ) : (
-        <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <ul className="grid gap-4 sm:grid-cols-2">
           {visible.map((project) => (
             <li key={project.ID}>
-              <Card className="h-full">
+              <Card className={cn("h-full border-l-2", accentFor(project.ID))}>
                 <CardContent className="flex h-full flex-col gap-3">
                   <div className="flex items-start gap-3">
                     <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
@@ -235,68 +304,90 @@ export function ProjectsScreen() {
                       >
                         {project.Name}
                       </Link>
-                      <p
-                        title={project.RootPath}
-                        className="truncate font-mono text-xs text-muted-foreground"
-                      >
-                        {project.RootPath}
-                      </p>
+                      {project.Description && (
+                        <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                          {project.Description}
+                        </p>
+                      )}
                     </div>
+                    <LifecycleBadge state={project.LifecycleState} />
                   </div>
-
-                  {project.Description && (
-                    <p className="line-clamp-2 text-xs text-muted-foreground">{project.Description}</p>
-                  )}
 
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Badge variant={project.Kind === "managed" ? "secondary" : "outline"}>
                       {project.Kind === "managed" ? "Managed" : "Linked"}
                     </Badge>
-                    <LifecycleBadge state={project.LifecycleState} />
+                  </div>
+
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span title={project.RootPath} className="flex min-w-0 items-center gap-1">
+                      <FolderKanban className="size-3.5 shrink-0" aria-hidden />
+                      <span className="truncate font-mono">{project.RootPath}</span>
+                    </span>
+                    <span aria-hidden className="shrink-0">
+                      |
+                    </span>
+                    <span className="flex shrink-0 items-center gap-1">
+                      <CalendarDays className="size-3.5" aria-hidden />
+                      Created {createdAge(project.CreatedAt)}
+                    </span>
                   </div>
 
                   <div className="mt-auto flex items-center justify-between gap-2 border-t border-border pt-3">
                     <Link
                       to={`/projects/${project.ID}`}
                       aria-label={`Open ${project.Name}`}
-                      className={cn(buttonVariants({ variant: "secondary", size: "sm" }))}
+                      className={cn(buttonVariants({ size: "sm" }))}
                     >
                       Open
                       <ArrowRight />
                     </Link>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={`Rename ${project.Name}`}
-                        onClick={() => open({ kind: "rename", project }, project.Name)}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        aria-label={`More for ${project.Name}`}
+                        className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
                       >
-                        <Pencil />
-                      </Button>
-                      {project.Kind === "linked" && (
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={`Change folder for ${project.Name}`}
-                          onClick={() => open({ kind: "root", project }, project.RootPath)}
+                        More
+                        <ChevronDown />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => open({ kind: "rename", project }, project.Name)}>
+                          <Pencil /> Rename
+                        </DropdownMenuItem>
+                        {project.Kind === "linked" && (
+                          <DropdownMenuItem onClick={() => open({ kind: "root", project }, project.RootPath)}>
+                            <Link2 /> Change folder
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={() => open({ kind: "remove", project })}
                         >
-                          <Link2 />
-                        </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={`Remove ${project.Name}`}
-                        onClick={() => open({ kind: "remove", project })}
-                      >
-                        <Trash2 />
-                      </Button>
-                    </div>
+                          <Trash2 /> Remove
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </CardContent>
               </Card>
             </li>
           ))}
+          <li>
+            <Card className="h-full border-dashed">
+              <CardContent className="flex h-full flex-col items-center justify-center gap-3 px-6 py-10 text-center">
+                <span className="flex size-14 items-center justify-center rounded-xl border border-dashed border-border">
+                  <Plus className="size-6 text-muted-foreground" aria-hidden />
+                </span>
+                <p className="font-medium">Quick Start</p>
+                <p className="text-sm text-muted-foreground">
+                  Create a new project and get started with Locafy.
+                </p>
+                <Button className="mt-1" onClick={() => open({ kind: "create" })}>
+                  <FolderPlus /> New Project
+                </Button>
+              </CardContent>
+            </Card>
+          </li>
         </ul>
       )}
 
