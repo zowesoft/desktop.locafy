@@ -67,6 +67,7 @@ is a tab:
 - Environment
 - Logs
 - Terminal
+- Processes
 - Settings
 
 A tab whose feature is not built yet shows the existing not-built state rather
@@ -84,19 +85,26 @@ Installed service engines are machine-level (ADR-0008). They are managed
 alongside runtimes rather than inside a project, and service instances appear in
 the project's Services tab. The exact screen is settled with DESK-RUN-001.
 
-## Not decided here
+### Project switcher
 
-- **Project switcher in the top bar.** Whether the workspace shows a chip for
-  switching between projects, or switching always goes through the projects
-  dashboard.
-- **Whether the workspace gets a Processes tab.** It depends on process
-  supervision, which does not exist yet.
+While a workspace is open, the top bar shows the project's name and lifecycle
+state, a way back to the projects dashboard, and a switcher listing every
+project. Choosing another project keeps the section in view, so switching from
+the Services tab of one project lands on the Services tab of the next. The
+switcher is absent everywhere outside a workspace.
+
+### Processes tab
+
+The workspace has a Processes tab for the processes Locafy started for the
+project. It shows the not-built state until process supervision exists, and it
+lists only processes Locafy launched, never whatever else is running on the
+machine.
 
 ## Consequences
 
-- PRD section 6.2 lists Applications, Services and Domains as main navigation
-  entries. This record amends that for the desktop; the PRD text should be
-  updated to match.
+- PRD section 6.2 listed Applications, Services and Domains as main navigation
+  entries. It has been rewritten to describe the sidebar, the workspace tabs and
+  the top-bar switcher, so the PRD and this record agree.
 - The navigation tests, the router and the search results that assume 14 flat
   entries change with the implementation. Search should keep finding projects
   and, within a project, its resources.
