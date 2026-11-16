@@ -100,13 +100,17 @@ func run() error {
 		},
 	})
 
+	startPosition, startX, startY := windowStartPosition()
+
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:           "Locafy",
 		Width:           windowDefaultWidth,
 		Height:          windowDefaultHeight,
 		MinWidth:        windowMinWidth,
 		MinHeight:       windowMinHeight,
-		InitialPosition: application.WindowCentered,
+		InitialPosition: startPosition,
+		X:               startX,
+		Y:               startY,
 		Mac: application.MacWindow{
 			InvisibleTitleBarHeight: 50,
 			Backdrop:                application.MacBackdropTranslucent,
