@@ -330,7 +330,7 @@ describe("Notifications", () => {
 
     expect(await screen.findByRole("link", { name: "Open project Etugora" })).toHaveAttribute(
       "href",
-      "/projects?project=p1",
+      "/projects/p1",
     );
     expect(screen.getByText("Engine started")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Open project/ })).not.toBeNull();

@@ -355,11 +355,11 @@ export function Notifications() {
           <ul className="mt-3 max-h-64 divide-y divide-border overflow-y-auto">
             {entries.map((entry) => {
               const isWarning = entry.Severity === "warning";
-              // Project entries point at the project they describe; machine
-              // entries have nowhere to go.
+              // Project entries open the project they describe; machine entries
+              // have nowhere to go.
               const projectHref =
                 entry.Scope === "project" && entry.ScopeID
-                  ? `/projects?project=${encodeURIComponent(entry.ScopeID)}`
+                  ? `/projects/${encodeURIComponent(entry.ScopeID)}`
                   : null;
 
               const content = (
