@@ -1,6 +1,7 @@
-import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Outlet, useLocation, useMatch, useNavigate } from "react-router-dom";
 import { AppShell } from "@/components/app-shell";
 import type { NavId } from "@/components/app-shell";
+import { ProjectSwitcher } from "@/components/project-switcher";
 import { EngineStatus, Notifications } from "@/components/top-bar-status";
 
 /** The route each navigation entry points at. */
@@ -49,12 +50,18 @@ export default function App() {
   const location = useLocation();
   const navigate = useNavigate();
   const view = navForPath(location.pathname);
+  const workspace = useMatch("/projects/:projectId/*");
 
   return (
     <AppShell
       active={view}
       onNavigate={(id) => navigate(navPaths[id])}
       searchPlaceholder={searchPlaceholders[view]}
+      context={
+        workspace?.params.projectId ? (
+          <ProjectSwitcher projectId={workspace.params.projectId} />
+        ) : undefined
+      }
       topbarActions={
         <>
           <EngineStatus />

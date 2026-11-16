@@ -26,6 +26,7 @@ const tabs: ReadonlyArray<Tab> = [
   { path: "environment", label: "Environment" },
   { path: "logs", label: "Logs" },
   { path: "terminal", label: "Terminal" },
+  { path: "processes", label: "Processes" },
   { path: "settings", label: "Settings" },
 ];
 

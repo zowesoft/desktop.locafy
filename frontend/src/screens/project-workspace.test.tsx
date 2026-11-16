@@ -90,6 +90,7 @@ describe("ProjectWorkspace", () => {
       "Environment",
       "Logs",
       "Terminal",
+      "Processes",
       "Settings",
     ]);
   });
