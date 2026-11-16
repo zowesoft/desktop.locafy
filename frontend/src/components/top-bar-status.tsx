@@ -282,10 +282,15 @@ export function Notifications() {
   // from the refetched list, so the divider does not vanish the moment opening
   // the bell marks them seen.
   const [newIDs, setNewIDs] = useState<ReadonlySet<string>>(() => new Set());
+  // Collapsed rows the operator has opened.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: notificationsKey });
   const dismiss = useMutation({
-    mutationFn: (id: string) => StatusService.Dismiss(id),
+    // A collapsed row hides every entry it stands for.
+    mutationFn: async (ids: string[]) => {
+      for (const id of ids) await StatusService.Dismiss(id);
+    },
     onSuccess: refresh,
   });
   const clear = useMutation({
@@ -317,14 +322,45 @@ export function Notifications() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, notifications.isSuccess]);
 
-  // Newest first, so the new entries are at the top and the divider sits below
-  // the last of them — after any leading warning, which is current state rather
-  // than news and is never new itself.
-  const lastNew = entries.reduce(
-    (last, entry, index) => (newIDs.has(entry.ID) ? index : last),
+  /*
+   * Repeated actions collapse into one counted row: five identical engine events
+   * take one line instead of five. Grouping keeps seen and unseen apart so the
+   * New divider still means what it says, and the rows stay in the order their
+   * newest member arrived.
+   */
+  const groups: { key: string; members: typeof entries }[] = [];
+  const byKey = new Map<string, { key: string; members: typeof entries }>();
+  for (const entry of entries) {
+    const key = [entry.Scope, entry.ScopeID, entry.Action, entry.Detail, entry.Seen].join("\u0000");
+    const group = byKey.get(key);
+    if (group) {
+      group.members.push(entry);
+    } else {
+      const created = { key, members: [entry] };
+      byKey.set(key, created);
+      groups.push(created);
+    }
+  }
+
+  const toggleGroup = (key: string) =>
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+
+  // Newest first, so the new rows are at the top and the divider sits below the
+  // last of them — after any leading warning, which is current state rather than
+  // news and is never new itself.
+  const lastNew = groups.reduce(
+    (last, group, index) => (newIDs.has(group.members[0].ID) ? index : last),
     -1,
   );
-  const dividerAfter = lastNew >= 0 && lastNew < count - 1 ? lastNew + 1 : -1;
+  const dividerAfter = lastNew >= 0 && lastNew < groups.length - 1 ? lastNew + 1 : -1;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -388,7 +424,9 @@ export function Notifications() {
         ) : (
           <>
           <ul className="mt-3 max-h-64 divide-y divide-border overflow-y-auto">
-            {entries.map((entry, index) => {
+            {groups.map((group, index) => {
+              const entry = group.members[0];
+              const isExpanded = expanded.has(group.key);
               const isWarning = entry.Severity === "warning";
               // Project entries open the project they describe; machine entries
               // have nowhere to go.
@@ -407,6 +445,17 @@ export function Notifications() {
                   <div className="min-w-0 flex-1">
                     <p className="flex items-center gap-1.5 truncate text-xs">
                       {entry.Action}
+                      {group.members.length > 1 && (
+                        <button
+                          type="button"
+                          aria-expanded={isExpanded}
+                          aria-label={`${isExpanded ? "Hide" : "Show"} ${group.members.length} occurrences of ${entry.Action}`}
+                          onClick={() => toggleGroup(group.key)}
+                          className="shrink-0 rounded bg-muted px-1 text-[0.65rem] font-medium text-muted-foreground hover:bg-muted/70"
+                        >
+                          ×{group.members.length}
+                        </button>
+                      )}
                       {isWarning && (
                         <span className="shrink-0 text-[0.65rem] font-medium uppercase tracking-wide text-accent">
                           Warning
@@ -422,7 +471,7 @@ export function Notifications() {
               );
 
               return (
-                <Fragment key={entry.ID}>
+                <Fragment key={group.key}>
                 {index === dividerAfter && (
                   <li className="flex items-center gap-2 py-1">
                     <span className="h-px flex-1 bg-border" />
@@ -432,7 +481,8 @@ export function Notifications() {
                     <span className="h-px flex-1 bg-border" />
                   </li>
                 )}
-                <li className="flex items-start gap-2 py-2">
+                <li className="py-2">
+                <div className="flex items-start gap-2">
                   {projectHref ? (
                     <Link
                       to={projectHref}
@@ -468,12 +518,28 @@ export function Notifications() {
                       type="button"
                       aria-label={`Dismiss ${entry.Action}`}
                       disabled={dismiss.isPending}
-                      onClick={() => dismiss.mutate(entry.ID)}
+                      onClick={() => dismiss.mutate(group.members.map((member) => member.ID))}
                       className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
                     >
                       <XIcon className="size-3" />
                     </button>
                   )}
+                </div>
+                {isExpanded && (
+                  <ul className="mt-1 space-y-0.5 pl-5">
+                    {group.members.map((member) => (
+                      <li
+                        key={member.ID}
+                        className="flex items-center justify-between gap-2 text-[0.65rem] text-muted-foreground"
+                      >
+                        <span>{formatRelative(member.CreatedAt, now)}</span>
+                        <span title={new Date(member.CreatedAt).toLocaleString()}>
+                          {new Date(member.CreatedAt).toLocaleTimeString()}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 </li>
                 </Fragment>
               );

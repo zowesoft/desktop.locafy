@@ -269,6 +269,81 @@ describe("Notifications", () => {
     ).toBeInTheDocument();
   });
 
+  it("collapses repeated actions into one counted row", async () => {
+    const user = userEvent.setup();
+    vi.mocked(StatusService.Notifications).mockResolvedValue([
+      notification("e1", "Engine started", 1),
+      notification("e2", "Engine started", 2),
+      notification("e3", "Engine started", 3),
+      notification("m1", "Machine registered", 4),
+    ]);
+
+    renderWithQuery(<Notifications />);
+
+    await user.click(await screen.findByRole("button", { name: /^Notifications/ }));
+
+    expect(screen.getAllByText("Engine started")).toHaveLength(1);
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+
+    await user.click(
+      screen.getByRole("button", { name: "Show 3 occurrences of Engine started" }),
+    );
+
+    expect(screen.getAllByRole("listitem")).toHaveLength(5);
+    expect(
+      screen.getByRole("button", { name: "Hide 3 occurrences of Engine started" }),
+    ).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("keeps entries with different targets apart", async () => {
+    const user = userEvent.setup();
+    vi.mocked(StatusService.Notifications).mockResolvedValue([
+      { ...notification("a", "Project created", 1), Scope: "project", Detail: "Etugora" },
+      { ...notification("b", "Project created", 2), Scope: "project", Detail: "checkout" },
+    ]);
+
+    renderWithQuery(<Notifications />);
+
+    await user.click(await screen.findByRole("button", { name: /^Notifications/ }));
+
+    expect(screen.getAllByText("Project created")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: /occurrences of/ })).not.toBeInTheDocument();
+  });
+
+  it("keeps new and already-seen activity in separate rows", async () => {
+    const user = userEvent.setup();
+    vi.mocked(StatusService.Notifications).mockResolvedValue([
+      { ...notification("n1", "Engine started", 1), Seen: false },
+      notification("s1", "Engine started", 90),
+    ]);
+
+    renderWithQuery(<Notifications />);
+
+    await user.click(await screen.findByRole("button", { name: /^Notifications/ }));
+
+    expect(screen.getAllByText("Engine started")).toHaveLength(2);
+  });
+
+  it("dismisses every entry behind a counted row", async () => {
+    const user = userEvent.setup();
+    vi.mocked(StatusService.Dismiss).mockResolvedValue(undefined);
+    vi.mocked(StatusService.Notifications).mockResolvedValue([
+      notification("e1", "Engine started", 1),
+      notification("e2", "Engine started", 2),
+      notification("e3", "Engine started", 3),
+    ]);
+
+    renderWithQuery(<Notifications />);
+
+    await user.click(await screen.findByRole("button", { name: /^Notifications/ }));
+    await user.click(screen.getByRole("button", { name: "Dismiss Engine started" }));
+
+    await waitFor(() => expect(StatusService.Dismiss).toHaveBeenCalledTimes(3));
+    for (const id of ["e1", "e2", "e3"]) {
+      expect(StatusService.Dismiss).toHaveBeenCalledWith(id);
+    }
+  });
+
   it("counts unread entries rather than the loaded page", async () => {
     vi.mocked(StatusService.Notifications).mockResolvedValue(
       Array.from({ length: 10 }, (_, index) => notification(String(index), `Action ${index}`, 1)),
