@@ -120,6 +120,100 @@ func TestNotificationsReturnRecentActivityNewestFirst(t *testing.T) {
 	}
 }
 
+func TestNotificationPreferencesStartFullyOn(t *testing.T) {
+	database := openDatabase(t)
+	service := newTestService(t, database, healthyVolume)
+
+	prefs, err := service.NotificationPreferences()
+	if err != nil {
+		t.Fatalf("preferences: %v", err)
+	}
+	if !prefs.Machine || !prefs.Project || !prefs.Warnings {
+		t.Fatalf("preferences = %+v, want every type enabled by default", prefs)
+	}
+}
+
+func TestTurningOffProjectActivityHidesOnlyProjectEntries(t *testing.T) {
+	database := openDatabase(t)
+	service := newTestService(t, database, healthyVolume)
+
+	if err := activity.Log(database, activity.ScopeProject, "p1", "Project created", "Etugora"); err != nil {
+		t.Fatalf("log activity: %v", err)
+	}
+	if err := activity.Log(database, activity.ScopeMachine, "", "Engine started", ""); err != nil {
+		t.Fatalf("log activity: %v", err)
+	}
+
+	if err := service.SetNotificationPreferences(NotificationPreferences{Machine: true, Project: false, Warnings: true}); err != nil {
+		t.Fatalf("save preferences: %v", err)
+	}
+
+	notifications, err := service.Notifications(10)
+	if err != nil {
+		t.Fatalf("notifications: %v", err)
+	}
+	if len(notifications) != 1 || notifications[0].Action != "Engine started" {
+		t.Fatalf("notifications = %+v, want only the machine entry", notifications)
+	}
+}
+
+func TestTurningOffWarningsHidesTheDiskWarning(t *testing.T) {
+	database := openDatabase(t)
+	lowVolume := monitor.Snapshot{
+		CPUPercent: healthyVolume.CPUPercent,
+		Memory:     healthyVolume.Memory,
+		Disk:       monitor.Usage{UsedBytes: 499 << 30, TotalBytes: 500 << 30, Percent: 99},
+		CapturedAt: time.Now(),
+	}
+	service := newTestService(t, database, lowVolume)
+
+	if err := activity.Log(database, activity.ScopeMachine, "", "Engine started", ""); err != nil {
+		t.Fatalf("log activity: %v", err)
+	}
+	if err := service.SetNotificationPreferences(NotificationPreferences{Machine: true, Project: true, Warnings: false}); err != nil {
+		t.Fatalf("save preferences: %v", err)
+	}
+
+	notifications, err := service.Notifications(10)
+	if err != nil {
+		t.Fatalf("notifications: %v", err)
+	}
+	if len(notifications) != 1 || notifications[0].Severity != severityInfo {
+		t.Fatalf("notifications = %+v, want the warning gone and the entry kept", notifications)
+	}
+}
+
+func TestNotificationsCanBeTurnedOffEntirely(t *testing.T) {
+	database := openDatabase(t)
+	service := newTestService(t, database, healthyVolume)
+
+	if err := activity.Log(database, activity.ScopeProject, "p1", "Project created", "Etugora"); err != nil {
+		t.Fatalf("log activity: %v", err)
+	}
+	if err := activity.Log(database, activity.ScopeMachine, "", "Engine started", ""); err != nil {
+		t.Fatalf("log activity: %v", err)
+	}
+	if err := service.SetNotificationPreferences(NotificationPreferences{}); err != nil {
+		t.Fatalf("save preferences: %v", err)
+	}
+
+	notifications, err := service.Notifications(10)
+	if err != nil {
+		t.Fatalf("notifications: %v", err)
+	}
+	if len(notifications) != 0 {
+		t.Fatalf("notifications = %+v, want none", notifications)
+	}
+
+	stored, err := service.NotificationPreferences()
+	if err != nil {
+		t.Fatalf("preferences: %v", err)
+	}
+	if stored.Machine || stored.Project || stored.Warnings {
+		t.Fatalf("stored preferences = %+v, want every type off", stored)
+	}
+}
+
 func TestDiskWarningOffersTheFolderToOpen(t *testing.T) {
 	database := openDatabase(t)
 	lowVolume := monitor.Snapshot{

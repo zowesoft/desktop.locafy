@@ -4,6 +4,7 @@ package status
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 	"locafy.dev/desktop/internal/activity"
 	"locafy.dev/desktop/internal/db"
 	"locafy.dev/desktop/internal/monitor"
+	"locafy.dev/desktop/internal/settings"
 )
 
 // Health is the engine and machine state shown in the top bar.
@@ -70,6 +72,21 @@ const (
 // maxNotifications bounds a single page so the top bar cannot ask for the
 // whole history by accident.
 const maxNotifications = 200
+
+// NotificationPreferences chooses which kinds of notification the bell shows.
+// Project covers every scope that describes work on a project, including the
+// applications and services that will hang off one.
+type NotificationPreferences struct {
+	Machine  bool
+	Project  bool
+	Warnings bool
+}
+
+const (
+	prefMachineKey  = "notifications.machine"
+	prefProjectKey  = "notifications.project"
+	prefWarningsKey = "notifications.warning"
+)
 
 // resourceSource supplies machine readings. The sampler is the real source;
 // tests provide a fixed one so a reading never depends on the test machine.
@@ -144,6 +161,50 @@ func (s *Service) Health() Health {
 	return health
 }
 
+// NotificationPreferences reports which kinds of notification the bell shows.
+// Each type is on until the operator turns it off, so an unset preference is
+// not a reason to hide anything.
+func (s *Service) NotificationPreferences() (NotificationPreferences, error) {
+	prefs := NotificationPreferences{Machine: true, Project: true, Warnings: true}
+
+	for _, item := range []struct {
+		key    string
+		target *bool
+	}{
+		{prefMachineKey, &prefs.Machine},
+		{prefProjectKey, &prefs.Project},
+		{prefWarningsKey, &prefs.Warnings},
+	} {
+		value, err := settings.Bool(s.database, item.key)
+		if errors.Is(err, settings.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return NotificationPreferences{}, err
+		}
+		*item.target = value
+	}
+
+	return prefs, nil
+}
+
+// SetNotificationPreferences stores the chosen kinds of notification.
+func (s *Service) SetNotificationPreferences(prefs NotificationPreferences) error {
+	for _, item := range []struct {
+		key   string
+		value bool
+	}{
+		{prefMachineKey, prefs.Machine},
+		{prefProjectKey, prefs.Project},
+		{prefWarningsKey, prefs.Warnings},
+	} {
+		if err := settings.SetBool(s.database, item.key, item.value); err != nil {
+			return fmt.Errorf("save notification preferences: %w", err)
+		}
+	}
+	return nil
+}
+
 // Notifications returns recent engine actions, newest first. The limit is the
 // caller's page size: the top bar asks for more as the operator scrolls, so a
 // burst of project work cannot bury machine entries permanently.
@@ -155,9 +216,25 @@ func (s *Service) Notifications(limit int) ([]Notification, error) {
 		limit = maxNotifications
 	}
 
-	entries, err := activity.Recent(s.database, limit)
+	prefs, err := s.NotificationPreferences()
 	if err != nil {
 		return nil, err
+	}
+
+	scopes := make([]activity.Scope, 0, 4)
+	if prefs.Machine {
+		scopes = append(scopes, activity.ScopeMachine)
+	}
+	if prefs.Project {
+		scopes = append(scopes, activity.ScopeProject, activity.ScopeApplication, activity.ScopeService)
+	}
+
+	var entries []activity.Entry
+	if len(scopes) > 0 {
+		entries, err = activity.Recent(s.database, limit, scopes...)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	notifications := make([]Notification, 0, len(entries)+1)
@@ -165,9 +242,11 @@ func (s *Service) Notifications(limit int) ([]Notification, error) {
 	// A condition that needs acting on leads the list: it is current state, not
 	// history, and it disappears when the volume recovers because it is derived
 	// from the reading rather than recorded as an event.
-	usage := s.resources.Snapshot()
-	if warning := diskWarning(usage.Disk); warning != nil {
-		notifications = append(notifications, *warning)
+	if prefs.Warnings {
+		usage := s.resources.Snapshot()
+		if warning := diskWarning(usage.Disk); warning != nil {
+			notifications = append(notifications, *warning)
+		}
 	}
 
 	for _, entry := range entries {

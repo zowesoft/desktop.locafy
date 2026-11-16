@@ -46,6 +46,15 @@ export function Health(): $CancellablePromise<$models.Health> {
 }
 
 /**
+ * NotificationPreferences reports which kinds of notification the bell shows.
+ * Each type is on until the operator turns it off, so an unset preference is
+ * not a reason to hide anything.
+ */
+export function NotificationPreferences(): $CancellablePromise<$models.NotificationPreferences> {
+    return $Call.ByID(426870180);
+}
+
+/**
  * Notifications returns recent engine actions, newest first. The limit is the
  * caller's page size: the top bar asks for more as the operator scrolls, so a
  * burst of project work cannot bury machine entries permanently.
@@ -60,4 +69,11 @@ export function Notifications(limit: number): $CancellablePromise<$models.Notifi
  */
 export function OpenDataFolder(): $CancellablePromise<void> {
     return $Call.ByID(1799305313);
+}
+
+/**
+ * SetNotificationPreferences stores the chosen kinds of notification.
+ */
+export function SetNotificationPreferences(prefs: $models.NotificationPreferences): $CancellablePromise<void> {
+    return $Call.ByID(3574567142, prefs);
 }

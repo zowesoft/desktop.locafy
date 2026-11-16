@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"locafy.dev/desktop/internal/db"
@@ -47,13 +48,25 @@ func Log(database *sql.DB, scope Scope, scopeID string, action string, detail st
 // ErrNotFound reports an entry that does not exist or is not dismissible.
 var ErrNotFound = errors.New("notification not found")
 
-// Recent returns up to limit undismissed entries, newest first.
-func Recent(database *sql.DB, limit int) ([]Entry, error) {
-	rows, err := database.Query(`SELECT id, scope_type, COALESCE(scope_id, ''), action, COALESCE(detail, ''), created_at
+// Recent returns up to limit undismissed entries, newest first. Passing scopes
+// narrows the result to those scopes; passing none returns every scope.
+func Recent(database *sql.DB, limit int, scopes ...Scope) ([]Entry, error) {
+	query := `SELECT id, scope_type, COALESCE(scope_id, ''), action, COALESCE(detail, ''), created_at
 		FROM activity_logs
-		WHERE dismissed_at IS NULL
-		ORDER BY created_at DESC, rowid DESC
-		LIMIT ?`, limit)
+		WHERE dismissed_at IS NULL`
+	args := make([]any, 0, len(scopes)+1)
+	if len(scopes) > 0 {
+		placeholders := make([]string, len(scopes))
+		for index, scope := range scopes {
+			placeholders[index] = "?"
+			args = append(args, string(scope))
+		}
+		query += " AND scope_type IN (" + strings.Join(placeholders, ", ") + ")"
+	}
+	query += " ORDER BY created_at DESC, rowid DESC LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := database.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list recent activity: %w", err)
 	}

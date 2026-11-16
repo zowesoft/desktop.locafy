@@ -61,3 +61,14 @@ export interface Notification {
      */
     "OpenPath": string;
 }
+
+/**
+ * NotificationPreferences chooses which kinds of notification the bell shows.
+ * Project covers every scope that describes work on a project, including the
+ * applications and services that will hang off one.
+ */
+export interface NotificationPreferences {
+    "Machine": boolean;
+    "Project": boolean;
+    "Warnings": boolean;
+}

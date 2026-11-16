@@ -8,5 +8,6 @@ export {
 
 export type {
     Health,
-    Notification
+    Notification,
+    NotificationPreferences
 } from "./models.js";
