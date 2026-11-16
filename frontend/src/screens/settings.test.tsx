@@ -1,12 +1,18 @@
 import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/projects/service";
 import * as SettingsService from "../../bindings/locafy.dev/desktop/internal/settings/service";
+import * as StatusService from "../../bindings/locafy.dev/desktop/internal/status/service";
 import { SettingsScreen } from "./settings";
+
+vi.mock("../../bindings/locafy.dev/desktop/internal/status/service", () => ({
+  NotificationPreferences: vi.fn(),
+  SetNotificationPreferences: vi.fn(),
+}));
 
 vi.mock("../../bindings/locafy.dev/desktop/internal/settings/service", () => ({
   All: vi.fn(),
@@ -46,6 +52,92 @@ beforeEach(() => {
   vi.mocked(SettingsService.All).mockResolvedValue([]);
   vi.mocked(ProjectsService.WorkspaceDir).mockResolvedValue(defaultWorkspace);
   vi.mocked(ProjectsService.SetWorkspaceDir).mockResolvedValue(undefined);
+  vi.mocked(StatusService.NotificationPreferences).mockReset();
+  vi.mocked(StatusService.SetNotificationPreferences).mockReset();
+  vi.mocked(StatusService.NotificationPreferences).mockResolvedValue({
+    Machine: true,
+    Project: true,
+    Warnings: true,
+  });
+  vi.mocked(StatusService.SetNotificationPreferences).mockResolvedValue(undefined);
+});
+
+describe("SettingsScreen notifications", () => {
+  it("lists each kind of notification with its current state", async () => {
+    renderWithQuery(<SettingsScreen />);
+
+    expect(await screen.findByRole("checkbox", { name: "Warnings" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Project activity" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Machine events" })).toBeChecked();
+  });
+
+  it("turns off one kind without disturbing the others", async () => {
+    const user = userEvent.setup();
+    renderWithQuery(<SettingsScreen />);
+
+    await user.click(await screen.findByRole("checkbox", { name: "Project activity" }));
+
+    expect(StatusService.SetNotificationPreferences).toHaveBeenCalledWith({
+      Machine: true,
+      Project: false,
+      Warnings: true,
+    });
+  });
+
+  it("shows the choice straight away instead of waiting for the round trip", async () => {
+    const user = userEvent.setup();
+    vi.mocked(StatusService.SetNotificationPreferences).mockImplementation(
+      () => new Promise(() => {}) as never,
+    );
+
+    renderWithQuery(<SettingsScreen />);
+
+    await user.click(await screen.findByRole("checkbox", { name: "Machine events" }));
+
+    expect(screen.getByRole("checkbox", { name: "Machine events" })).not.toBeChecked();
+  });
+
+  it("puts the choice back when it could not be saved", async () => {
+    const user = userEvent.setup();
+    vi.mocked(StatusService.SetNotificationPreferences).mockRejectedValue(
+      new Error("the database is read-only"),
+    );
+
+    renderWithQuery(<SettingsScreen />);
+
+    const box = await screen.findByRole("checkbox", { name: "Project activity" });
+    await user.click(box);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("read-only");
+    await waitFor(() => expect(box).toBeChecked());
+  });
+
+  it("shows a stored choice as it was saved", async () => {
+    vi.mocked(StatusService.NotificationPreferences).mockResolvedValue({
+      Machine: true,
+      Project: false,
+      Warnings: false,
+    });
+
+    renderWithQuery(<SettingsScreen />);
+
+    expect(await screen.findByRole("checkbox", { name: "Project activity" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Warnings" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Machine events" })).toBeChecked();
+  });
+
+  it("reports a change that could not be saved", async () => {
+    const user = userEvent.setup();
+    vi.mocked(StatusService.SetNotificationPreferences).mockRejectedValue(
+      new Error("the database is read-only"),
+    );
+
+    renderWithQuery(<SettingsScreen />);
+
+    await user.click(await screen.findByRole("checkbox", { name: "Machine events" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("read-only");
+  });
 });
 
 describe("SettingsScreen workspace", () => {

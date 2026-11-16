@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as StatusService from "../../bindings/locafy.dev/desktop/internal/status/service";
 import type { Health, Notification } from "../../bindings/locafy.dev/desktop/internal/status/models";
@@ -243,6 +243,32 @@ describe("Notifications", () => {
     expect(screen.getByText("project · Etugora")).toBeInTheDocument();
     expect(screen.getByText("Project removed")).toBeInTheDocument();
     expect(screen.getByText("project · checkout")).toBeInTheDocument();
+  });
+
+  it("keeps entry ages current while the bell is open and names the exact time", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-11-16T10:00:00Z"));
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    vi.mocked(StatusService.Notifications).mockResolvedValue([
+      notification("a", "Machine registered", 0),
+    ]);
+
+    renderWithQuery(<Notifications />);
+
+    await user.click(await screen.findByRole("button", { name: "Notifications, 1 recent entries" }));
+
+    const age = screen.getByText("just now");
+    expect(age).toHaveAttribute("title", new Date("2026-11-16T10:00:00Z").toLocaleString());
+
+    act(() => {
+      vi.advanceTimersByTime(120_000);
+    });
+
+    await waitFor(() => expect(screen.getByText("2m ago")).toBeInTheDocument());
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("links a project entry to that project and leaves other entries alone", async () => {

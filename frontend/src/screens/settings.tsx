@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/projects/service";
 import * as SettingsService from "../../bindings/locafy.dev/desktop/internal/settings/service";
+import * as StatusService from "../../bindings/locafy.dev/desktop/internal/status/service";
+import type { NotificationPreferences } from "../../bindings/locafy.dev/desktop/internal/status/models";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +11,33 @@ import { Input } from "@/components/ui/input";
 
 const settingsKey = ["settings"] as const;
 const workspaceKey = ["projects", "workspace"] as const;
+const preferencesKey = ["notifications", "preferences"] as const;
+
+/*
+ * The kinds of notification the bell can show. Each is a separate choice so an
+ * operator who does not care about project churn still sees machine warnings.
+ */
+const notificationTypes: {
+  key: keyof NotificationPreferences;
+  label: string;
+  description: string;
+}[] = [
+  {
+    key: "Warnings",
+    label: "Warnings",
+    description: "Conditions that need acting on, such as low disk space",
+  },
+  {
+    key: "Project",
+    label: "Project activity",
+    description: "Projects created, linked, renamed, re-pointed or removed",
+  },
+  {
+    key: "Machine",
+    label: "Machine events",
+    description: "Engine starts and other machine-level activity",
+  },
+];
 
 export function SettingsScreen() {
   const queryClient = useQueryClient();
@@ -36,6 +65,36 @@ export function SettingsScreen() {
     queryKey: settingsKey,
     queryFn: async () => (await SettingsService.All()) ?? [],
   });
+
+  const preferences = useQuery({
+    queryKey: preferencesKey,
+    queryFn: () => StatusService.NotificationPreferences(),
+  });
+
+  // The bell's cached list is filtered on the server, so changing a type has to
+  // refetch it rather than only refresh this screen.
+  const savePreferences = useMutation({
+    mutationFn: (prefs: NotificationPreferences) =>
+      StatusService.SetNotificationPreferences(prefs),
+    // The checkboxes read this cache, so writing the choice before the round
+    // trip both makes the box respond immediately and keeps a quick second
+    // toggle from sending preferences built on the previous answer.
+    onMutate: async (next) => {
+      await queryClient.cancelQueries({ queryKey: preferencesKey });
+      const previous = queryClient.getQueryData<NotificationPreferences>(preferencesKey);
+      queryClient.setQueryData(preferencesKey, next);
+      return { previous };
+    },
+    onError: (_error, _next, context) => {
+      if (context?.previous) queryClient.setQueryData(preferencesKey, context.previous);
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: preferencesKey });
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+
+  const prefs = preferences.data;
 
   const saveSetting = useMutation({
     mutationFn: (setting: { key: string; value: string }) =>
@@ -120,6 +179,50 @@ export function SettingsScreen() {
           {saveWorkspace.error && (
             <p role="alert" className="mt-2 text-sm text-destructive">
               Could not save the workspace folder: {String(saveWorkspace.error)}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>Notifications</CardTitle>
+          <CardDescription>Which kinds of activity the bell shows</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {preferences.isPending ? (
+            <p className="text-sm text-muted-foreground">Loading notification settings…</p>
+          ) : preferences.isError ? (
+            <p role="alert" className="text-sm text-destructive">
+              Could not read notification settings: {String(preferences.error)}
+            </p>
+          ) : prefs ? (
+            notificationTypes.map((type) => (
+              <label key={type.key} className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  className="mt-1 size-4 accent-primary"
+                  aria-label={type.label}
+                  checked={prefs[type.key]}
+                  disabled={savePreferences.isPending}
+                  onChange={(event) =>
+                    savePreferences.mutate({ ...prefs, [type.key]: event.target.checked })
+                  }
+                />
+                <span className="space-y-0.5">
+                  <span className="block text-sm font-medium">{type.label}</span>
+                  <span className="block text-xs text-muted-foreground">{type.description}</span>
+                </span>
+              </label>
+            ))
+          ) : null}
+          <p className="text-xs text-muted-foreground">
+            Turning everything off leaves the bell empty; recorded activity is still kept for
+            diagnostics.
+          </p>
+          {savePreferences.error && (
+            <p role="alert" className="text-sm text-destructive">
+              Could not save notification settings: {String(savePreferences.error)}
             </p>
           )}
         </CardContent>

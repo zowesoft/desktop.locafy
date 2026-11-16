@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
@@ -69,10 +69,10 @@ function formatUptime(seconds: number): string {
   return `${seconds}s`;
 }
 
-function formatRelative(iso: string): string {
+function formatRelative(iso: string, now: number = Date.now()): string {
   const timestamp = Date.parse(iso);
   if (Number.isNaN(timestamp)) return "";
-  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+  const seconds = Math.max(0, Math.round((now - timestamp) / 1000));
   if (seconds < 60) return "just now";
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
@@ -244,6 +244,15 @@ export function Notifications() {
   // The list grows a page at a time instead of hiding entries behind a fixed
   // cap, so a run of project actions cannot push machine events out of reach.
   const [limit, setLimit] = useState(readPageSize);
+  // Ages are relative, so they have to move while the list is visible; a bell
+  // left open on "just now" would otherwise keep saying that for hours.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!open) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [open]);
+
   const notifications = useQuery({
     queryKey: [...notificationsKey, limit],
     queryFn: async () => (await StatusService.Notifications(limit)) ?? [],
@@ -366,8 +375,11 @@ export function Notifications() {
                   ) : (
                     <div className="flex min-w-0 flex-1 items-start gap-2">{content}</div>
                   )}
-                  <span className="shrink-0 text-[0.7rem] text-muted-foreground">
-                    {formatRelative(entry.CreatedAt)}
+                  <span
+                    className="shrink-0 text-[0.7rem] text-muted-foreground"
+                    title={new Date(entry.CreatedAt).toLocaleString()}
+                  >
+                    {formatRelative(entry.CreatedAt, now)}
                   </span>
                   {entry.OpenPath && (
                     <button
