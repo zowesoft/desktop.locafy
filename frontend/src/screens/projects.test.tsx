@@ -408,6 +408,19 @@ describe("ProjectsScreen", () => {
     await waitFor(() => expect(ProjectsService.List).toHaveBeenCalledTimes(2));
   });
 
+  it("fills the parent folder from the native picker", async () => {
+    const user = userEvent.setup();
+    vi.mocked(DialogsService.ChooseFolder).mockResolvedValue("C:\\laragon\\www");
+
+    renderWithQuery(<ProjectsScreen />);
+
+    await user.click(screen.getByRole("button", { name: "Import folder" }));
+    await user.click(await screen.findByRole("button", { name: /Browse/ }));
+
+    expect(await screen.findByLabelText("Folder path")).toHaveValue("C:\\laragon\\www");
+    expect(DialogsService.ChooseFolder).toHaveBeenCalledWith("Scan folders inside this parent");
+  });
+
   it("keeps folders that failed to import listed with the reason", async () => {
     const user = userEvent.setup();
     vi.mocked(ProjectsService.ScanFolder).mockResolvedValue([

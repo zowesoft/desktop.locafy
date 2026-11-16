@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 
+import { FolderOpen } from "lucide-react";
+
+import * as DialogsService from "../../bindings/locafy.dev/desktop/internal/dialogs/service";
 import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/projects/service";
 import type { FolderCandidate } from "../../bindings/locafy.dev/desktop/internal/projects/models";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +36,7 @@ export function ImportDialog({
   onImported: () => void;
 }) {
   const [path, setPath] = useState("");
+  const [browsing, setBrowsing] = useState(false);
   const [candidates, setCandidates] = useState<FolderCandidate[] | null>(null);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [showAll, setShowAll] = useState(false);
@@ -69,6 +73,21 @@ export function ImportDialog({
     },
     onError: (error) => setFailures([String(error)]),
   });
+
+  // The native dialog returns an empty path when it is cancelled, which leaves
+  // whatever was typed in place.
+  const browse = async () => {
+    setBrowsing(true);
+    setFailures([]);
+    try {
+      const picked = await DialogsService.ChooseFolder("Scan folders inside this parent");
+      if (picked) setPath(picked);
+    } catch (error) {
+      setFailures([String(error)]);
+    } finally {
+      setBrowsing(false);
+    }
+  };
 
   const close = () => {
     setPath("");
@@ -126,12 +145,15 @@ export function ImportDialog({
             <div className="flex gap-2">
               <Input
                 id="import-path"
-                className="flex-1"
+                className="min-w-0 flex-1"
                 autoFocus
                 placeholder="C:\laragon\www"
                 value={path}
                 onChange={(event) => setPath(event.target.value)}
               />
+              <Button type="button" variant="outline" disabled={browsing} onClick={browse}>
+                <FolderOpen /> Browse
+              </Button>
               <Button
                 type="submit"
                 variant="secondary"
