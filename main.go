@@ -112,9 +112,8 @@ func run() error {
 		Height:          windowDefaultHeight,
 		MinWidth:        windowMinWidth,
 		MinHeight:       windowMinHeight,
-		// Start in the tray: the engine warms up in the background and the
-		// window opens on demand from the tray icon.
-		Hidden:          true,
+		// The splash in index.html covers first paint, so the window can
+		// open immediately and paint brand artwork while the bundle loads.
 		InitialPosition: startPosition,
 		X:               startX,
 		Y:               startY,
@@ -184,14 +183,8 @@ func run() error {
 		window.Hide()
 	})
 
-	// A hidden WebView2 never paints, so the first tray click would show a
-	// blank frame. Show the window briefly once the page loads — enough for
-	// the compositor to commit a painted surface — then hide it again.
-	window.OnWindowEvent(events.Windows.WebViewNavigationCompleted, func(*application.WindowEvent) {
-		window.Show()
-		time.Sleep(150 * time.Millisecond)
-		window.Hide()
-	})
+	// The splash in index.html paints brand artwork while the bundle
+	// loads, so there is no blank frame to hide here.
 
 	// A fixed size overflows a scaled display: the values are device
 	// independent while screens are often smaller than their scale suggests.
