@@ -5,6 +5,7 @@ package activity
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -43,10 +44,14 @@ func Log(database *sql.DB, scope Scope, scopeID string, action string, detail st
 	return nil
 }
 
-// Recent returns up to limit entries, newest first.
+// ErrNotFound reports an entry that does not exist or is not dismissible.
+var ErrNotFound = errors.New("notification not found")
+
+// Recent returns up to limit undismissed entries, newest first.
 func Recent(database *sql.DB, limit int) ([]Entry, error) {
 	rows, err := database.Query(`SELECT id, scope_type, COALESCE(scope_id, ''), action, COALESCE(detail, ''), created_at
 		FROM activity_logs
+		WHERE dismissed_at IS NULL
 		ORDER BY created_at DESC, rowid DESC
 		LIMIT ?`, limit)
 	if err != nil {
@@ -69,6 +74,40 @@ func Recent(database *sql.DB, limit int) ([]Entry, error) {
 		entries = append(entries, entry)
 	}
 	return entries, rows.Err()
+}
+
+// Dismiss hides one entry from the notification list. The entry stays in the
+// history; only the bell stops counting it.
+func Dismiss(database *sql.DB, id string) error {
+	result, err := database.Exec(`UPDATE activity_logs
+		SET dismissed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+		WHERE id = ? AND dismissed_at IS NULL`, id)
+	if err != nil {
+		return fmt.Errorf("dismiss activity %q: %w", id, err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("dismiss activity %q: %w", id, err)
+	}
+	if affected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// Clear dismisses every undismissed entry and reports how many it hid.
+func Clear(database *sql.DB) (int, error) {
+	result, err := database.Exec(`UPDATE activity_logs
+		SET dismissed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+		WHERE dismissed_at IS NULL`)
+	if err != nil {
+		return 0, fmt.Errorf("clear activity: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("clear activity: %w", err)
+	}
+	return int(affected), nil
 }
 
 func parseTimestamp(value string) (time.Time, error) {

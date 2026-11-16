@@ -31,6 +31,12 @@ export interface Health {
  */
 export interface Notification {
     "ID": string;
+
+    /**
+     * ScopeID identifies the resource the entry belongs to (a project, for
+     * project-scoped actions) so the top bar can open it.
+     */
+    "ScopeID": string;
     "Scope": string;
     "Action": string;
     "Detail": string;
@@ -41,4 +47,17 @@ export interface Notification {
      * for everything recorded in the activity history.
      */
     "Severity": string;
+
+    /**
+     * Dismissible reports whether the entry can be hidden from the bell.
+     * Recorded actions can; a warning derived from the current reading cannot,
+     * because dismissing it would only hide a condition that is still true.
+     */
+    "Dismissible": boolean;
+
+    /**
+     * OpenPath is a folder the entry can reveal in the OS file manager. It is
+     * empty for entries with nothing to act on.
+     */
+    "OpenPath": string;
 }

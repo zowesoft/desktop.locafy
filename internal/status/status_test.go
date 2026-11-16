@@ -2,6 +2,8 @@ package status
 
 import (
 	"database/sql"
+	"errors"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -115,6 +117,217 @@ func TestNotificationsReturnRecentActivityNewestFirst(t *testing.T) {
 	}
 	if _, err := time.Parse(time.RFC3339, notifications[0].CreatedAt); err != nil {
 		t.Fatalf("created at = %q, want an RFC 3339 timestamp: %v", notifications[0].CreatedAt, err)
+	}
+}
+
+func TestDiskWarningOffersTheFolderToOpen(t *testing.T) {
+	database := openDatabase(t)
+	lowVolume := monitor.Snapshot{
+		CPUPercent: healthyVolume.CPUPercent,
+		Memory:     healthyVolume.Memory,
+		Disk:       monitor.Usage{UsedBytes: 499 << 30, TotalBytes: 500 << 30, Percent: 99},
+		CapturedAt: time.Now(),
+	}
+	service := newTestService(t, database, lowVolume)
+
+	if err := activity.Log(database, activity.ScopeMachine, "", "Engine started", ""); err != nil {
+		t.Fatalf("log activity: %v", err)
+	}
+
+	notifications, err := service.Notifications(10)
+	if err != nil {
+		t.Fatalf("notifications: %v", err)
+	}
+	if len(notifications) != 2 {
+		t.Fatalf("got %d notifications, want the warning and the entry", len(notifications))
+	}
+	if notifications[0].OpenPath == "" {
+		t.Fatal("warning has no folder to open, so it cannot be acted on")
+	}
+	if notifications[1].OpenPath != "" {
+		t.Fatalf("entry open path = %q, want none", notifications[1].OpenPath)
+	}
+}
+
+func TestOpenDataFolderRevealsTheDataDirectory(t *testing.T) {
+	database := openDatabase(t)
+	service := newTestService(t, database, healthyVolume)
+
+	original := openFolder
+	t.Cleanup(func() { openFolder = original })
+
+	var opened string
+	openFolder = func(path string) error {
+		opened = path
+		return nil
+	}
+
+	if err := service.OpenDataFolder(); err != nil {
+		t.Fatalf("open data folder: %v", err)
+	}
+	if opened != dataVolumePath() {
+		t.Fatalf("opened %q, want the data volume %q", opened, dataVolumePath())
+	}
+	if info, err := os.Stat(opened); err != nil || !info.IsDir() {
+		t.Fatalf("opened path %q is not an existing folder: %v", opened, err)
+	}
+
+	openFolder = func(string) error { return errFileManagerUnavailable }
+	if err := service.OpenDataFolder(); !errors.Is(err, errFileManagerUnavailable) {
+		t.Fatalf("err = %v, want the file manager failure reported", err)
+	}
+}
+
+var errFileManagerUnavailable = errors.New("file manager unavailable")
+
+func TestDismissHidesOneNotificationAndKeepsTheHistory(t *testing.T) {
+	database := openDatabase(t)
+	service := newTestService(t, database, healthyVolume)
+
+	if err := activity.Log(database, activity.ScopeProject, "p1", "Project created", "Etugora"); err != nil {
+		t.Fatalf("log activity: %v", err)
+	}
+	if err := activity.Log(database, activity.ScopeMachine, "", "Engine started", ""); err != nil {
+		t.Fatalf("log activity: %v", err)
+	}
+
+	var id string
+	if err := database.QueryRow(`SELECT id FROM activity_logs WHERE action = 'Project created'`).Scan(&id); err != nil {
+		t.Fatalf("read activity id: %v", err)
+	}
+
+	if err := service.Dismiss(id); err != nil {
+		t.Fatalf("dismiss: %v", err)
+	}
+
+	notifications, err := service.Notifications(10)
+	if err != nil {
+		t.Fatalf("notifications: %v", err)
+	}
+	if len(notifications) != 1 || notifications[0].Action != "Engine started" {
+		t.Fatalf("notifications = %+v, want only the engine entry", notifications)
+	}
+
+	// Dismissing is a view concern: the record itself survives for diagnostics.
+	var stored int
+	if err := database.QueryRow(`SELECT COUNT(*) FROM activity_logs WHERE id = ?`, id).Scan(&stored); err != nil {
+		t.Fatalf("count history: %v", err)
+	}
+	if stored != 1 {
+		t.Fatalf("stored entries = %d, want the dismissed entry kept", stored)
+	}
+
+	if err := service.Dismiss(id); err == nil {
+		t.Fatal("dismissing twice should report that there is nothing left to hide")
+	}
+}
+
+func TestClearNotificationsHidesEverythingAndReportsTheCount(t *testing.T) {
+	database := openDatabase(t)
+	service := newTestService(t, database, healthyVolume)
+
+	for _, action := range []string{"first", "second", "third"} {
+		if err := activity.Log(database, activity.ScopeMachine, "", action, ""); err != nil {
+			t.Fatalf("log activity: %v", err)
+		}
+	}
+
+	hidden, err := service.ClearNotifications()
+	if err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	if hidden != 3 {
+		t.Fatalf("hidden = %d, want 3", hidden)
+	}
+
+	notifications, err := service.Notifications(10)
+	if err != nil {
+		t.Fatalf("notifications: %v", err)
+	}
+	if len(notifications) != 0 {
+		t.Fatalf("notifications = %+v, want none", notifications)
+	}
+}
+
+func TestOnlyRecordedEntriesAreDismissible(t *testing.T) {
+	database := openDatabase(t)
+	// Free space below the warning threshold, so the derived entry leads the list.
+	lowVolume := monitor.Snapshot{
+		CPUPercent: healthyVolume.CPUPercent,
+		Memory:     healthyVolume.Memory,
+		Disk:       monitor.Usage{UsedBytes: 499 << 30, TotalBytes: 500 << 30, Percent: 99},
+		CapturedAt: time.Now(),
+	}
+	service := newTestService(t, database, lowVolume)
+
+	if err := activity.Log(database, activity.ScopeMachine, "", "Engine started", ""); err != nil {
+		t.Fatalf("log activity: %v", err)
+	}
+
+	notifications, err := service.Notifications(10)
+	if err != nil {
+		t.Fatalf("notifications: %v", err)
+	}
+	if len(notifications) != 2 {
+		t.Fatalf("got %d notifications, want the warning and the entry", len(notifications))
+	}
+	if notifications[0].Severity != severityWarning || notifications[0].Dismissible {
+		t.Fatalf("warning = %+v, want an undismissible warning", notifications[0])
+	}
+	if notifications[1].Severity != severityInfo || !notifications[1].Dismissible {
+		t.Fatalf("entry = %+v, want a dismissible info entry", notifications[1])
+	}
+}
+
+func TestNotificationsAcceptAPageLargerThanTheOldCeiling(t *testing.T) {
+	database := openDatabase(t)
+	service := newTestService(t, database, healthyVolume)
+
+	for index := 0; index < 5; index++ {
+		if err := activity.Log(database, activity.ScopeProject, "project", "Project created", "Etugora"); err != nil {
+			t.Fatalf("log activity: %v", err)
+		}
+	}
+
+	notifications, err := service.Notifications(1000)
+	if err != nil {
+		t.Fatalf("notifications: %v", err)
+	}
+	if len(notifications) != 5 {
+		t.Fatalf("got %d notifications, want all 5", len(notifications))
+	}
+}
+
+func TestNotificationsCarryTheProjectTheyBelongTo(t *testing.T) {
+	database := openDatabase(t)
+	service := newTestService(t, database, healthyVolume)
+
+	if err := activity.Log(database, activity.ScopeProject, "project-42", "Project created", "Etugora"); err != nil {
+		t.Fatalf("log activity: %v", err)
+	}
+	if err := activity.Log(database, activity.ScopeMachine, "", "Engine started", ""); err != nil {
+		t.Fatalf("log activity: %v", err)
+	}
+
+	notifications, err := service.Notifications(10)
+	if err != nil {
+		t.Fatalf("notifications: %v", err)
+	}
+	if len(notifications) != 2 {
+		t.Fatalf("got %d notifications, want 2", len(notifications))
+	}
+
+	// Both entries land in the same second, so the list is ordered by write
+	// order rather than by action; find them by scope instead of by index.
+	byScope := make(map[string]Notification, len(notifications))
+	for _, notification := range notifications {
+		byScope[notification.Scope] = notification
+	}
+	if entry := byScope["project"]; entry.ScopeID != "project-42" {
+		t.Fatalf("project scope id = %q, want project-42", entry.ScopeID)
+	}
+	if entry := byScope["machine"]; entry.ScopeID != "" {
+		t.Fatalf("machine scope id = %q, want empty", entry.ScopeID)
 	}
 }
 

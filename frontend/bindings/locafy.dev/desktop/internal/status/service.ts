@@ -15,10 +15,26 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
+ * ClearNotifications hides every recorded notification and reports how many
+ * were hidden.
+ */
+export function ClearNotifications(): $CancellablePromise<number> {
+    return $Call.ByID(1528810366);
+}
+
+/**
  * Close releases the background resource sampler.
  */
 export function Close(): $CancellablePromise<void> {
     return $Call.ByID(3622666651);
+}
+
+/**
+ * Dismiss hides one recorded notification. The activity entry stays in the
+ * history; only the bell stops counting it.
+ */
+export function Dismiss(id: string): $CancellablePromise<void> {
+    return $Call.ByID(1135732443, id);
 }
 
 /**
@@ -30,8 +46,18 @@ export function Health(): $CancellablePromise<$models.Health> {
 }
 
 /**
- * Notifications returns recent engine actions, newest first.
+ * Notifications returns recent engine actions, newest first. The limit is the
+ * caller's page size: the top bar asks for more as the operator scrolls, so a
+ * burst of project work cannot bury machine entries permanently.
  */
 export function Notifications(limit: number): $CancellablePromise<$models.Notification[] | null> {
     return $Call.ByID(277570391, limit);
+}
+
+/**
+ * OpenDataFolder reveals the folder holding the engine's data — the volume the
+ * disk warning describes — in the OS file manager.
+ */
+export function OpenDataFolder(): $CancellablePromise<void> {
+    return $Call.ByID(1799305313);
 }

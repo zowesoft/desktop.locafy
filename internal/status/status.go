@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"time"
@@ -36,7 +37,10 @@ type Health struct {
 // come from the activity history, so the list reflects recorded events rather
 // than a separate notification store.
 type Notification struct {
-	ID        string
+	ID string
+	// ScopeID identifies the resource the entry belongs to (a project, for
+	// project-scoped actions) so the top bar can open it.
+	ScopeID   string
 	Scope     string
 	Action    string
 	Detail    string
@@ -44,6 +48,13 @@ type Notification struct {
 	// Severity is "warning" for conditions the user has to act on and "info"
 	// for everything recorded in the activity history.
 	Severity string
+	// Dismissible reports whether the entry can be hidden from the bell.
+	// Recorded actions can; a warning derived from the current reading cannot,
+	// because dismissing it would only hide a condition that is still true.
+	Dismissible bool
+	// OpenPath is a folder the entry can reveal in the OS file manager. It is
+	// empty for entries with nothing to act on.
+	OpenPath string
 }
 
 const (
@@ -55,6 +66,10 @@ const (
 	// bytes, not on the percentage used, and 5 GiB leaves room to act.
 	diskWarningFreeBytes uint64 = 5 << 30
 )
+
+// maxNotifications bounds a single page so the top bar cannot ask for the
+// whole history by accident.
+const maxNotifications = 200
 
 // resourceSource supplies machine readings. The sampler is the real source;
 // tests provide a fixed one so a reading never depends on the test machine.
@@ -129,10 +144,15 @@ func (s *Service) Health() Health {
 	return health
 }
 
-// Notifications returns recent engine actions, newest first.
+// Notifications returns recent engine actions, newest first. The limit is the
+// caller's page size: the top bar asks for more as the operator scrolls, so a
+// burst of project work cannot bury machine entries permanently.
 func (s *Service) Notifications(limit int) ([]Notification, error) {
-	if limit <= 0 || limit > 50 {
+	if limit <= 0 {
 		limit = 10
+	}
+	if limit > maxNotifications {
+		limit = maxNotifications
 	}
 
 	entries, err := activity.Recent(s.database, limit)
@@ -152,12 +172,14 @@ func (s *Service) Notifications(limit int) ([]Notification, error) {
 
 	for _, entry := range entries {
 		notifications = append(notifications, Notification{
-			ID:        entry.ID,
-			Scope:     string(entry.Scope),
-			Action:    entry.Action,
-			Detail:    entry.Detail,
-			CreatedAt: entry.CreatedAt.UTC().Format(time.RFC3339),
-			Severity:  severityInfo,
+			ID:          entry.ID,
+			ScopeID:     entry.ScopeID,
+			Scope:       string(entry.Scope),
+			Action:      entry.Action,
+			Detail:      entry.Detail,
+			CreatedAt:   entry.CreatedAt.UTC().Format(time.RFC3339),
+			Severity:    severityInfo,
+			Dismissible: true,
 		})
 	}
 
@@ -166,6 +188,42 @@ func (s *Service) Notifications(limit int) ([]Notification, error) {
 	}
 
 	return notifications, nil
+}
+
+// openFolder is a seam for tests: the real implementation hands the path to the
+// OS file manager, which is the only way to make a local folder actionable from
+// inside a webview.
+var openFolder = func(path string) error {
+	switch runtime.GOOS {
+	case "windows":
+		return exec.Command("explorer", path).Start()
+	case "darwin":
+		return exec.Command("open", path).Start()
+	default:
+		return exec.Command("xdg-open", path).Start()
+	}
+}
+
+// OpenDataFolder reveals the folder holding the engine's data — the volume the
+// disk warning describes — in the OS file manager.
+func (s *Service) OpenDataFolder() error {
+	path := dataVolumePath()
+	if err := openFolder(path); err != nil {
+		return fmt.Errorf("open data folder %q: %w", path, err)
+	}
+	return nil
+}
+
+// Dismiss hides one recorded notification. The activity entry stays in the
+// history; only the bell stops counting it.
+func (s *Service) Dismiss(id string) error {
+	return activity.Dismiss(s.database, id)
+}
+
+// ClearNotifications hides every recorded notification and reports how many
+// were hidden.
+func (s *Service) ClearNotifications() (int, error) {
+	return activity.Clear(s.database)
 }
 
 // diskWarning reports the data volume when free space has fallen far enough
@@ -187,6 +245,7 @@ func diskWarning(usage monitor.Usage) *Notification {
 		Detail:    fmt.Sprintf("%s free of %s on the data volume", formatBytes(free), formatBytes(usage.TotalBytes)),
 		CreatedAt: time.Now().UTC().Format(time.RFC3339),
 		Severity:  severityWarning,
+		OpenPath:  dataVolumePath(),
 	}
 }
 
