@@ -120,6 +120,165 @@ func TestNotificationsReturnRecentActivityNewestFirst(t *testing.T) {
 	}
 }
 
+func TestEntriesAreUnreadUntilTheBellIsOpened(t *testing.T) {
+	database := openDatabase(t)
+	service := newTestService(t, database, healthyVolume)
+
+	for _, action := range []string{"Engine started", "Machine registered"} {
+		if err := activity.Log(database, activity.ScopeMachine, "", action, ""); err != nil {
+			t.Fatalf("log activity: %v", err)
+		}
+	}
+
+	unread, err := service.UnreadNotifications()
+	if err != nil {
+		t.Fatalf("unread: %v", err)
+	}
+	if unread != 2 {
+		t.Fatalf("unread = %d, want 2 before the bell is ever opened", unread)
+	}
+
+	notifications, err := service.Notifications(10)
+	if err != nil {
+		t.Fatalf("notifications: %v", err)
+	}
+	if notifications[0].Seen {
+		t.Fatal("an entry is marked seen before the bell was opened")
+	}
+
+	if err := service.MarkNotificationsSeen(); err != nil {
+		t.Fatalf("mark seen: %v", err)
+	}
+
+	unread, err = service.UnreadNotifications()
+	if err != nil {
+		t.Fatalf("unread: %v", err)
+	}
+	if unread != 0 {
+		t.Fatalf("unread = %d, want 0 after opening the bell", unread)
+	}
+
+	notifications, err = service.Notifications(10)
+	if err != nil {
+		t.Fatalf("notifications: %v", err)
+	}
+	for _, notification := range notifications {
+		if !notification.Seen {
+			t.Fatalf("entry %q is still unseen after opening the bell", notification.Action)
+		}
+	}
+}
+
+func TestNewActivityAfterOpeningIsUnreadAgain(t *testing.T) {
+	database := openDatabase(t)
+	service := newTestService(t, database, healthyVolume)
+
+	if err := activity.Log(database, activity.ScopeMachine, "", "Engine started", ""); err != nil {
+		t.Fatalf("log activity: %v", err)
+	}
+	if err := service.MarkNotificationsSeen(); err != nil {
+		t.Fatalf("mark seen: %v", err)
+	}
+
+	// Recorded a moment later, so it sits after the last-seen mark.
+	time.Sleep(1100 * time.Millisecond)
+	if err := activity.Log(database, activity.ScopeProject, "p1", "Project created", "Etugora"); err != nil {
+		t.Fatalf("log activity: %v", err)
+	}
+
+	unread, err := service.UnreadNotifications()
+	if err != nil {
+		t.Fatalf("unread: %v", err)
+	}
+	if unread != 1 {
+		t.Fatalf("unread = %d, want only the entry recorded after the bell was opened", unread)
+	}
+
+	notifications, err := service.Notifications(10)
+	if err != nil {
+		t.Fatalf("notifications: %v", err)
+	}
+	if notifications[0].Seen || !notifications[1].Seen {
+		t.Fatalf("seen flags = %v/%v, want the newest unseen and the older one seen",
+			notifications[0].Seen, notifications[1].Seen)
+	}
+}
+
+func TestUnreadCountIgnoresDismissedAndDisabledTypes(t *testing.T) {
+	database := openDatabase(t)
+	service := newTestService(t, database, healthyVolume)
+
+	if err := activity.Log(database, activity.ScopeProject, "p1", "Project created", "Etugora"); err != nil {
+		t.Fatalf("log activity: %v", err)
+	}
+	if err := activity.Log(database, activity.ScopeMachine, "", "Engine started", ""); err != nil {
+		t.Fatalf("log activity: %v", err)
+	}
+
+	notifications, err := service.Notifications(10)
+	if err != nil {
+		t.Fatalf("notifications: %v", err)
+	}
+	for _, notification := range notifications {
+		if notification.Action == "Project created" {
+			if err := service.Dismiss(notification.ID); err != nil {
+				t.Fatalf("dismiss: %v", err)
+			}
+		}
+	}
+
+	unread, err := service.UnreadNotifications()
+	if err != nil {
+		t.Fatalf("unread: %v", err)
+	}
+	if unread != 1 {
+		t.Fatalf("unread = %d, want only the undismissed machine entry", unread)
+	}
+
+	if err := service.SetNotificationPreferences(NotificationPreferences{Machine: false, Project: true, Warnings: true}); err != nil {
+		t.Fatalf("save preferences: %v", err)
+	}
+
+	unread, err = service.UnreadNotifications()
+	if err != nil {
+		t.Fatalf("unread: %v", err)
+	}
+	if unread != 0 {
+		t.Fatalf("unread = %d, want 0 with machine events turned off", unread)
+	}
+}
+
+func TestWarningsAreCurrentStateNotUnreadNews(t *testing.T) {
+	database := openDatabase(t)
+	lowVolume := monitor.Snapshot{
+		CPUPercent: healthyVolume.CPUPercent,
+		Memory:     healthyVolume.Memory,
+		Disk:       monitor.Usage{UsedBytes: 499 << 30, TotalBytes: 500 << 30, Percent: 99},
+		CapturedAt: time.Now(),
+	}
+	service := newTestService(t, database, lowVolume)
+
+	if err := activity.Log(database, activity.ScopeMachine, "", "Engine started", ""); err != nil {
+		t.Fatalf("log activity: %v", err)
+	}
+
+	unread, err := service.UnreadNotifications()
+	if err != nil {
+		t.Fatalf("unread: %v", err)
+	}
+	if unread != 1 {
+		t.Fatalf("unread = %d, want the recorded entry alone", unread)
+	}
+
+	notifications, err := service.Notifications(10)
+	if err != nil {
+		t.Fatalf("notifications: %v", err)
+	}
+	if !notifications[0].Seen {
+		t.Fatal("the warning counts as unseen news")
+	}
+}
+
 func TestNotificationPreferencesStartFullyOn(t *testing.T) {
 	database := openDatabase(t)
 	service := newTestService(t, database, healthyVolume)

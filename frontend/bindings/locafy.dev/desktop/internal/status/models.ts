@@ -60,6 +60,13 @@ export interface Notification {
      * empty for entries with nothing to act on.
      */
     "OpenPath": string;
+
+    /**
+     * Seen reports whether the operator has opened the bell since the entry was
+     * recorded. Warnings are current state rather than news, so they are never
+     * unseen and never sit under a new-activity divider.
+     */
+    "Seen": boolean;
 }
 
 /**

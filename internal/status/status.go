@@ -57,6 +57,10 @@ type Notification struct {
 	// OpenPath is a folder the entry can reveal in the OS file manager. It is
 	// empty for entries with nothing to act on.
 	OpenPath string
+	// Seen reports whether the operator has opened the bell since the entry was
+	// recorded. Warnings are current state rather than news, so they are never
+	// unseen and never sit under a new-activity divider.
+	Seen bool
 }
 
 const (
@@ -86,7 +90,74 @@ const (
 	prefMachineKey  = "notifications.machine"
 	prefProjectKey  = "notifications.project"
 	prefWarningsKey = "notifications.warning"
+	// prefLastSeenKey records when the bell was last opened.
+	prefLastSeenKey = "notifications.last_seen"
 )
+
+// enabledScopes lists the activity scopes the preferences allow.
+func enabledScopes(prefs NotificationPreferences) []activity.Scope {
+	scopes := make([]activity.Scope, 0, 4)
+	if prefs.Machine {
+		scopes = append(scopes, activity.ScopeMachine)
+	}
+	if prefs.Project {
+		scopes = append(scopes, activity.ScopeProject, activity.ScopeApplication, activity.ScopeService)
+	}
+	return scopes
+}
+
+// lastSeen reports when the bell was last opened. The second result is false
+// when the operator has never opened it, which makes every recorded entry new.
+func (s *Service) lastSeen() (time.Time, bool, error) {
+	value, err := settings.String(s.database, prefLastSeenKey)
+	if errors.Is(err, settings.ErrNotFound) {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("parse last-seen notifications: %w", err)
+	}
+	return parsed, true, nil
+}
+
+// MarkNotificationsSeen records that the operator has just looked at the bell.
+func (s *Service) MarkNotificationsSeen() error {
+	return settings.SetString(s.database, prefLastSeenKey, time.Now().UTC().Format(time.RFC3339))
+}
+
+// UnreadNotifications counts recorded entries the operator has not seen since
+// they were logged, so the badge describes what is waiting rather than how much
+// of the list happens to be loaded. Counting stops at the page ceiling.
+func (s *Service) UnreadNotifications() (int, error) {
+	prefs, err := s.NotificationPreferences()
+	if err != nil {
+		return 0, err
+	}
+	scopes := enabledScopes(prefs)
+	if len(scopes) == 0 {
+		return 0, nil
+	}
+
+	entries, err := activity.Recent(s.database, maxNotifications, scopes...)
+	if err != nil {
+		return 0, err
+	}
+	seenAt, seen, err := s.lastSeen()
+	if err != nil {
+		return 0, err
+	}
+
+	unread := 0
+	for _, entry := range entries {
+		if !seen || entry.CreatedAt.After(seenAt) {
+			unread++
+		}
+	}
+	return unread, nil
+}
 
 // resourceSource supplies machine readings. The sampler is the real source;
 // tests provide a fixed one so a reading never depends on the test machine.
@@ -221,13 +292,7 @@ func (s *Service) Notifications(limit int) ([]Notification, error) {
 		return nil, err
 	}
 
-	scopes := make([]activity.Scope, 0, 4)
-	if prefs.Machine {
-		scopes = append(scopes, activity.ScopeMachine)
-	}
-	if prefs.Project {
-		scopes = append(scopes, activity.ScopeProject, activity.ScopeApplication, activity.ScopeService)
-	}
+	scopes := enabledScopes(prefs)
 
 	var entries []activity.Entry
 	if len(scopes) > 0 {
@@ -245,7 +310,16 @@ func (s *Service) Notifications(limit int) ([]Notification, error) {
 	if prefs.Warnings {
 		usage := s.resources.Snapshot()
 		if warning := diskWarning(usage.Disk); warning != nil {
+			warning.Seen = true
 			notifications = append(notifications, *warning)
+		}
+	}
+
+	seenAt, seen := time.Time{}, false
+	if prefs.Warnings || len(scopes) > 0 {
+		seenAt, seen, err = s.lastSeen()
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -259,6 +333,7 @@ func (s *Service) Notifications(limit int) ([]Notification, error) {
 			CreatedAt:   entry.CreatedAt.UTC().Format(time.RFC3339),
 			Severity:    severityInfo,
 			Dismissible: true,
+			Seen:        seen && !entry.CreatedAt.After(seenAt),
 		})
 	}
 

@@ -46,6 +46,13 @@ export function Health(): $CancellablePromise<$models.Health> {
 }
 
 /**
+ * MarkNotificationsSeen records that the operator has just looked at the bell.
+ */
+export function MarkNotificationsSeen(): $CancellablePromise<void> {
+    return $Call.ByID(3602814155);
+}
+
+/**
  * NotificationPreferences reports which kinds of notification the bell shows.
  * Each type is on until the operator turns it off, so an unset preference is
  * not a reason to hide anything.
@@ -76,4 +83,13 @@ export function OpenDataFolder(): $CancellablePromise<void> {
  */
 export function SetNotificationPreferences(prefs: $models.NotificationPreferences): $CancellablePromise<void> {
     return $Call.ByID(3574567142, prefs);
+}
+
+/**
+ * UnreadNotifications counts recorded entries the operator has not seen since
+ * they were logged, so the badge describes what is waiting rather than how much
+ * of the list happens to be loaded. Counting stops at the page ceiling.
+ */
+export function UnreadNotifications(): $CancellablePromise<number> {
+    return $Call.ByID(1721681134);
 }
