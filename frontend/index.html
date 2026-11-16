@@ -42,18 +42,27 @@
     <div id="splash" aria-hidden="true"></div>
     <div id="root"></div>
     <script>
-      // Hide the splash as soon as the app's first paint is observed in
-      // #root, so it never flashes over a loaded window.
+      // The splash holds for a fixed minimum so the brand is legible, then
+      // fades once the app's first paint is observed in #root.
       (function () {
         var splash = document.getElementById("splash");
+        var start = performance.now();
+        var HOLD_MS = 1500;
+        var mounted = false;
         function hide() {
-          if (!splash) return;
+          if (!splash || !mounted) return;
+          var elapsed = performance.now() - start;
+          if (elapsed < HOLD_MS) {
+            setTimeout(hide, HOLD_MS - elapsed);
+            return;
+          }
           splash.classList.add("hidden");
           splash = null;
         }
         var observer = new MutationObserver(function () {
           if (document.getElementById("root").childElementCount > 0) {
             observer.disconnect();
+            mounted = true;
             requestAnimationFrame(hide);
           }
         });
