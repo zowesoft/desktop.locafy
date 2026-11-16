@@ -165,20 +165,16 @@ func debugBrowserArgs() []string {
 }
 
 // fitToWorkArea shrinks the window to the primary screen's work area. Window
-// sizes are in device-independent pixels while the reported work area is in
-// physical pixels, so the screen's scale factor converts between the two.
+// sizes and the reported work area are both in device-independent pixels, so
+// no conversion is needed.
 func fitToWorkArea(window *application.WebviewWindow, app *application.App) {
 	screen := app.Screen.GetPrimary()
 	if screen == nil {
 		return
 	}
-	scale := float64(screen.ScaleFactor)
-	if scale <= 0 {
-		scale = 1
-	}
 	const margin = 40 // leaves the window frame clear of the work area edges
-	width := min(windowDefaultWidth, int(float64(screen.WorkArea.Width)/scale)-margin)
-	height := min(windowDefaultHeight, int(float64(screen.WorkArea.Height)/scale)-margin)
+	width := min(windowDefaultWidth, screen.WorkArea.Width-margin)
+	height := min(windowDefaultHeight, screen.WorkArea.Height-margin)
 	window.SetSize(max(width, windowMinWidth), max(height, windowMinHeight))
 	window.Center()
 }
