@@ -1,5 +1,15 @@
-import { useQuery } from "@tanstack/react-query";
-import { Bell, CircleCheck, HardDrive, Monitor, Clock, TriangleExclamationPoint } from "lucide-react";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
+import {
+  Bell,
+  CircleCheck,
+  HardDrive,
+  Monitor,
+  Clock,
+  TriangleExclamationPoint,
+  XIcon,
+} from "lucide-react";
 import * as StatusService from "../../bindings/locafy.dev/desktop/internal/status/service";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -13,8 +23,27 @@ import {
 import { cn } from "@/lib/utils";
 
 const statusKey = ["engine-status"] as const;
-const notificationsKey = ["notifications"] as const;
+// Exported so other screens can refetch the bell after they record activity.
+export const notificationsKey = ["notifications"] as const;
 const gibibyte = 1024 ** 3;
+// Matches the service's page ceiling; the bell grows by 20 until it gets here.
+const maxNotificationsShown = 200;
+const pageSizeStorageKey = "locafy.notifications.page";
+
+/*
+ * How many entries the bell has asked for. It outlives the popover and a reload
+ * of the shell, so reopening the bell shows the page the operator grew to rather
+ * than starting again at ten.
+ */
+function readPageSize(): number {
+  const stored = Number(sessionStorage.getItem(pageSizeStorageKey));
+  if (!Number.isFinite(stored) || stored < 10 || stored > maxNotificationsShown) return 10;
+  return stored;
+}
+
+function writePageSize(size: number) {
+  sessionStorage.setItem(pageSizeStorageKey, String(size));
+}
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 GB";
@@ -210,10 +239,28 @@ export function EngineStatus() {
 
 /** Recent engine activity, so warnings and failures have somewhere to appear. */
 export function Notifications() {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  // The list grows a page at a time instead of hiding entries behind a fixed
+  // cap, so a run of project actions cannot push machine events out of reach.
+  const [limit, setLimit] = useState(readPageSize);
   const notifications = useQuery({
-    queryKey: notificationsKey,
-    queryFn: async () => (await StatusService.Notifications(10)) ?? [],
+    queryKey: [...notificationsKey, limit],
+    queryFn: async () => (await StatusService.Notifications(limit)) ?? [],
     refetchInterval: 60_000,
+  });
+
+  const refresh = () => queryClient.invalidateQueries({ queryKey: notificationsKey });
+  const dismiss = useMutation({
+    mutationFn: (id: string) => StatusService.Dismiss(id),
+    onSuccess: refresh,
+  });
+  const clear = useMutation({
+    mutationFn: () => StatusService.ClearNotifications(),
+    onSuccess: refresh,
+  });
+  const openFolder = useMutation({
+    mutationFn: () => StatusService.OpenDataFolder(),
   });
 
   const entries = notifications.data ?? [];
@@ -225,7 +272,7 @@ export function Notifications() {
       : "Notifications";
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         aria-label={label}
         className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "relative")}
@@ -243,6 +290,22 @@ export function Notifications() {
           <PopoverDescription>
             Recent engine activity. Warnings and failures are recorded here as features add them.
           </PopoverDescription>
+          {count > 0 && (
+            <button
+              type="button"
+              aria-label="Clear notifications"
+              disabled={clear.isPending}
+              onClick={() => clear.mutate()}
+              className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "mt-1 h-7 self-start px-2 text-xs")}
+            >
+              Clear all
+            </button>
+          )}
+          {(dismiss.error || clear.error || openFolder.error) && (
+            <p role="alert" className="text-xs text-destructive">
+              Could not update notifications: {String(dismiss.error ?? clear.error ?? openFolder.error)}
+            </p>
+          )}
         </PopoverHeader>
 
         {notifications.isPending ? (
@@ -254,38 +317,101 @@ export function Notifications() {
         ) : count === 0 ? (
           <p className="mt-3 text-xs text-muted-foreground">Nothing recorded yet.</p>
         ) : (
+          <>
           <ul className="mt-3 max-h-64 divide-y divide-border overflow-y-auto">
             {entries.map((entry) => {
               const isWarning = entry.Severity === "warning";
+              // Project entries point at the project they describe; machine
+              // entries have nowhere to go.
+              const projectHref =
+                entry.Scope === "project" && entry.ScopeID
+                  ? `/projects?project=${encodeURIComponent(entry.ScopeID)}`
+                  : null;
+
+              const content = (
+                <>
+                  {isWarning ? (
+                    <TriangleExclamationPoint className="mt-0.5 size-3.5 shrink-0 text-accent" />
+                  ) : (
+                    <span className="mt-1 size-1.5 shrink-0 rounded-full bg-muted-foreground/60" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="flex items-center gap-1.5 truncate text-xs">
+                      {entry.Action}
+                      {isWarning && (
+                        <span className="shrink-0 text-[0.65rem] font-medium uppercase tracking-wide text-accent">
+                          Warning
+                        </span>
+                      )}
+                    </p>
+                    <p className="truncate text-[0.7rem] text-muted-foreground">
+                      {entry.Scope}
+                      {entry.Detail ? ` · ${entry.Detail}` : ""}
+                    </p>
+                  </div>
+                </>
+              );
 
               return (
-              <li key={entry.ID} className="flex items-start gap-2 py-2">
-                {isWarning ? (
-                  <TriangleExclamationPoint className="mt-0.5 size-3.5 shrink-0 text-accent" />
-                ) : (
-                  <span className="mt-1 size-1.5 shrink-0 rounded-full bg-muted-foreground/60" />
-                )}
-                <div className="min-w-0 flex-1">
-                  <p className="flex items-center gap-1.5 truncate text-xs">
-                    {entry.Action}
-                    {isWarning && (
-                      <span className="shrink-0 text-[0.65rem] font-medium uppercase tracking-wide text-accent">
-                        Warning
-                      </span>
-                    )}
-                  </p>
-                  <p className="truncate text-[0.7rem] text-muted-foreground">
-                    {entry.Scope}
-                    {entry.Detail ? ` · ${entry.Detail}` : ""}
-                  </p>
-                </div>
-                <span className="shrink-0 text-[0.7rem] text-muted-foreground">
-                  {formatRelative(entry.CreatedAt)}
-                </span>
-              </li>
+                <li key={entry.ID} className="flex items-start gap-2 py-2">
+                  {projectHref ? (
+                    <Link
+                      to={projectHref}
+                      aria-label={`Open project ${entry.Detail}`}
+                      onClick={() => setOpen(false)}
+                      className="flex min-w-0 flex-1 items-start gap-2 hover:bg-muted/40 focus-visible:bg-muted/40"
+                    >
+                      {content}
+                    </Link>
+                  ) : (
+                    <div className="flex min-w-0 flex-1 items-start gap-2">{content}</div>
+                  )}
+                  <span className="shrink-0 text-[0.7rem] text-muted-foreground">
+                    {formatRelative(entry.CreatedAt)}
+                  </span>
+                  {entry.OpenPath && (
+                    <button
+                      type="button"
+                      aria-label="Open data folder"
+                      title={entry.OpenPath}
+                      disabled={openFolder.isPending}
+                      onClick={() => openFolder.mutate()}
+                      className="shrink-0 rounded px-1 py-0.5 text-[0.65rem] font-medium text-accent hover:bg-muted"
+                    >
+                      Open folder
+                    </button>
+                  )}
+                  {entry.Dismissible && (
+                    <button
+                      type="button"
+                      aria-label={`Dismiss ${entry.Action}`}
+                      disabled={dismiss.isPending}
+                      onClick={() => dismiss.mutate(entry.ID)}
+                      className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    >
+                      <XIcon className="size-3" />
+                    </button>
+                  )}
+                </li>
               );
             })}
           </ul>
+          {count === limit && limit < maxNotificationsShown && (
+            <button
+              type="button"
+              onClick={() =>
+                setLimit((current) => {
+                  const next = Math.min(current + 20, maxNotificationsShown);
+                  writePageSize(next);
+                  return next;
+                })
+              }
+              className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "mt-2 w-full")}
+            >
+              Show more activity
+            </button>
+          )}
+          </>
         )}
       </PopoverContent>
     </Popover>

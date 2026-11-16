@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -11,6 +12,9 @@ import { EngineStatus, Notifications } from "./top-bar-status";
 vi.mock("../../bindings/locafy.dev/desktop/internal/status/service", () => ({
   Health: vi.fn(),
   Notifications: vi.fn(),
+  Dismiss: vi.fn(),
+  ClearNotifications: vi.fn(),
+  OpenDataFolder: vi.fn(),
 }));
 
 const health: Health = {
@@ -37,10 +41,13 @@ const notification = (
 ): Notification => ({
   ID: id,
   Scope: "machine",
+  ScopeID: "",
   Action: action,
   Detail: "",
   CreatedAt: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
   Severity: severity,
+  Dismissible: severity === "info",
+  OpenPath: "",
 });
 
 function renderWithQuery(ui: ReactNode) {
@@ -48,12 +55,20 @@ function renderWithQuery(ui: ReactNode) {
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
 
-  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+  return render(
+    <MemoryRouter>
+      <QueryClientProvider client={client}>{ui}</QueryClientProvider>
+    </MemoryRouter>,
+  );
 }
 
 beforeEach(() => {
+  sessionStorage.clear();
   vi.mocked(StatusService.Health).mockReset();
   vi.mocked(StatusService.Notifications).mockReset();
+  vi.mocked(StatusService.Dismiss).mockReset();
+  vi.mocked(StatusService.ClearNotifications).mockReset();
+  vi.mocked(StatusService.OpenDataFolder).mockReset();
 });
 
 describe("EngineStatus", () => {
@@ -211,6 +226,222 @@ describe("Notifications", () => {
       name: "Notifications, 12 recent entries",
     });
     expect(trigger).toHaveTextContent("9+");
+  });
+
+  it("shows project actions with the project they belong to", async () => {
+    const user = userEvent.setup();
+    vi.mocked(StatusService.Notifications).mockResolvedValue([
+      { ...notification("p1", "Project created", 2), Scope: "project", Detail: "Etugora" },
+      { ...notification("p2", "Project removed", 9), Scope: "project", Detail: "checkout" },
+    ]);
+
+    renderWithQuery(<Notifications />);
+
+    await user.click(await screen.findByRole("button", { name: "Notifications, 2 recent entries" }));
+
+    expect(await screen.findByText("Project created")).toBeInTheDocument();
+    expect(screen.getByText("project · Etugora")).toBeInTheDocument();
+    expect(screen.getByText("Project removed")).toBeInTheDocument();
+    expect(screen.getByText("project · checkout")).toBeInTheDocument();
+  });
+
+  it("links a project entry to that project and leaves other entries alone", async () => {
+    const user = userEvent.setup();
+    vi.mocked(StatusService.Notifications).mockResolvedValue([
+      { ...notification("p1", "Project created", 2), Scope: "project", ScopeID: "p1", Detail: "Etugora" },
+      notification("m1", "Engine started", 20),
+    ]);
+
+    renderWithQuery(<Notifications />);
+
+    await user.click(await screen.findByRole("button", { name: "Notifications, 2 recent entries" }));
+
+    expect(await screen.findByRole("link", { name: "Open project Etugora" })).toHaveAttribute(
+      "href",
+      "/projects?project=p1",
+    );
+    expect(screen.getByText("Engine started")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Open project/ })).not.toBeNull();
+  });
+
+  it("asks for a larger page when the list is full", async () => {
+    const user = userEvent.setup();
+    vi.mocked(StatusService.Notifications).mockResolvedValue(
+      Array.from({ length: 10 }, (_, index) => notification(String(index), `Action ${index}`, index + 1)),
+    );
+
+    renderWithQuery(<Notifications />);
+
+    await user.click(await screen.findByRole("button", { name: "Notifications, 10 recent entries" }));
+    await user.click(await screen.findByRole("button", { name: "Show more activity" }));
+
+    expect(StatusService.Notifications).toHaveBeenLastCalledWith(30);
+  });
+
+  it("keeps the grown page when the bell is reopened from scratch", async () => {
+    const user = userEvent.setup();
+    const history = Array.from({ length: 30 }, (_, index) =>
+      notification(String(index), `Action ${index}`, index + 1),
+    );
+    // The generated binding is a cancellable promise; the bell only awaits it.
+    vi.mocked(StatusService.Notifications).mockImplementation(
+      (async (limit: number) => history.slice(0, limit)) as never,
+    );
+
+    const first = renderWithQuery(<Notifications />);
+    await user.click(await screen.findByRole("button", { name: "Notifications, 10 recent entries" }));
+    await user.click(await screen.findByRole("button", { name: "Show more activity" }));
+    await waitFor(() => expect(StatusService.Notifications).toHaveBeenLastCalledWith(30));
+    first.unmount();
+
+    vi.mocked(StatusService.Notifications).mockClear();
+    renderWithQuery(<Notifications />);
+
+    await waitFor(() => expect(StatusService.Notifications).toHaveBeenLastCalledWith(30));
+    expect(
+      await screen.findByRole("button", { name: "Notifications, 30 recent entries" }),
+    ).toBeInTheDocument();
+  });
+
+  it("starts at ten again when the saved page is unusable", async () => {
+    const user = userEvent.setup();
+    sessionStorage.setItem("locafy.notifications.page", "nonsense");
+    vi.mocked(StatusService.Notifications).mockResolvedValue([notification("a", "Machine registered", 5)]);
+
+    renderWithQuery(<Notifications />);
+
+    await waitFor(() => expect(StatusService.Notifications).toHaveBeenLastCalledWith(10));
+    await user.click(await screen.findByRole("button", { name: "Notifications, 1 recent entries" }));
+    expect(screen.queryByRole("button", { name: "Show more activity" })).not.toBeInTheDocument();
+  });
+
+  it("offers no larger page when everything fits", async () => {
+    const user = userEvent.setup();
+    vi.mocked(StatusService.Notifications).mockResolvedValue([
+      notification("a", "Machine registered", 5),
+      notification("b", "Engine started", 120),
+    ]);
+
+    renderWithQuery(<Notifications />);
+
+    await user.click(await screen.findByRole("button", { name: "Notifications, 2 recent entries" }));
+
+    expect(screen.queryByRole("button", { name: "Show more activity" })).not.toBeInTheDocument();
+  });
+
+  it("dismisses a single entry", async () => {
+    const user = userEvent.setup();
+    vi.mocked(StatusService.Dismiss).mockResolvedValue(undefined);
+    vi.mocked(StatusService.Notifications).mockResolvedValue([
+      notification("a", "Machine registered", 5),
+      notification("b", "Engine started", 30),
+    ]);
+
+    renderWithQuery(<Notifications />);
+
+    await user.click(await screen.findByRole("button", { name: "Notifications, 2 recent entries" }));
+    await user.click(await screen.findByRole("button", { name: "Dismiss Engine started" }));
+
+    expect(StatusService.Dismiss).toHaveBeenCalledWith("b");
+  });
+
+  it("clears every entry at once", async () => {
+    const user = userEvent.setup();
+    vi.mocked(StatusService.ClearNotifications).mockResolvedValue(2);
+    vi.mocked(StatusService.Notifications).mockResolvedValue([
+      notification("a", "Machine registered", 5),
+      notification("b", "Engine started", 30),
+    ]);
+
+    renderWithQuery(<Notifications />);
+
+    await user.click(await screen.findByRole("button", { name: "Notifications, 2 recent entries" }));
+    await user.click(await screen.findByRole("button", { name: "Clear notifications" }));
+
+    expect(StatusService.ClearNotifications).toHaveBeenCalled();
+  });
+
+  it("reports a failed dismissal instead of pretending it worked", async () => {
+    const user = userEvent.setup();
+    vi.mocked(StatusService.Notifications).mockResolvedValue([
+      notification("a", "Machine registered", 5),
+    ]);
+    vi.mocked(StatusService.Dismiss).mockRejectedValue(new Error("notification not found"));
+
+    renderWithQuery(<Notifications />);
+
+    await user.click(await screen.findByRole("button", { name: "Notifications, 1 recent entries" }));
+    await user.click(await screen.findByRole("button", { name: "Dismiss Machine registered" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("notification not found");
+  });
+
+  it("does not offer to dismiss a warning derived from the machine", async () => {
+    const user = userEvent.setup();
+    vi.mocked(StatusService.Notifications).mockResolvedValue([
+      notification("disk-space", "Low disk space", 0, "warning"),
+      notification("b", "Engine started", 30),
+    ]);
+
+    renderWithQuery(<Notifications />);
+
+    await user.click(await screen.findByRole("button", { name: /Notifications, 2 recent entries/ }));
+
+    expect(
+      screen.queryByRole("button", { name: "Dismiss Low disk space" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Dismiss Engine started" })).toBeInTheDocument();
+  });
+
+  it("opens the folder the disk warning is about", async () => {
+    const user = userEvent.setup();
+    const dataFolder = "C:\\Users\\dev\\AppData\\Roaming\\Locafy\\data";
+    vi.mocked(StatusService.OpenDataFolder).mockResolvedValue(undefined);
+    vi.mocked(StatusService.Notifications).mockResolvedValue([
+      { ...notification("disk-space", "Low disk space", 0, "warning"), OpenPath: dataFolder },
+    ]);
+
+    renderWithQuery(<Notifications />);
+
+    await user.click(await screen.findByRole("button", { name: /Notifications, 1 recent entries/ }));
+
+    const open = await screen.findByRole("button", { name: "Open data folder" });
+    expect(open).toHaveAttribute("title", dataFolder);
+
+    await user.click(open);
+
+    expect(StatusService.OpenDataFolder).toHaveBeenCalled();
+  });
+
+  it("reports a folder that could not be opened", async () => {
+    const user = userEvent.setup();
+    vi.mocked(StatusService.OpenDataFolder).mockRejectedValue(new Error("explorer is unavailable"));
+    vi.mocked(StatusService.Notifications).mockResolvedValue([
+      {
+        ...notification("disk-space", "Low disk space", 0, "warning"),
+        OpenPath: "C:\\Users\\dev\\AppData\\Roaming\\Locafy\\data",
+      },
+    ]);
+
+    renderWithQuery(<Notifications />);
+
+    await user.click(await screen.findByRole("button", { name: /Notifications, 1 recent entries/ }));
+    await user.click(await screen.findByRole("button", { name: "Open data folder" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("explorer is unavailable");
+  });
+
+  it("offers no folder for entries with nothing to open", async () => {
+    const user = userEvent.setup();
+    vi.mocked(StatusService.Notifications).mockResolvedValue([
+      notification("a", "Machine registered", 5),
+    ]);
+
+    renderWithQuery(<Notifications />);
+
+    await user.click(await screen.findByRole("button", { name: "Notifications, 1 recent entries" }));
+
+    expect(screen.queryByRole("button", { name: "Open data folder" })).not.toBeInTheDocument();
   });
 
   it("surfaces a failure to read activity", async () => {
