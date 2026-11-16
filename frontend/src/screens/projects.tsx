@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, FolderKanban, FolderOpen, FolderPlus, Link2, Pencil, Trash2 } from "lucide-react";
+import { ArrowRight, FolderInput, FolderKanban, FolderOpen, FolderPlus, Link2, Pencil, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import * as DialogsService from "../../bindings/locafy.dev/desktop/internal/dialogs/service";
 import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/projects/service";
 import type { Project } from "../../bindings/locafy.dev/desktop/internal/projects/models";
 import { LifecycleBadge } from "@/components/lifecycle-badge";
+import { ImportDialog } from "./projects-import";
 
 import {
   AlertDialog,
@@ -42,6 +43,7 @@ const workspaceKey = ["projects", "workspace"] as const;
 type Editing =
   | { kind: "create" }
   | { kind: "link" }
+  | { kind: "import" }
   | { kind: "rename"; project: Project }
   | { kind: "root"; project: Project }
   | { kind: "remove"; project: Project }
@@ -177,6 +179,9 @@ export function ProjectsScreen() {
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => open({ kind: "link" })}>
             <Link2 /> Link folder
+          </Button>
+          <Button variant="outline" onClick={() => open({ kind: "import" })}>
+            <FolderInput /> Import folder
           </Button>
           <Button onClick={() => open({ kind: "create" })}>
             <FolderPlus /> New project
@@ -446,6 +451,12 @@ export function ProjectsScreen() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ImportDialog
+        open={editing?.kind === "import"}
+        onClose={close}
+        onImported={refresh}
+      />
     </div>
   );
 }

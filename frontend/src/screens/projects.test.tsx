@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -24,6 +24,8 @@ vi.mock("../../bindings/locafy.dev/desktop/internal/projects/service", () => ({
   Remove: vi.fn(),
   WorkspaceDir: vi.fn(),
   SetWorkspaceDir: vi.fn(),
+  ScanFolder: vi.fn(),
+  LinkMany: vi.fn(),
 }));
 
 const project = (overrides: Partial<Project> = {}): Project => ({
@@ -307,6 +309,89 @@ describe("ProjectsScreen", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "another project already uses this directory",
+    );
+  });
+
+  it("imports a batch of folders and hides the ones without a marker", async () => {
+    const user = userEvent.setup();
+    vi.mocked(ProjectsService.ScanFolder).mockResolvedValue([
+      { Path: "C:\\laragon\\www\\etugora", Name: "etugora", Marker: "composer.json" },
+      { Path: "C:\\laragon\\www\\checkout", Name: "checkout", Marker: "package.json" },
+      { Path: "C:\\laragon\\www\\uploads", Name: "uploads", Marker: "" },
+    ]);
+    vi.mocked(ProjectsService.LinkMany).mockResolvedValue([
+      { Path: "C:\\laragon\\www\\etugora", Error: "" },
+      { Path: "C:\\laragon\\www\\checkout", Error: "" },
+    ]);
+
+    renderWithQuery(<ProjectsScreen />);
+
+    await user.click(screen.getByRole("button", { name: "Import folder" }));
+    await user.type(await screen.findByLabelText("Folder path"), "C:\\laragon\\www");
+    await user.click(screen.getByRole("button", { name: "Scan" }));
+
+    expect(await screen.findByText("3 folders found")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "etugora" })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "uploads" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: "Show folders without a marker" }));
+    expect(screen.getByRole("checkbox", { name: "uploads" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: "checkout" }));
+    expect(screen.getByRole("button", { name: "Import 1 project" })).toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: "checkout" }));
+    expect(screen.getByRole("button", { name: "Import 2 projects" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Import 2 projects" }));
+
+    expect(ProjectsService.LinkMany).toHaveBeenCalledWith([
+      "C:\\laragon\\www\\etugora",
+      "C:\\laragon\\www\\checkout",
+    ]);
+    expect(screen.queryByText("Import projects from a folder")).not.toBeInTheDocument();
+    await waitFor(() => expect(ProjectsService.List).toHaveBeenCalledTimes(2));
+  });
+
+  it("keeps folders that failed to import listed with the reason", async () => {
+    const user = userEvent.setup();
+    vi.mocked(ProjectsService.ScanFolder).mockResolvedValue([
+      { Path: "C:\\laragon\\www\\etugora", Name: "etugora", Marker: "composer.json" },
+      { Path: "C:\\laragon\\www\\broken", Name: "broken", Marker: "package.json" },
+    ]);
+    vi.mocked(ProjectsService.LinkMany).mockResolvedValue([
+      { Path: "C:\\laragon\\www\\etugora", Error: "" },
+      { Path: "C:\\laragon\\www\\broken", Error: "another project already uses this directory" },
+    ]);
+
+    renderWithQuery(<ProjectsScreen />);
+
+    await user.click(screen.getByRole("button", { name: "Import folder" }));
+    await user.type(await screen.findByLabelText("Folder path"), "C:\\laragon\\www");
+    await user.click(screen.getByRole("button", { name: "Scan" }));
+    await user.click(await screen.findByRole("button", { name: "Import 2 projects" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "broken: another project already uses this directory",
+    );
+    expect(screen.getByText("Import projects from a folder")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "broken" })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "etugora" })).not.toBeInTheDocument();
+  });
+
+  it("reports a rejected scan inside the dialog", async () => {
+    const user = userEvent.setup();
+    vi.mocked(ProjectsService.ScanFolder).mockRejectedValue(
+      new Error("the selected directory does not exist"),
+    );
+
+    renderWithQuery(<ProjectsScreen />);
+
+    await user.click(screen.getByRole("button", { name: "Import folder" }));
+    await user.type(await screen.findByLabelText("Folder path"), "C:\\gone");
+    await user.click(screen.getByRole("button", { name: "Scan" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "the selected directory does not exist",
     );
   });
 });
