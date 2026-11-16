@@ -39,6 +39,13 @@ export function Link(rootPath: string): $CancellablePromise<$models.Project> {
 }
 
 /**
+ * LinkMany links every selected directory as a linked project.
+ */
+export function LinkMany(paths: string[] | null): $CancellablePromise<$models.ImportOutcome[] | null> {
+    return $Call.ByID(959950290, paths);
+}
+
+/**
  * List returns live projects ordered by name.
  */
 export function List(): $CancellablePromise<$models.Project[] | null> {
@@ -57,6 +64,14 @@ export function Remove(id: string): $CancellablePromise<void> {
  */
 export function Rename(id: string, name: string): $CancellablePromise<$models.Project> {
     return $Call.ByID(2965260831, id, name);
+}
+
+/**
+ * ScanFolder lists the child directories of a folder that are not already
+ * projects, marking the ones that look like projects.
+ */
+export function ScanFolder(path: string): $CancellablePromise<$models.FolderCandidate[] | null> {
+    return $Call.ByID(3952414168, path);
 }
 
 /**

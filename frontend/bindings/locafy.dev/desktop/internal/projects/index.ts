@@ -7,5 +7,7 @@ export {
 };
 
 export type {
+    FolderCandidate,
+    ImportOutcome,
     Project
 } from "./models.js";

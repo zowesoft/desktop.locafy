@@ -86,6 +86,17 @@ func (s *Service) Link(rootPath string) (Project, error) {
 	return Link(s.database, strings.TrimSpace(rootPath))
 }
 
+// ScanFolder lists the child directories of a folder that are not already
+// projects, marking the ones that look like projects.
+func (s *Service) ScanFolder(path string) ([]FolderCandidate, error) {
+	return ScanFolder(s.database, path)
+}
+
+// LinkMany links every selected directory as a linked project.
+func (s *Service) LinkMany(paths []string) ([]ImportOutcome, error) {
+	return LinkMany(s.database, paths)
+}
+
 // Rename changes a project's display name.
 func (s *Service) Rename(id string, name string) (Project, error) {
 	return Rename(s.database, id, name)
