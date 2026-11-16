@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
@@ -266,6 +266,22 @@ export function Notifications() {
     queryFn: async () => (await StatusService.Notifications(limit)) ?? [],
     refetchInterval: 60_000,
   });
+  // The badge describes what is waiting, not how much of the list was loaded.
+  const unreadQuery = useQuery({
+    queryKey: [...notificationsKey, "unread"],
+    queryFn: () => StatusService.UnreadNotifications(),
+    refetchInterval: 60_000,
+  });
+  const markSeen = useMutation({
+    mutationFn: () => StatusService.MarkNotificationsSeen(),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: notificationsKey });
+    },
+  });
+  // Which entries were new when the bell opened. Held here rather than read
+  // from the refetched list, so the divider does not vanish the moment opening
+  // the bell marks them seen.
+  const [newIDs, setNewIDs] = useState<ReadonlySet<string>>(() => new Set());
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: notificationsKey });
   const dismiss = useMutation({
@@ -282,14 +298,33 @@ export function Notifications() {
 
   const entries = notifications.data ?? [];
   const count = entries.length;
+  const unread = unreadQuery.data ?? 0;
   const muted = preferences.data
     ? !preferences.data.Machine && !preferences.data.Project && !preferences.data.Warnings
     : false;
-  const warnings = entries.filter((entry) => entry.Severity === "warning").length;
-  const label =
-    count > 0
-      ? `Notifications, ${count} recent entries${warnings > 0 ? `, ${warnings} warning` : ""}`
-      : "Notifications";
+  const label = unread > 0 ? `Notifications, ${unread} unread` : "Notifications";
+
+  useEffect(() => {
+    if (!open || !notifications.isSuccess) return;
+    const unseen = new Set(
+      (notifications.data ?? [])
+        .filter((entry) => entry.Dismissible && !entry.Seen)
+        .map((entry) => entry.ID),
+    );
+    setNewIDs(unseen);
+    markSeen.mutate();
+    // Only when the bell opens: refetches must not move the divider.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, notifications.isSuccess]);
+
+  // Newest first, so the new entries are at the top and the divider sits below
+  // the last of them — after any leading warning, which is current state rather
+  // than news and is never new itself.
+  const lastNew = entries.reduce(
+    (last, entry, index) => (newIDs.has(entry.ID) ? index : last),
+    -1,
+  );
+  const dividerAfter = lastNew >= 0 && lastNew < count - 1 ? lastNew + 1 : -1;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -298,9 +333,9 @@ export function Notifications() {
         className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "relative")}
       >
         <Bell />
-        {count > 0 && (
+        {unread > 0 && (
           <span className="absolute -right-0.5 -top-0.5 flex min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[0.6rem] font-medium leading-4 text-accent-foreground">
-            {count > 9 ? "9+" : count}
+            {unread > 9 ? "9+" : unread}
           </span>
         )}
       </PopoverTrigger>
@@ -353,7 +388,7 @@ export function Notifications() {
         ) : (
           <>
           <ul className="mt-3 max-h-64 divide-y divide-border overflow-y-auto">
-            {entries.map((entry) => {
+            {entries.map((entry, index) => {
               const isWarning = entry.Severity === "warning";
               // Project entries open the project they describe; machine entries
               // have nowhere to go.
@@ -387,7 +422,17 @@ export function Notifications() {
               );
 
               return (
-                <li key={entry.ID} className="flex items-start gap-2 py-2">
+                <Fragment key={entry.ID}>
+                {index === dividerAfter && (
+                  <li className="flex items-center gap-2 py-1">
+                    <span className="h-px flex-1 bg-border" />
+                    <span className="text-[0.6rem] font-medium uppercase tracking-wide text-muted-foreground">
+                      New
+                    </span>
+                    <span className="h-px flex-1 bg-border" />
+                  </li>
+                )}
+                <li className="flex items-start gap-2 py-2">
                   {projectHref ? (
                     <Link
                       to={projectHref}
@@ -430,6 +475,7 @@ export function Notifications() {
                     </button>
                   )}
                 </li>
+                </Fragment>
               );
             })}
           </ul>

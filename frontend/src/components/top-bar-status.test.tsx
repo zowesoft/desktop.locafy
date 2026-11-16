@@ -16,6 +16,8 @@ vi.mock("../../bindings/locafy.dev/desktop/internal/status/service", () => ({
   ClearNotifications: vi.fn(),
   OpenDataFolder: vi.fn(),
   NotificationPreferences: vi.fn(),
+  UnreadNotifications: vi.fn(),
+  MarkNotificationsSeen: vi.fn(),
 }));
 
 const health: Health = {
@@ -49,6 +51,8 @@ const notification = (
   Severity: severity,
   Dismissible: severity === "info",
   OpenPath: "",
+  // Settled history by default; tests about the new divider set this false.
+  Seen: true,
 });
 
 function renderWithQuery(ui: ReactNode) {
@@ -76,6 +80,10 @@ beforeEach(() => {
     Project: true,
     Warnings: true,
   });
+  vi.mocked(StatusService.UnreadNotifications).mockReset();
+  vi.mocked(StatusService.UnreadNotifications).mockResolvedValue(0);
+  vi.mocked(StatusService.MarkNotificationsSeen).mockReset();
+  vi.mocked(StatusService.MarkNotificationsSeen).mockResolvedValue(undefined);
 });
 
 describe("EngineStatus", () => {
@@ -220,7 +228,7 @@ describe("Notifications", () => {
     renderWithQuery(<Notifications />);
 
     const trigger = await screen.findByRole("button", {
-      name: "Notifications, 2 recent entries",
+      name: /^Notifications/,
     });
     await user.click(trigger);
 
@@ -240,7 +248,7 @@ describe("Notifications", () => {
     renderWithQuery(<Notifications />);
 
     const trigger = await screen.findByRole("button", {
-      name: "Notifications, 2 recent entries, 1 warning",
+      name: /^Notifications/,
     });
     await user.click(trigger);
 
@@ -257,21 +265,80 @@ describe("Notifications", () => {
     renderWithQuery(<Notifications />);
 
     expect(
-      await screen.findByRole("button", { name: "Notifications, 1 recent entries" }),
+      await screen.findByRole("button", { name: /^Notifications/ }),
     ).toBeInTheDocument();
+  });
+
+  it("counts unread entries rather than the loaded page", async () => {
+    vi.mocked(StatusService.Notifications).mockResolvedValue(
+      Array.from({ length: 10 }, (_, index) => notification(String(index), `Action ${index}`, 1)),
+    );
+    vi.mocked(StatusService.UnreadNotifications).mockResolvedValue(3);
+
+    renderWithQuery(<Notifications />);
+
+    const trigger = await screen.findByRole("button", { name: "Notifications, 3 unread" });
+    expect(trigger).toHaveTextContent("3");
   });
 
   it("caps the badge at nine plus", async () => {
     vi.mocked(StatusService.Notifications).mockResolvedValue(
-      Array.from({ length: 12 }, (_, index) => notification(String(index), `Action ${index}`, 1)),
+      Array.from({ length: 4 }, (_, index) => notification(String(index), `Action ${index}`, 1)),
     );
+    vi.mocked(StatusService.UnreadNotifications).mockResolvedValue(12);
 
     renderWithQuery(<Notifications />);
 
-    const trigger = await screen.findByRole("button", {
-      name: "Notifications, 12 recent entries",
-    });
+    const trigger = await screen.findByRole("button", { name: "Notifications, 12 unread" });
     expect(trigger).toHaveTextContent("9+");
+  });
+
+  it("divides new activity from what was already seen and marks the bell opened", async () => {
+    const user = userEvent.setup();
+    vi.mocked(StatusService.Notifications).mockResolvedValue([
+      { ...notification("new-1", "Project created", 1), Seen: false, Scope: "project", Detail: "Etugora" },
+      { ...notification("new-2", "Engine started", 3), Seen: false },
+      notification("old-1", "Machine registered", 90),
+    ]);
+    vi.mocked(StatusService.UnreadNotifications).mockResolvedValue(2);
+
+    renderWithQuery(<Notifications />);
+
+    await user.click(await screen.findByRole("button", { name: "Notifications, 2 unread" }));
+
+    expect(await screen.findByText("New")).toBeInTheDocument();
+    expect(StatusService.MarkNotificationsSeen).toHaveBeenCalled();
+  });
+
+  it("puts the divider below the new entries when a warning leads the list", async () => {
+    const user = userEvent.setup();
+    vi.mocked(StatusService.Notifications).mockResolvedValue([
+      { ...notification("disk", "Low disk space", 0, "warning"), OpenPath: "C:\\data" },
+      { ...notification("new-1", "Project created", 2), Seen: false, Scope: "project", Detail: "Etugora" },
+      notification("old-1", "Machine registered", 90),
+    ]);
+    vi.mocked(StatusService.UnreadNotifications).mockResolvedValue(1);
+
+    renderWithQuery(<Notifications />);
+
+    await user.click(await screen.findByRole("button", { name: "Notifications, 1 unread" }));
+
+    const divider = (await screen.findByText("New")).closest("li");
+    expect(divider?.previousElementSibling).toHaveTextContent("Project created");
+    expect(divider?.nextElementSibling).toHaveTextContent("Machine registered");
+  });
+
+  it("shows no divider when everything is new", async () => {
+    const user = userEvent.setup();
+    vi.mocked(StatusService.Notifications).mockResolvedValue([
+      { ...notification("a", "Engine started", 1), Seen: false },
+    ]);
+
+    renderWithQuery(<Notifications />);
+
+    await user.click(await screen.findByRole("button", { name: /^Notifications/ }));
+
+    expect(screen.queryByText("New")).not.toBeInTheDocument();
   });
 
   it("shows project actions with the project they belong to", async () => {
@@ -283,7 +350,7 @@ describe("Notifications", () => {
 
     renderWithQuery(<Notifications />);
 
-    await user.click(await screen.findByRole("button", { name: "Notifications, 2 recent entries" }));
+    await user.click(await screen.findByRole("button", { name: /^Notifications/ }));
 
     expect(await screen.findByText("Project created")).toBeInTheDocument();
     expect(screen.getByText("project · Etugora")).toBeInTheDocument();
@@ -301,7 +368,7 @@ describe("Notifications", () => {
 
     renderWithQuery(<Notifications />);
 
-    await user.click(await screen.findByRole("button", { name: "Notifications, 1 recent entries" }));
+    await user.click(await screen.findByRole("button", { name: /^Notifications/ }));
 
     const age = screen.getByText("just now");
     expect(age).toHaveAttribute("title", new Date("2026-11-16T10:00:00Z").toLocaleString());
@@ -326,7 +393,7 @@ describe("Notifications", () => {
 
     renderWithQuery(<Notifications />);
 
-    await user.click(await screen.findByRole("button", { name: "Notifications, 2 recent entries" }));
+    await user.click(await screen.findByRole("button", { name: /^Notifications/ }));
 
     expect(await screen.findByRole("link", { name: "Open project Etugora" })).toHaveAttribute(
       "href",
@@ -344,7 +411,7 @@ describe("Notifications", () => {
 
     renderWithQuery(<Notifications />);
 
-    await user.click(await screen.findByRole("button", { name: "Notifications, 10 recent entries" }));
+    await user.click(await screen.findByRole("button", { name: /^Notifications/ }));
     await user.click(await screen.findByRole("button", { name: "Show more activity" }));
 
     expect(StatusService.Notifications).toHaveBeenLastCalledWith(30);
@@ -361,7 +428,7 @@ describe("Notifications", () => {
     );
 
     const first = renderWithQuery(<Notifications />);
-    await user.click(await screen.findByRole("button", { name: "Notifications, 10 recent entries" }));
+    await user.click(await screen.findByRole("button", { name: /^Notifications/ }));
     await user.click(await screen.findByRole("button", { name: "Show more activity" }));
     await waitFor(() => expect(StatusService.Notifications).toHaveBeenLastCalledWith(30));
     first.unmount();
@@ -371,7 +438,7 @@ describe("Notifications", () => {
 
     await waitFor(() => expect(StatusService.Notifications).toHaveBeenLastCalledWith(30));
     expect(
-      await screen.findByRole("button", { name: "Notifications, 30 recent entries" }),
+      await screen.findByRole("button", { name: /^Notifications/ }),
     ).toBeInTheDocument();
   });
 
@@ -383,7 +450,7 @@ describe("Notifications", () => {
     renderWithQuery(<Notifications />);
 
     await waitFor(() => expect(StatusService.Notifications).toHaveBeenLastCalledWith(10));
-    await user.click(await screen.findByRole("button", { name: "Notifications, 1 recent entries" }));
+    await user.click(await screen.findByRole("button", { name: /^Notifications/ }));
     expect(screen.queryByRole("button", { name: "Show more activity" })).not.toBeInTheDocument();
   });
 
@@ -396,7 +463,7 @@ describe("Notifications", () => {
 
     renderWithQuery(<Notifications />);
 
-    await user.click(await screen.findByRole("button", { name: "Notifications, 2 recent entries" }));
+    await user.click(await screen.findByRole("button", { name: /^Notifications/ }));
 
     expect(screen.queryByRole("button", { name: "Show more activity" })).not.toBeInTheDocument();
   });
@@ -411,7 +478,7 @@ describe("Notifications", () => {
 
     renderWithQuery(<Notifications />);
 
-    await user.click(await screen.findByRole("button", { name: "Notifications, 2 recent entries" }));
+    await user.click(await screen.findByRole("button", { name: /^Notifications/ }));
     await user.click(await screen.findByRole("button", { name: "Dismiss Engine started" }));
 
     expect(StatusService.Dismiss).toHaveBeenCalledWith("b");
@@ -427,7 +494,7 @@ describe("Notifications", () => {
 
     renderWithQuery(<Notifications />);
 
-    await user.click(await screen.findByRole("button", { name: "Notifications, 2 recent entries" }));
+    await user.click(await screen.findByRole("button", { name: /^Notifications/ }));
     await user.click(await screen.findByRole("button", { name: "Clear notifications" }));
 
     expect(StatusService.ClearNotifications).toHaveBeenCalled();
@@ -442,7 +509,7 @@ describe("Notifications", () => {
 
     renderWithQuery(<Notifications />);
 
-    await user.click(await screen.findByRole("button", { name: "Notifications, 1 recent entries" }));
+    await user.click(await screen.findByRole("button", { name: /^Notifications/ }));
     await user.click(await screen.findByRole("button", { name: "Dismiss Machine registered" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("notification not found");
@@ -457,7 +524,7 @@ describe("Notifications", () => {
 
     renderWithQuery(<Notifications />);
 
-    await user.click(await screen.findByRole("button", { name: /Notifications, 2 recent entries/ }));
+    await user.click(await screen.findByRole("button", { name: /^Notifications/ }));
 
     expect(
       screen.queryByRole("button", { name: "Dismiss Low disk space" }),
@@ -475,7 +542,7 @@ describe("Notifications", () => {
 
     renderWithQuery(<Notifications />);
 
-    await user.click(await screen.findByRole("button", { name: /Notifications, 1 recent entries/ }));
+    await user.click(await screen.findByRole("button", { name: /^Notifications/ }));
 
     const open = await screen.findByRole("button", { name: "Open data folder" });
     expect(open).toHaveAttribute("title", dataFolder);
@@ -497,7 +564,7 @@ describe("Notifications", () => {
 
     renderWithQuery(<Notifications />);
 
-    await user.click(await screen.findByRole("button", { name: /Notifications, 1 recent entries/ }));
+    await user.click(await screen.findByRole("button", { name: /^Notifications/ }));
     await user.click(await screen.findByRole("button", { name: "Open data folder" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("explorer is unavailable");
@@ -511,7 +578,7 @@ describe("Notifications", () => {
 
     renderWithQuery(<Notifications />);
 
-    await user.click(await screen.findByRole("button", { name: "Notifications, 1 recent entries" }));
+    await user.click(await screen.findByRole("button", { name: /^Notifications/ }));
 
     expect(screen.queryByRole("button", { name: "Open data folder" })).not.toBeInTheDocument();
   });
