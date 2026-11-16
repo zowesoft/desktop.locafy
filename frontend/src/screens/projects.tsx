@@ -7,6 +7,7 @@ import * as DialogsService from "../../bindings/locafy.dev/desktop/internal/dial
 import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/projects/service";
 import type { Project } from "../../bindings/locafy.dev/desktop/internal/projects/models";
 import { LifecycleBadge } from "@/components/lifecycle-badge";
+import { notificationsKey } from "@/components/top-bar-status";
 import { ImportDialog } from "./projects-import";
 import {
   AlertDialog,
@@ -117,7 +118,12 @@ export function ProjectsScreen() {
     queryFn: () => ProjectsService.WorkspaceDir(),
   });
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: projectsKey });
+  // Every project action is recorded in the activity history the bell reads,
+  // so refreshing the list also refreshes its count and entries.
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: projectsKey });
+    void queryClient.invalidateQueries({ queryKey: notificationsKey });
+  };
 
   const create = useMutation({
     mutationFn: (name: string) => ProjectsService.Create(name),

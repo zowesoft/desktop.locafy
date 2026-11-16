@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as DialogsService from "../../bindings/locafy.dev/desktop/internal/dialogs/service";
 import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/projects/service";
 import type { Project } from "../../bindings/locafy.dev/desktop/internal/projects/models";
+import { notificationsKey } from "@/components/top-bar-status";
 import { ProjectsScreen } from "./projects";
 
 vi.mock("../../bindings/locafy.dev/desktop/internal/dialogs/service", () => ({
@@ -183,6 +184,29 @@ describe("ProjectsScreen", () => {
     await user.click(screen.getByRole("button", { name: "Create project" }));
 
     expect(ProjectsService.Create).toHaveBeenCalledWith("Etugora");
+  });
+
+  it("refreshes the notifications bell after a project action", async () => {
+    const user = userEvent.setup();
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+    });
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    vi.mocked(ProjectsService.Create).mockResolvedValue(project());
+
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <ProjectsScreen />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "New project" }));
+    await user.type(await screen.findByLabelText("Project name"), "Etugora");
+    await user.click(screen.getByRole("button", { name: "Create project" }));
+
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: notificationsKey }));
   });
 
   it("links an existing folder by path", async () => {
