@@ -38,8 +38,10 @@ const (
 
 	// Window sizes are device-independent pixels. The window opens at the
 	// default size and is fitted to the screen's work area once it is shown.
-	windowDefaultWidth  = 1100
-	windowDefaultHeight = 760
+	// Width and height match the window in the reference screenshot, whose
+	// frame is about 800 by 611 device-independent pixels at 150% scaling.
+	windowDefaultWidth  = 800
+	windowDefaultHeight = 611
 	windowMinWidth      = 720
 	windowMinHeight     = 400
 )
