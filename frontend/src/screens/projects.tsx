@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, FolderKanban, FolderPlus, Link2, Pencil, Trash2 } from "lucide-react";
+import { ArrowRight, FolderKanban, FolderOpen, FolderPlus, Link2, Pencil, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 
+import * as DialogsService from "../../bindings/locafy.dev/desktop/internal/dialogs/service";
 import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/projects/service";
 import type { Project } from "../../bindings/locafy.dev/desktop/internal/projects/models";
 import { LifecycleBadge } from "@/components/lifecycle-badge";
@@ -52,6 +53,7 @@ export function ProjectsScreen() {
   const [value, setValue] = useState("");
   const [failure, setFailure] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  const [choosing, setChoosing] = useState(false);
 
   const projects = useProjects();
 
@@ -101,6 +103,21 @@ export function ProjectsScreen() {
     setEditing(next);
     setValue(initial);
     setFailure(null);
+  };
+
+  // The native dialog returns an empty path when it is cancelled, which leaves
+  // whatever was typed in place.
+  const browse = async (title: string) => {
+    setChoosing(true);
+    setFailure(null);
+    try {
+      const picked = await DialogsService.ChooseFolder(title);
+      if (picked) setValue(picked);
+    } catch (error) {
+      setFailure(String(error));
+    } finally {
+      setChoosing(false);
+    }
   };
 
   const close = () => {
@@ -303,14 +320,26 @@ export function ProjectsScreen() {
               <label className="text-sm font-medium" htmlFor="project-value">
                 {editing?.kind === "create" ? "Project name" : "Folder path"}
               </label>
-              <Input
-                id="project-value"
-                className="mt-1.5"
-                autoFocus
-                placeholder={editing?.kind === "create" ? "Etugora" : "C:\\work\\etugora"}
-                value={value}
-                onChange={(event) => setValue(event.target.value)}
-              />
+              <div className="mt-1.5 flex gap-2">
+                <Input
+                  id="project-value"
+                  className="min-w-0 flex-1"
+                  autoFocus
+                  placeholder={editing?.kind === "create" ? "Etugora" : "C:\\work\\etugora"}
+                  value={value}
+                  onChange={(event) => setValue(event.target.value)}
+                />
+                {editing?.kind === "link" && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={choosing}
+                    onClick={() => browse("Link an existing folder")}
+                  >
+                    <FolderOpen /> Browse…
+                  </Button>
+                )}
+              </div>
             </div>
 
             {failure && (
@@ -352,13 +381,25 @@ export function ProjectsScreen() {
               <label className="text-sm font-medium" htmlFor="project-value">
                 {editing?.kind === "rename" ? "Project name" : "Folder path"}
               </label>
-              <Input
-                id="project-value"
-                className="mt-1.5"
-                autoFocus
-                value={value}
-                onChange={(event) => setValue(event.target.value)}
-              />
+              <div className="mt-1.5 flex gap-2">
+                <Input
+                  id="project-value"
+                  className="min-w-0 flex-1"
+                  autoFocus
+                  value={value}
+                  onChange={(event) => setValue(event.target.value)}
+                />
+                {editing?.kind === "root" && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={choosing}
+                    onClick={() => browse("Change project folder")}
+                  >
+                    <FolderOpen /> Browse…
+                  </Button>
+                )}
+              </div>
             </div>
 
             {failure && (

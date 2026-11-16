@@ -5,10 +5,15 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import * as DialogsService from "../../bindings/locafy.dev/desktop/internal/dialogs/service";
 import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/projects/service";
 import type { Project } from "../../bindings/locafy.dev/desktop/internal/projects/models";
 
 import { ProjectsScreen } from "./projects";
+
+vi.mock("../../bindings/locafy.dev/desktop/internal/dialogs/service", () => ({
+  ChooseFolder: vi.fn(),
+}));
 
 vi.mock("../../bindings/locafy.dev/desktop/internal/projects/service", () => ({
   List: vi.fn(),
@@ -50,6 +55,7 @@ beforeEach(() => {
   for (const fn of Object.values(ProjectsService)) {
     vi.mocked(fn).mockReset();
   }
+  vi.mocked(DialogsService.ChooseFolder).mockReset();
   vi.mocked(ProjectsService.WorkspaceDir).mockResolvedValue(
     "C:\\Users\\dev\\AppData\\Roaming\\Locafy\\projects",
   );
@@ -166,6 +172,80 @@ describe("ProjectsScreen", () => {
     await user.click(screen.getByRole("button", { name: "Link folder" }));
 
     expect(ProjectsService.Link).toHaveBeenCalledWith("D:\\work\\checkout");
+  });
+
+  it("fills the folder from the native picker", async () => {
+    const user = userEvent.setup();
+    vi.mocked(DialogsService.ChooseFolder).mockResolvedValue("D:\\work\\picked");
+    vi.mocked(ProjectsService.Link).mockResolvedValue(
+      project({ Kind: "linked", RootPath: "D:\\work\\picked" }),
+    );
+
+    renderWithQuery(<ProjectsScreen />);
+
+    await user.click(screen.getByRole("button", { name: "Link folder" }));
+    await user.click(await screen.findByRole("button", { name: /Browse/ }));
+
+    expect(await screen.findByLabelText("Folder path")).toHaveValue("D:\\work\\picked");
+    expect(DialogsService.ChooseFolder).toHaveBeenCalledWith("Link an existing folder");
+
+    await user.click(screen.getByRole("button", { name: "Link folder" }));
+
+    expect(ProjectsService.Link).toHaveBeenCalledWith("D:\\work\\picked");
+  });
+
+  it("keeps what was typed when the picker is cancelled", async () => {
+    const user = userEvent.setup();
+    vi.mocked(DialogsService.ChooseFolder).mockResolvedValue("");
+
+    renderWithQuery(<ProjectsScreen />);
+
+    await user.click(screen.getByRole("button", { name: "Link folder" }));
+    await user.type(await screen.findByLabelText("Folder path"), "D:\\work\\typed");
+    await user.click(screen.getByRole("button", { name: /Browse/ }));
+
+    expect(DialogsService.ChooseFolder).toHaveBeenCalled();
+    expect(screen.getByLabelText("Folder path")).toHaveValue("D:\\work\\typed");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("reports a picker that fails", async () => {
+    const user = userEvent.setup();
+    vi.mocked(DialogsService.ChooseFolder).mockRejectedValue(new Error("no window to attach to"));
+
+    renderWithQuery(<ProjectsScreen />);
+
+    await user.click(screen.getByRole("button", { name: "Link folder" }));
+    await user.click(await screen.findByRole("button", { name: /Browse/ }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("no window to attach to");
+  });
+
+  it("offers the picker when changing a linked project's folder", async () => {
+    const user = userEvent.setup();
+    vi.mocked(ProjectsService.List).mockResolvedValue([
+      project({ ID: "p2", Name: "checkout", Kind: "linked", RootPath: "D:\\work\\checkout" }),
+    ]);
+    vi.mocked(DialogsService.ChooseFolder).mockResolvedValue("D:\\work\\moved");
+
+    renderWithQuery(<ProjectsScreen />);
+
+    await user.click(await screen.findByRole("button", { name: "Change folder for checkout" }));
+    await user.click(await screen.findByRole("button", { name: /Browse/ }));
+
+    expect(await screen.findByLabelText("Folder path")).toHaveValue("D:\\work\\moved");
+    expect(DialogsService.ChooseFolder).toHaveBeenCalledWith("Change project folder");
+  });
+
+  it("offers no picker when only naming a new project", async () => {
+    const user = userEvent.setup();
+
+    renderWithQuery(<ProjectsScreen />);
+
+    await user.click(screen.getByRole("button", { name: "New project" }));
+    await screen.findByLabelText("Project name");
+
+    expect(screen.queryByRole("button", { name: /Browse/ })).toBeNull();
   });
 
   it("explains that removing a project leaves its files alone", async () => {
