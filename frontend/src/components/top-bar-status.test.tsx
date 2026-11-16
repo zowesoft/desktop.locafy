@@ -15,6 +15,7 @@ vi.mock("../../bindings/locafy.dev/desktop/internal/status/service", () => ({
   Dismiss: vi.fn(),
   ClearNotifications: vi.fn(),
   OpenDataFolder: vi.fn(),
+  NotificationPreferences: vi.fn(),
 }));
 
 const health: Health = {
@@ -69,6 +70,12 @@ beforeEach(() => {
   vi.mocked(StatusService.Dismiss).mockReset();
   vi.mocked(StatusService.ClearNotifications).mockReset();
   vi.mocked(StatusService.OpenDataFolder).mockReset();
+  vi.mocked(StatusService.NotificationPreferences).mockReset();
+  vi.mocked(StatusService.NotificationPreferences).mockResolvedValue({
+    Machine: true,
+    Project: true,
+    Warnings: true,
+  });
 });
 
 describe("EngineStatus", () => {
@@ -156,6 +163,45 @@ describe("Notifications", () => {
   it("says so when nothing has been recorded", async () => {
     const user = userEvent.setup();
     vi.mocked(StatusService.Notifications).mockResolvedValue([]);
+
+    renderWithQuery(<Notifications />);
+
+    await user.click(await screen.findByRole("button", { name: "Notifications" }));
+
+    expect(await screen.findByText("Nothing recorded yet.")).toBeInTheDocument();
+  });
+
+  it("blames the settings rather than the history when every type is off", async () => {
+    const user = userEvent.setup();
+    vi.mocked(StatusService.Notifications).mockResolvedValue([]);
+    vi.mocked(StatusService.NotificationPreferences).mockResolvedValue({
+      Machine: false,
+      Project: false,
+      Warnings: false,
+    });
+
+    renderWithQuery(<Notifications />);
+
+    await user.click(await screen.findByRole("button", { name: "Notifications" }));
+
+    expect(
+      await screen.findByText(/Every notification type is turned off/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Nothing recorded yet.")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute(
+      "href",
+      "/settings",
+    );
+  });
+
+  it("still reports an empty history while some types are on", async () => {
+    const user = userEvent.setup();
+    vi.mocked(StatusService.Notifications).mockResolvedValue([]);
+    vi.mocked(StatusService.NotificationPreferences).mockResolvedValue({
+      Machine: true,
+      Project: false,
+      Warnings: false,
+    });
 
     renderWithQuery(<Notifications />);
 

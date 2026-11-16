@@ -4,6 +4,7 @@ import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/pro
 import * as SettingsService from "../../bindings/locafy.dev/desktop/internal/settings/service";
 import * as StatusService from "../../bindings/locafy.dev/desktop/internal/status/service";
 import type { NotificationPreferences } from "../../bindings/locafy.dev/desktop/internal/status/models";
+import { notificationPreferencesKey } from "@/components/top-bar-status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +12,7 @@ import { Input } from "@/components/ui/input";
 
 const settingsKey = ["settings"] as const;
 const workspaceKey = ["projects", "workspace"] as const;
-const preferencesKey = ["notifications", "preferences"] as const;
+const preferencesKey = notificationPreferencesKey;
 
 /*
  * The kinds of notification the bell can show. Each is a separate choice so an

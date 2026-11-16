@@ -25,6 +25,8 @@ import { cn } from "@/lib/utils";
 const statusKey = ["engine-status"] as const;
 // Exported so other screens can refetch the bell after they record activity.
 export const notificationsKey = ["notifications"] as const;
+// Shared with Settings, which writes these choices.
+export const notificationPreferencesKey = ["notifications", "preferences"] as const;
 const gibibyte = 1024 ** 3;
 // Matches the service's page ceiling; the bell grows by 20 until it gets here.
 const maxNotificationsShown = 200;
@@ -244,6 +246,12 @@ export function Notifications() {
   // The list grows a page at a time instead of hiding entries behind a fixed
   // cap, so a run of project actions cannot push machine events out of reach.
   const [limit, setLimit] = useState(readPageSize);
+  // Needed only to explain an empty list: nothing recorded and everything muted
+  // look identical without them.
+  const preferences = useQuery({
+    queryKey: notificationPreferencesKey,
+    queryFn: () => StatusService.NotificationPreferences(),
+  });
   // Ages are relative, so they have to move while the list is visible; a bell
   // left open on "just now" would otherwise keep saying that for hours.
   const [now, setNow] = useState(() => Date.now());
@@ -274,6 +282,9 @@ export function Notifications() {
 
   const entries = notifications.data ?? [];
   const count = entries.length;
+  const muted = preferences.data
+    ? !preferences.data.Machine && !preferences.data.Project && !preferences.data.Warnings
+    : false;
   const warnings = entries.filter((entry) => entry.Severity === "warning").length;
   const label =
     count > 0
@@ -324,7 +335,21 @@ export function Notifications() {
             Could not read activity: {String(notifications.error)}
           </p>
         ) : count === 0 ? (
-          <p className="mt-3 text-xs text-muted-foreground">Nothing recorded yet.</p>
+          muted ? (
+            <p className="mt-3 text-xs text-muted-foreground">
+              Every notification type is turned off. Choose which ones to show in{" "}
+              <Link
+                to="/settings"
+                onClick={() => setOpen(false)}
+                className="text-accent underline-offset-2 hover:underline"
+              >
+                Settings
+              </Link>
+              .
+            </p>
+          ) : (
+            <p className="mt-3 text-xs text-muted-foreground">Nothing recorded yet.</p>
+          )
         ) : (
           <>
           <ul className="mt-3 max-h-64 divide-y divide-border overflow-y-auto">
