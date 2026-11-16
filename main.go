@@ -16,6 +16,7 @@ import (
 
 	"locafy.dev/desktop/internal/activity"
 	"locafy.dev/desktop/internal/db"
+	"locafy.dev/desktop/internal/dialogs"
 	"locafy.dev/desktop/internal/logs"
 	"locafy.dev/desktop/internal/machine"
 	"locafy.dev/desktop/internal/projects"
@@ -84,6 +85,7 @@ func run() error {
 			application.NewService(settings.NewService(database)),
 			application.NewService(status.NewService(database, startedAt)),
 			application.NewService(projects.NewService(database)),
+			application.NewService(dialogs.NewService()),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
