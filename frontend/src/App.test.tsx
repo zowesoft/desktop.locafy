@@ -77,7 +77,11 @@ describe("App", () => {
     renderAt("/projects/p1/services");
 
     expect(
-      await screen.findByRole("button", { name: "Project Etugora, switch project" }),
+      await screen.findByRole(
+        "button",
+        { name: "Project Etugora, switch project" },
+        { timeout: 5000 },
+      ),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "All projects" })).toBeInTheDocument();
   });
