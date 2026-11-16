@@ -32,6 +32,9 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+//go:embed build/appicon.png
+var appIcon []byte
+
 const (
 	logMaxBytes = 10 << 20 // rotate at 10 MiB
 	logBackups  = 3
@@ -94,6 +97,7 @@ func run() error {
 		},
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
+			ActivationPolicy: application.ActivationPolicyAccessory,
 		},
 		Windows: application.WindowsOptions{
 			AdditionalBrowserArgs: debugBrowserArgs(),
@@ -108,6 +112,9 @@ func run() error {
 		Height:          windowDefaultHeight,
 		MinWidth:        windowMinWidth,
 		MinHeight:       windowMinHeight,
+		// Start in the tray: the engine warms up in the background and the
+		// window opens on demand from the tray icon.
+		Hidden:          true,
 		InitialPosition: startPosition,
 		X:               startX,
 		Y:               startY,
@@ -138,6 +145,52 @@ func run() error {
 				},
 			},
 		},
+	})
+
+	// The tray keeps Locafy reachable while it works in the background; the
+	// window opens on demand and hides again when dismissed.
+	tray := app.SystemTray.New()
+	tray.SetIcon(appIcon)
+	tray.SetTooltip("Locafy")
+	tray.OnClick(func() {
+		if window.IsVisible() {
+			window.Hide()
+			return
+		}
+		window.Show()
+		window.Focus()
+	})
+
+	menu := application.NewMenu()
+	show := menu.Add("Show Locafy")
+	show.OnClick(func(*application.Context) {
+		window.Show()
+		window.Focus()
+	})
+	menu.AddSeparator()
+	quit := menu.Add("Quit Locafy")
+	quit.OnClick(func(*application.Context) {
+		app.Quit()
+	})
+	tray.SetMenu(menu)
+
+	// Minimize and close hide the window instead of closing or iconic-parking
+	// it, so Locafy keeps running until it is quit from the tray menu.
+	window.OnWindowEvent(events.Common.WindowMinimise, func(*application.WindowEvent) {
+		window.Hide()
+	})
+	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		event.Cancel()
+		window.Hide()
+	})
+
+	// A hidden WebView2 never paints, so the first tray click would show a
+	// blank frame. Show the window briefly once the page loads — enough for
+	// the compositor to commit a painted surface — then hide it again.
+	window.OnWindowEvent(events.Windows.WebViewNavigationCompleted, func(*application.WindowEvent) {
+		window.Show()
+		time.Sleep(150 * time.Millisecond)
+		window.Hide()
 	})
 
 	// A fixed size overflows a scaled display: the values are device
