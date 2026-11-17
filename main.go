@@ -83,6 +83,8 @@ func run() error {
 		return err
 	}
 
+	var window *application.WebviewWindow
+
 	app := application.New(application.Options{
 		Name:        "Locafy",
 		Description: "Local-first development environment control plane",
@@ -102,11 +104,19 @@ func run() error {
 		Windows: application.WindowsOptions{
 			AdditionalBrowserArgs: debugBrowserArgs(),
 		},
+		SingleInstance: &application.SingleInstanceOptions{
+			UniqueID: "dev.locafy.desktop",
+			OnSecondInstanceLaunch: func(application.SecondInstanceData) {
+				window.Show()
+				window.UnMinimise()
+				window.Focus()
+			},
+		},
 	})
 
 	startPosition, startX, startY := windowStartPosition()
 
-	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
+	window = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:           "Locafy",
 		Width:           windowDefaultWidth,
 		Height:          windowDefaultHeight,
