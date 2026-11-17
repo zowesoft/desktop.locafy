@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useProjects } from "@/lib/projects-query";
 import { cn } from "@/lib/utils";
+import { ApplicationsSection } from "./applications";
 
 type Tab = { path: string; label: string; planned?: boolean };
 
@@ -212,8 +213,9 @@ export const projectWorkspaceRoute: RouteObject = {
   element: <ProjectWorkspace />,
   children: [
     { index: true, element: <ProjectOverview /> },
+    { path: "applications", element: <ApplicationsSection /> },
     ...tabs
-      .filter((tab) => tab.path !== "")
+      .filter((tab) => tab.path !== "" && tab.path !== "applications")
       .map(
         (tab): RouteObject => ({
           path: tab.path,
