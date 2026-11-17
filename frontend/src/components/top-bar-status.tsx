@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
@@ -21,6 +21,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { playNotificationSound } from "@/lib/notification-sound";
 
 const statusKey = ["engine-status"] as const;
 // Exported so other screens can refetch the bell after they record activity.
@@ -308,6 +309,26 @@ export function Notifications() {
     ? !preferences.data.Machine && !preferences.data.Project && !preferences.data.Warnings
     : false;
   const label = unread > 0 ? `Notifications, ${unread} unread` : "Notifications";
+
+  /*
+   * New activity is announced with a chime. The first load is history, not news,
+   * so the IDs present then are remembered silently and only later arrivals make
+   * a sound; the list polls, so a change here means something was recorded.
+   */
+  const announced = useRef<ReadonlySet<string> | null>(null);
+  const sound = preferences.data?.Sound ?? false;
+  useEffect(() => {
+    if (!notifications.isSuccess) return;
+    const ids = (notifications.data ?? [])
+      .filter((entry) => entry.Dismissible && !entry.Seen)
+      .map((entry) => entry.ID);
+    const previous = announced.current;
+    const known = new Set(previous ?? []);
+    for (const id of ids) known.add(id);
+    announced.current = known;
+    if (previous === null || !sound) return;
+    if (ids.some((id) => !previous.has(id))) playNotificationSound();
+  }, [notifications.isSuccess, notifications.data, sound]);
 
   useEffect(() => {
     if (!open || !notifications.isSuccess) return;

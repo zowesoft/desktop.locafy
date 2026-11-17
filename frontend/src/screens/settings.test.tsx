@@ -58,6 +58,7 @@ beforeEach(() => {
     Machine: true,
     Project: true,
     Warnings: true,
+    Sound: true,
   });
   vi.mocked(StatusService.SetNotificationPreferences).mockResolvedValue(undefined);
 });
@@ -81,6 +82,7 @@ describe("SettingsScreen notifications", () => {
       Machine: true,
       Project: false,
       Warnings: true,
+      Sound: true,
     });
   });
 
@@ -117,6 +119,7 @@ describe("SettingsScreen notifications", () => {
       Machine: true,
       Project: false,
       Warnings: false,
+      Sound: false,
     });
 
     renderWithQuery(<SettingsScreen />);
@@ -191,5 +194,27 @@ describe("SettingsScreen workspace", () => {
     await screen.findByLabelText("Workspace folder");
 
     expect(screen.getByRole("button", { name: "Save workspace folder" })).toBeDisabled();
+  });
+});
+
+describe("SettingsScreen notification sound", () => {
+  it("shows the chime as on by default", async () => {
+    renderWithQuery(<SettingsScreen />);
+
+    expect(await screen.findByRole("checkbox", { name: "Play a sound" })).toBeChecked();
+  });
+
+  it("turns the chime off without hiding any notification", async () => {
+    const user = userEvent.setup();
+    renderWithQuery(<SettingsScreen />);
+
+    await user.click(await screen.findByRole("checkbox", { name: "Play a sound" }));
+
+    expect(StatusService.SetNotificationPreferences).toHaveBeenCalledWith({
+      Machine: true,
+      Project: true,
+      Warnings: true,
+      Sound: false,
+    });
   });
 });

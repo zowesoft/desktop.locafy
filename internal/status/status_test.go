@@ -290,6 +290,46 @@ func TestNotificationPreferencesStartFullyOn(t *testing.T) {
 	if !prefs.Machine || !prefs.Project || !prefs.Warnings {
 		t.Fatalf("preferences = %+v, want every type enabled by default", prefs)
 	}
+	if !prefs.Sound {
+		t.Fatalf("sound = %v, want the chime enabled by default", prefs.Sound)
+	}
+}
+
+func TestTurningOffTheSoundKeepsTheNotifications(t *testing.T) {
+	database := openDatabase(t)
+	service := newTestService(t, database, healthyVolume)
+
+	if err := activity.Log(database, activity.ScopeMachine, "", "Engine started", ""); err != nil {
+		t.Fatalf("log activity: %v", err)
+	}
+
+	prefs, err := service.NotificationPreferences()
+	if err != nil {
+		t.Fatalf("preferences: %v", err)
+	}
+	prefs.Sound = false
+	if err := service.SetNotificationPreferences(prefs); err != nil {
+		t.Fatalf("save preferences: %v", err)
+	}
+
+	stored, err := service.NotificationPreferences()
+	if err != nil {
+		t.Fatalf("preferences: %v", err)
+	}
+	if stored.Sound {
+		t.Fatal("sound is still on after being turned off")
+	}
+	if !stored.Machine || !stored.Project || !stored.Warnings {
+		t.Fatalf("preferences = %+v, want the types left alone by the sound choice", stored)
+	}
+
+	notifications, err := service.Notifications(10)
+	if err != nil {
+		t.Fatalf("notifications: %v", err)
+	}
+	if len(notifications) != 1 {
+		t.Fatalf("got %d notifications, want the entry still listed", len(notifications))
+	}
 }
 
 func TestTurningOffProjectActivityHidesOnlyProjectEntries(t *testing.T) {

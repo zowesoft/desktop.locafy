@@ -7,7 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as StatusService from "../../bindings/locafy.dev/desktop/internal/status/service";
 import type { Health, Notification } from "../../bindings/locafy.dev/desktop/internal/status/models";
-import { EngineStatus, Notifications } from "./top-bar-status";
+import { playNotificationSound } from "@/lib/notification-sound";
+import { EngineStatus, Notifications, notificationsKey } from "./top-bar-status";
+
+vi.mock("@/lib/notification-sound", () => ({ playNotificationSound: vi.fn() }));
 
 vi.mock("../../bindings/locafy.dev/desktop/internal/status/service", () => ({
   Health: vi.fn(),
@@ -69,6 +72,7 @@ function renderWithQuery(ui: ReactNode) {
 
 beforeEach(() => {
   sessionStorage.clear();
+  vi.mocked(playNotificationSound).mockClear();
   vi.mocked(StatusService.Health).mockReset();
   vi.mocked(StatusService.Notifications).mockReset();
   vi.mocked(StatusService.Dismiss).mockReset();
@@ -79,6 +83,7 @@ beforeEach(() => {
     Machine: true,
     Project: true,
     Warnings: true,
+    Sound: true,
   });
   vi.mocked(StatusService.UnreadNotifications).mockReset();
   vi.mocked(StatusService.UnreadNotifications).mockResolvedValue(0);
@@ -186,6 +191,7 @@ describe("Notifications", () => {
       Machine: false,
       Project: false,
       Warnings: false,
+      Sound: true,
     });
 
     renderWithQuery(<Notifications />);
@@ -209,6 +215,7 @@ describe("Notifications", () => {
       Machine: true,
       Project: false,
       Warnings: false,
+      Sound: true,
     });
 
     renderWithQuery(<Notifications />);
@@ -669,5 +676,86 @@ describe("Notifications", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Could not read activity: Error: database is locked",
     );
+  });
+});
+
+describe("Notifications sound", () => {
+  function renderBell() {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={client}>
+          <Notifications />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    return client;
+  }
+
+  const arrival = (): Notification => ({
+    ...notification("b", "Project created", 0),
+    Scope: "project",
+    ScopeID: "p1",
+    Seen: false,
+  });
+
+  it("chimes once when new activity arrives after the first load", async () => {
+    vi.mocked(StatusService.Notifications).mockResolvedValue([
+      notification("a", "Engine started", 5),
+    ]);
+    const client = renderBell();
+
+    await waitFor(() => expect(client.getQueryData([...notificationsKey, 10])).toBeDefined());
+    expect(playNotificationSound).not.toHaveBeenCalled();
+
+    act(() => {
+      client.setQueryData([...notificationsKey, 10], [
+        arrival(),
+        notification("a", "Engine started", 5),
+      ]);
+    });
+
+    await waitFor(() => expect(playNotificationSound).toHaveBeenCalledTimes(1));
+  });
+
+  it("keeps the first load of history quiet", async () => {
+    vi.mocked(StatusService.Notifications).mockResolvedValue([
+      { ...notification("a", "Engine started", 5), Seen: false },
+    ]);
+    const client = renderBell();
+
+    await waitFor(() => expect(client.getQueryData([...notificationsKey, 10])).toBeDefined());
+    // A refetch of the same entries is not an arrival either.
+    act(() => {
+      client.setQueryData([...notificationsKey, 10], [
+        { ...notification("a", "Engine started", 5), Seen: false },
+      ]);
+    });
+
+    await waitFor(() => expect(StatusService.Notifications).toHaveBeenCalled());
+    expect(playNotificationSound).not.toHaveBeenCalled();
+  });
+
+  it("stays silent when the chime is turned off", async () => {
+    vi.mocked(StatusService.NotificationPreferences).mockResolvedValue({
+      Machine: true,
+      Project: true,
+      Warnings: true,
+      Sound: false,
+    });
+    vi.mocked(StatusService.Notifications).mockResolvedValue([
+      notification("a", "Engine started", 5),
+    ]);
+    const client = renderBell();
+
+    await waitFor(() => expect(client.getQueryData([...notificationsKey, 10])).toBeDefined());
+    act(() => {
+      client.setQueryData([...notificationsKey, 10], [arrival()]);
+    });
+
+    await waitFor(() => expect(client.getQueryData([...notificationsKey, 10])).toHaveLength(1));
+    expect(playNotificationSound).not.toHaveBeenCalled();
   });
 });

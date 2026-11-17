@@ -198,7 +198,8 @@ export function SettingsScreen() {
               Could not read notification settings: {String(preferences.error)}
             </p>
           ) : prefs ? (
-            notificationTypes.map((type) => (
+            <>
+              {notificationTypes.map((type) => (
               <label key={type.key} className="flex items-start gap-3">
                 <input
                   type="checkbox"
@@ -215,7 +216,30 @@ export function SettingsScreen() {
                   <span className="block text-xs text-muted-foreground">{type.description}</span>
                 </span>
               </label>
-            ))
+              ))}
+              {/*
+               * Sound is not a type: it changes how arrivals are announced, so it
+               * sits apart from the choices about which ones appear.
+               */}
+              <label className="flex items-start gap-3 border-t border-border pt-3">
+                <input
+                  type="checkbox"
+                  className="mt-1 size-4 accent-primary"
+                  aria-label="Play a sound"
+                  checked={prefs.Sound}
+                  disabled={savePreferences.isPending}
+                  onChange={(event) =>
+                    savePreferences.mutate({ ...prefs, Sound: event.target.checked })
+                  }
+                />
+                <span className="space-y-0.5">
+                  <span className="block text-sm font-medium">Play a sound</span>
+                  <span className="block text-xs text-muted-foreground">
+                    A short chime when new activity arrives while Locafy is running
+                  </span>
+                </span>
+              </label>
+            </>
           ) : null}
           <p className="text-xs text-muted-foreground">
             Turning everything off leaves the bell empty; recorded activity is still kept for

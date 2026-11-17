@@ -79,17 +79,20 @@ const maxNotifications = 200
 
 // NotificationPreferences chooses which kinds of notification the bell shows.
 // Project covers every scope that describes work on a project, including the
-// applications and services that will hang off one.
+// applications and services that will hang off one. Sound is separate from the
+// types: it changes how arrivals are announced, not which ones are shown.
 type NotificationPreferences struct {
 	Machine  bool
 	Project  bool
 	Warnings bool
+	Sound    bool
 }
 
 const (
 	prefMachineKey  = "notifications.machine"
 	prefProjectKey  = "notifications.project"
 	prefWarningsKey = "notifications.warning"
+	prefSoundKey    = "notifications.sound"
 	// prefLastSeenKey records when the bell was last opened.
 	prefLastSeenKey = "notifications.last_seen"
 )
@@ -236,7 +239,7 @@ func (s *Service) Health() Health {
 // Each type is on until the operator turns it off, so an unset preference is
 // not a reason to hide anything.
 func (s *Service) NotificationPreferences() (NotificationPreferences, error) {
-	prefs := NotificationPreferences{Machine: true, Project: true, Warnings: true}
+	prefs := NotificationPreferences{Machine: true, Project: true, Warnings: true, Sound: true}
 
 	for _, item := range []struct {
 		key    string
@@ -245,6 +248,7 @@ func (s *Service) NotificationPreferences() (NotificationPreferences, error) {
 		{prefMachineKey, &prefs.Machine},
 		{prefProjectKey, &prefs.Project},
 		{prefWarningsKey, &prefs.Warnings},
+		{prefSoundKey, &prefs.Sound},
 	} {
 		value, err := settings.Bool(s.database, item.key)
 		if errors.Is(err, settings.ErrNotFound) {
@@ -268,6 +272,7 @@ func (s *Service) SetNotificationPreferences(prefs NotificationPreferences) erro
 		{prefMachineKey, prefs.Machine},
 		{prefProjectKey, prefs.Project},
 		{prefWarningsKey, prefs.Warnings},
+		{prefSoundKey, prefs.Sound},
 	} {
 		if err := settings.SetBool(s.database, item.key, item.value); err != nil {
 			return fmt.Errorf("save notification preferences: %w", err)

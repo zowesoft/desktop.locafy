@@ -72,10 +72,12 @@ export interface Notification {
 /**
  * NotificationPreferences chooses which kinds of notification the bell shows.
  * Project covers every scope that describes work on a project, including the
- * applications and services that will hang off one.
+ * applications and services that will hang off one. Sound is separate from the
+ * types: it changes how arrivals are announced, not which ones are shown.
  */
 export interface NotificationPreferences {
     "Machine": boolean;
     "Project": boolean;
     "Warnings": boolean;
+    "Sound": boolean;
 }
