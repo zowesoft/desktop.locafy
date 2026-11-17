@@ -10,6 +10,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useProjects } from "@/lib/projects-query";
 import { cn } from "@/lib/utils";
 import { ApplicationsSection } from "./applications";
+import {
+  ProjectServicesTab,
+  ProjectDomainsTab,
+  ProjectEnvironmentTab,
+  ProjectLogsTab,
+  ProjectTerminalTab,
+  ProjectProcessesTab,
+  ProjectSettingsTab,
+} from "./project-tabs";
 
 type Tab = { path: string; label: string; planned?: boolean };
 
@@ -214,13 +223,13 @@ export const projectWorkspaceRoute: RouteObject = {
   children: [
     { index: true, element: <ProjectOverview /> },
     { path: "applications", element: <ApplicationsSection /> },
-    ...tabs
-      .filter((tab) => tab.path !== "" && tab.path !== "applications")
-      .map(
-        (tab): RouteObject => ({
-          path: tab.path,
-          element: <ProjectSection name={tab.label} planned={tab.planned} />,
-        }),
-      ),
+    { path: "services", element: <ProjectServicesTab /> },
+    { path: "domains", element: <ProjectDomainsTab /> },
+    { path: "tunnels", element: <ProjectSection name="Tunnels" planned /> },
+    { path: "environment", element: <ProjectEnvironmentTab /> },
+    { path: "logs", element: <ProjectLogsTab /> },
+    { path: "terminal", element: <ProjectTerminalTab /> },
+    { path: "processes", element: <ProjectProcessesTab /> },
+    { path: "settings", element: <ProjectSettingsTab /> },
   ],
 };
