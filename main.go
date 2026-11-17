@@ -15,6 +15,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/events"
 
 	"locafy.dev/desktop/internal/activity"
+	"locafy.dev/desktop/internal/applications"
 	"locafy.dev/desktop/internal/db"
 	"locafy.dev/desktop/internal/dialogs"
 	"locafy.dev/desktop/internal/logs"
@@ -94,6 +95,7 @@ func run() error {
 			application.NewService(settings.NewService(database)),
 			application.NewService(statusService),
 			application.NewService(projects.NewService(database)),
+			application.NewService(applications.NewService(database)),
 			application.NewService(dialogs.NewService()),
 		},
 		Assets: application.AssetOptions{
@@ -119,11 +121,11 @@ func run() error {
 	startPosition, startX, startY := windowStartPosition()
 
 	window = app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:           "Locafy",
-		Width:           windowDefaultWidth,
-		Height:          windowDefaultHeight,
-		MinWidth:        windowMinWidth,
-		MinHeight:       windowMinHeight,
+		Title:     "Locafy",
+		Width:     windowDefaultWidth,
+		Height:    windowDefaultHeight,
+		MinWidth:  windowMinWidth,
+		MinHeight: windowMinHeight,
 		// The splash in index.html covers first paint, so the window can
 		// open immediately and paint brand artwork while the bundle loads.
 		InitialPosition: startPosition,
