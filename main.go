@@ -85,12 +85,14 @@ func run() error {
 
 	var window *application.WebviewWindow
 
+	statusService := status.NewService(database, startedAt)
+
 	app := application.New(application.Options{
 		Name:        "Locafy",
 		Description: "Local-first development environment control plane",
 		Services: []application.Service{
 			application.NewService(settings.NewService(database)),
-			application.NewService(status.NewService(database, startedAt)),
+			application.NewService(statusService),
 			application.NewService(projects.NewService(database)),
 			application.NewService(dialogs.NewService()),
 		},
@@ -170,12 +172,40 @@ func run() error {
 		window.Focus()
 	})
 
+	// The tray menu is Locafy's global surface: the window is usually hidden, so
+	// the screens an operator reaches for and the actions that do not need a
+	// window are one right-click away.
 	menu := application.NewMenu()
 	show := menu.Add("Show Locafy")
 	show.OnClick(func(*application.Context) {
 		window.Show()
 		window.Focus()
 	})
+
+	menu.AddSeparator()
+	header(menu, "Quick access")
+	for _, item := range []struct {
+		label string
+		path  string
+	}{
+		{"Overview", "/"},
+		{"Projects", "/projects"},
+		{"Settings", "/settings"},
+	} {
+		goTo := menu.Add(item.label)
+		goTo.OnClick(func(*application.Context) {
+			openScreen(window, item.path)
+		})
+	}
+
+	menu.AddSeparator()
+	dataFolder := menu.Add("Open data folder")
+	dataFolder.OnClick(func(*application.Context) {
+		if err := statusService.OpenDataFolder(); err != nil {
+			slog.Error("open data folder", "error", err)
+		}
+	})
+
 	menu.AddSeparator()
 	quit := menu.Add("Quit Locafy")
 	quit.OnClick(func(*application.Context) {
@@ -204,6 +234,22 @@ func run() error {
 	})
 
 	return app.Run()
+}
+
+// header adds a disabled entry that names the group of items below it. Windows
+// tray menus have no section headers, and a disabled item is the nearest native
+// equivalent that does not look like something to click.
+func header(menu *application.Menu, label string) {
+	item := menu.Add(label)
+	item.SetEnabled(false)
+}
+
+// openScreen shows the window and moves it to a screen by hash route, so a tray
+// entry lands on the screen it names instead of wherever the window was left.
+func openScreen(window *application.WebviewWindow, path string) {
+	window.Show()
+	window.Focus()
+	window.ExecJS(fmt.Sprintf("window.location.hash = %q", "#"+path))
 }
 
 // debugBrowserArgs opens a local debugging port on the webview when
