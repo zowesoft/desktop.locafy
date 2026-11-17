@@ -15,6 +15,7 @@ Architecture decision records (ADRs) for this repository.
 | [ADR-0007](ADR-0007-project-manifest-and-storage.md) | Managed and linked projects, and the portable project manifest | Accepted |
 | [ADR-0008](ADR-0008-service-engines-and-instances.md) | Service engines are machine-level; instances are shared by default, with isolated per-project instances as the alternative (packaging left open) | Accepted |
 | [ADR-0009](ADR-0009-navigation-and-project-workspace.md) | Global-only sidebar, a projects dashboard, and a project workspace with Applications, Services and Domains as tabs | Accepted |
+| [ADR-0010](ADR-0010-applications-and-dependency-graph.md) | Applications are project-scoped records with a confirmed, advisory detection and a cycle-checked dependency graph | Accepted |
 | — | Desktop stack selections made in the PRD (Wails v3, Go, React/TS, SQLite) are recorded there and considered approved baseline. | — |
 
 ## Decisions pending (do not guess — PRD section 23)
