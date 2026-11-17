@@ -64,6 +64,9 @@
             observer.disconnect();
             mounted = true;
             requestAnimationFrame(hide);
+            setTimeout(function () {
+              if (splash) splash.remove();
+            }, 400);
           }
         });
         observer.observe(document.getElementById("root"), { childList: true });
