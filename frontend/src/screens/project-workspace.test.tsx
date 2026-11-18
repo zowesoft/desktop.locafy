@@ -55,6 +55,8 @@ const application = (overrides: Partial<Application> = {}): Application => ({
   ExitCode: null,
   Error: "",
   StartedAt: "",
+  Port: null,
+  PortConflict: "",
   Source: "detected",
   ScaffoldRecipe: "laravel",
   ScaffoldOptions: "{}",

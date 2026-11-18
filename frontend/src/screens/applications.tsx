@@ -128,9 +128,15 @@ export function ApplicationsSection() {
       void queryClient.invalidateQueries({ queryKey: ["applications"] });
       void queryClient.invalidateQueries({ queryKey: notificationsKey });
     });
+    const offPorts = Events.On("application:ports", (event) => {
+      const data = event.data as { applicationId?: string };
+      if (!data.applicationId) return;
+      void queryClient.invalidateQueries({ queryKey: ["applications"] });
+    });
     return () => {
       offOutput();
       offState();
+      offPorts();
     };
   }, [queryClient]);
 
@@ -218,6 +224,15 @@ export function ApplicationsSection() {
                   </Badge>
                 </div>
 
+                {app.PortConflict && (
+                  <p
+                    role="alert"
+                    className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-200"
+                  >
+                    {app.PortConflict}
+                  </p>
+                )}
+
                 {(app.Error || app.ExitCode != null) && (
                   <p
                     className={
@@ -240,6 +255,12 @@ export function ApplicationsSection() {
                   <dd className="break-all font-mono">
                     {app.StartCommand || "— none recorded —"}
                   </dd>
+                  {app.Port != null && (
+                    <>
+                      <dt className="text-muted-foreground">Port</dt>
+                      <dd className="font-mono">{app.Port}</dd>
+                    </>
+                  )}
                   <dt className="text-muted-foreground">Needs first</dt>
                   <dd>
                     {dependencies.length > 0 ? (
@@ -291,7 +312,7 @@ export function ApplicationsSection() {
                   </Button>
                 </div>
 
-                {lifecycle.error && lifecycle.variables?.id === app.ID && (
+                {lifecycle.error && lifecycle.variables?.id === app.ID && !app.PortConflict && (
                   <p role="alert" className="mt-2 text-xs text-destructive">
                     {String(lifecycle.error)}
                   </p>

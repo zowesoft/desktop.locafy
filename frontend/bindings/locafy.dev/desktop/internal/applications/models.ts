@@ -19,12 +19,16 @@ export interface Application {
 
     /**
      * Status is the record's process state: stopped, starting, running,
-     * stopping or error. ExitCode, Error and StartedAt describe the last run.
+     * stopping or error. ExitCode, Error and StartedAt describe the last run;
+     * Port is the last port it listened on and PortConflict explains a start
+     * that was refused because something else held that port.
      */
     "Status": string;
     "ExitCode": number | null;
     "Error": string;
     "StartedAt": string;
+    "Port": number | null;
+    "PortConflict": string;
     "Source": string;
 
     /**

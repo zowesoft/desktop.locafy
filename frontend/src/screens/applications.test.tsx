@@ -67,6 +67,8 @@ const application = (overrides: Partial<Application> = {}): Application => ({
   ExitCode: null,
   Error: "",
   StartedAt: "",
+  Port: null,
+  PortConflict: "",
   Source: "detected",
   ScaffoldRecipe: "",
   ScaffoldOptions: "",
@@ -294,6 +296,33 @@ describe("ApplicationsSection", () => {
     await user.click(screen.getByRole("button", { name: "Stop API" }));
 
     await waitFor(() => expect(ApplicationsService.Stop).toHaveBeenCalledWith("a1"));
+  });
+
+  it("shows the port an application listens on", async () => {
+    vi.mocked(ApplicationsService.List).mockResolvedValue([
+      application({ Status: "running", Port: 8123 }),
+    ]);
+
+    renderAt("/projects/p1/applications");
+
+    expect(await screen.findByText("8123")).toBeInTheDocument();
+    expect(screen.getByText("Port")).toBeInTheDocument();
+  });
+
+  it("flags a port conflict with the process holding it", async () => {
+    vi.mocked(ApplicationsService.List).mockResolvedValue([
+      application({
+        Status: "error",
+        Port: 8123,
+        PortConflict:
+          "Port 8123 is already used by python.exe (PID 777), which Locafy did not start.",
+      }),
+    ]);
+
+    renderAt("/projects/p1/applications");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Port 8123");
+    expect(screen.getByRole("alert")).toHaveTextContent("python.exe");
   });
 
   it("streams a running application's output", async () => {

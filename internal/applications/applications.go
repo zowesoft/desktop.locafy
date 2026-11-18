@@ -52,12 +52,16 @@ type Application struct {
 	StartCommand string
 	StopCommand  string
 	// Status is the record's process state: stopped, starting, running,
-	// stopping or error. ExitCode, Error and StartedAt describe the last run.
-	Status    string
-	ExitCode  *int
-	Error     string
-	StartedAt string
-	Source    string
+	// stopping or error. ExitCode, Error and StartedAt describe the last run;
+	// Port is the last port it listened on and PortConflict explains a start
+	// that was refused because something else held that port.
+	Status       string
+	ExitCode     *int
+	Error        string
+	StartedAt    string
+	Port         *int
+	PortConflict string
+	Source       string
 	// ScaffoldRecipe names the framework recipe that produced the files, empty
 	// when the application was detected or added by hand.
 	ScaffoldRecipe  string
@@ -88,8 +92,8 @@ type CreateInput struct {
 // dependencies attached.
 func List(database *sql.DB, projectID string) ([]Application, error) {
 	rows, err := database.Query(`SELECT id, project_id, name, directory, language, framework, marker,
-			start_command, stop_command, status, exit_code, error, started_at, source, scaffold_recipe,
-			scaffold_options, created_at, updated_at
+			start_command, stop_command, status, exit_code, error, started_at, port, port_conflict, source,
+			scaffold_recipe, scaffold_options, created_at, updated_at
 		FROM applications WHERE project_id = ? AND deleted_at IS NULL ORDER BY name COLLATE NOCASE`, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("list applications: %w", err)
@@ -121,8 +125,8 @@ func List(database *sql.DB, projectID string) ([]Application, error) {
 // Get returns one live application, or ErrNotFound.
 func Get(database *sql.DB, id string) (Application, error) {
 	row := database.QueryRow(`SELECT id, project_id, name, directory, language, framework, marker,
-			start_command, stop_command, status, exit_code, error, started_at, source, scaffold_recipe,
-			scaffold_options, created_at, updated_at
+			start_command, stop_command, status, exit_code, error, started_at, port, port_conflict, source,
+			scaffold_recipe, scaffold_options, created_at, updated_at
 		FROM applications WHERE id = ? AND deleted_at IS NULL`, id)
 	app, err := scan(row)
 	if err != nil {
@@ -259,10 +263,11 @@ func defaultName(directory string, projectName string) string {
 
 func scan(row interface{ Scan(...any) error }) (Application, error) {
 	var app Application
-	var exitCode sql.NullInt64
+	var exitCode, port sql.NullInt64
 	err := row.Scan(&app.ID, &app.ProjectID, &app.Name, &app.Directory, &app.Language, &app.Framework,
 		&app.Marker, &app.StartCommand, &app.StopCommand, &app.Status, &exitCode, &app.Error, &app.StartedAt,
-		&app.Source, &app.ScaffoldRecipe, &app.ScaffoldOptions, &app.CreatedAt, &app.UpdatedAt)
+		&port, &app.PortConflict, &app.Source, &app.ScaffoldRecipe, &app.ScaffoldOptions, &app.CreatedAt,
+		&app.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Application{}, ErrNotFound
@@ -272,6 +277,10 @@ func scan(row interface{ Scan(...any) error }) (Application, error) {
 	if exitCode.Valid {
 		value := int(exitCode.Int64)
 		app.ExitCode = &value
+	}
+	if port.Valid {
+		value := int(port.Int64)
+		app.Port = &value
 	}
 	return app, nil
 }

@@ -96,6 +96,14 @@ func (r *recorder) emit(name string, data any) {
 		if status, ok := data.(map[string]any)["status"].(string); ok {
 			r.events = append(r.events, "state:"+status)
 		}
+	case EventPorts:
+		if ports, ok := data.(map[string]any)["ports"].([]int); ok {
+			values := make([]string, 0, len(ports))
+			for _, port := range ports {
+				values = append(values, strconv.Itoa(port))
+			}
+			r.events = append(r.events, "ports:"+strings.Join(values, ","))
+		}
 	}
 }
 

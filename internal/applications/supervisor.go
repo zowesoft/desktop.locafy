@@ -30,6 +30,7 @@ const (
 const (
 	EventOutput = "application:output"
 	EventState  = "application:state"
+	EventPorts  = "application:ports"
 )
 
 // outputLines is how much of a live process's output stays in memory for a
@@ -39,6 +40,11 @@ const outputLines = 500
 // stopTimeout is how long Stop waits for a killed tree to report its exit.
 const stopTimeout = 10 * time.Second
 
+// portScanInterval is how often a running application's listening ports are
+// re-read. Servers bind shortly after they start and may open more sockets
+// later, so one reading at start time would miss them.
+const portScanInterval = 2 * time.Second
+
 const staleRunMessage = "Locafy was closed while this application was running; start it again to bring it back."
 
 var (
@@ -47,15 +53,19 @@ var (
 	ErrExecutableNotFound  = errors.New("the start command's program was not found")
 	ErrAlreadyRunning      = errors.New("this application is already running")
 	ErrNotRunning          = errors.New("this application is not running")
+	ErrPortInUse           = errors.New("the application's port is already in use")
 )
 
-// run is one live process: the output collected so far and the channel its
-// supervisor closes once the process has exited.
+// run is one live process: the output collected so far, the ports it was seen
+// listening on, and the channel its supervisor closes once it has exited.
 type run struct {
 	done    chan struct{}
 	pid     int
+	name    string
 	lines   []string
+	ports   []int
 	stopped bool
+	exited  bool
 }
 
 // Supervisor runs saved applications one process at a time and records what
@@ -117,6 +127,12 @@ func (s *Supervisor) Start(id string) (Application, error) {
 		return app, s.fail(app.ID, ErrDirectoryNotDir)
 	}
 
+	// The last port this application used is the only port Locafy can talk
+	// about before a new process binds one.
+	if conflict := s.portConflict(app); conflict != "" {
+		return app, s.failConflict(app.ID, conflict)
+	}
+
 	argv, err := splitCommand(app.StartCommand)
 	if err != nil {
 		return app, s.fail(app.ID, fmt.Errorf("%w: %s", ErrInvalidStartCommand, app.StartCommand))
@@ -141,7 +157,7 @@ func (s *Supervisor) Start(id string) (Application, error) {
 		return app, s.fail(app.ID, fmt.Errorf("read output: %w", err))
 	}
 
-	live := &run{done: make(chan struct{})}
+	live := &run{done: make(chan struct{}), name: app.Name}
 
 	s.mu.Lock()
 	if _, running := s.runs[id]; running {
@@ -161,6 +177,7 @@ func (s *Supervisor) Start(id string) (Application, error) {
 
 	s.emitState(app.ID, StatusRunning, nil, "")
 	go s.supervise(app.ID, live, command, stdout, stderr)
+	go s.trackPorts(app.ID, live, live.pid)
 
 	started, err := Get(s.database, app.ID)
 	if err != nil {
@@ -197,6 +214,7 @@ func (s *Supervisor) supervise(id string, live *run, command *exec.Cmd, stdout i
 
 	s.mu.Lock()
 	stopped := live.stopped
+	live.exited = true
 	delete(s.runs, id)
 	s.mu.Unlock()
 	close(live.done)
@@ -219,7 +237,7 @@ func (s *Supervisor) supervise(id string, live *run, command *exec.Cmd, stdout i
 func (s *Supervisor) Stop(id string) error {
 	s.mu.Lock()
 	live, ok := s.runs[id]
-	if !ok {
+	if !ok || live.exited {
 		s.mu.Unlock()
 		return ErrNotRunning
 	}
@@ -256,7 +274,7 @@ func (s *Supervisor) StopAll() {
 	pids := make([]int, 0, len(s.runs))
 	for _, live := range s.runs {
 		live.stopped = true
-		if live.pid > 0 {
+		if live.pid > 0 && !live.exited {
 			pids = append(pids, live.pid)
 		}
 	}
@@ -276,6 +294,128 @@ func (s *Supervisor) Output(id string) []string {
 		return nil
 	}
 	return append([]string(nil), live.lines...)
+}
+
+// portConflict explains why an application cannot start: the port it listened
+// on last time is held. It never stops the holder — that is the operator's
+// call, and the holder may not even be Locafy's to touch.
+func (s *Supervisor) portConflict(app Application) string {
+	if app.Port == nil {
+		return ""
+	}
+	port := *app.Port
+
+	listeners, err := listeningFor()
+	if err != nil {
+		// A scan that cannot answer is not a conflict.
+		return ""
+	}
+	holder, found := listenerOn(port, listeners)
+	if !found {
+		return ""
+	}
+
+	if owner := s.supervisedApplication(holder.PID); owner != "" {
+		return fmt.Sprintf("Port %d is already used by %s, another Locafy application. Stop it first.", port, owner)
+	}
+	who := holder.Process
+	if who == "" {
+		who = "another program"
+	}
+	return fmt.Sprintf("Port %d is already used by %s (PID %d), which Locafy did not start. Locafy will not stop it; free the port yourself, then start this application again.", port, who, holder.PID)
+}
+
+// supervisedApplication names the Locafy application whose process tree holds
+// pid, or returns empty when the process is not one of ours.
+func (s *Supervisor) supervisedApplication(pid int) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, live := range s.runs {
+		if live.pid > 0 && ownedBy(pid, live.pid) {
+			return live.name
+		}
+	}
+	return ""
+}
+
+// failConflict records a refused start as a port problem, not an app failure.
+func (s *Supervisor) failConflict(id string, message string) error {
+	if s.database != nil {
+		_, _ = s.database.Exec(`UPDATE applications
+			SET status = ?, error = '', exit_code = NULL, port_conflict = ?
+			WHERE id = ?`, StatusError, message, id)
+	}
+	if s.emit != nil {
+		s.emit(EventState, map[string]any{
+			"applicationId": id,
+			"status":        StatusError,
+			"exitCode":      nil,
+			"error":         "",
+			"portConflict":  message,
+		})
+	}
+	return fmt.Errorf("%w: %s", ErrPortInUse, message)
+}
+
+// trackPorts records the ports the tree listens on for as long as it lives.
+func (s *Supervisor) trackPorts(id string, live *run, root int) {
+	ticker := time.NewTicker(portScanInterval)
+	defer ticker.Stop()
+	for {
+		s.scanPorts(id, live, root)
+		select {
+		case <-live.done:
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *Supervisor) scanPorts(id string, live *run, root int) {
+	listeners, err := listeningFor()
+	if err != nil {
+		return
+	}
+	ports := portsOwnedBy(listeners, root)
+	if len(ports) == 0 {
+		// Nothing observed yet: keep the last reading rather than flapping to
+		// "no port" between a server's binds.
+		return
+	}
+
+	s.mu.Lock()
+	changed := !samePorts(live.ports, ports)
+	if changed {
+		live.ports = ports
+	}
+	s.mu.Unlock()
+	if !changed {
+		return
+	}
+
+	s.updatePort(id, ports[0])
+	if s.emit != nil {
+		s.emit(EventPorts, map[string]any{"applicationId": id, "ports": ports})
+	}
+}
+
+func (s *Supervisor) updatePort(id string, port int) {
+	if s.database == nil {
+		return
+	}
+	_, _ = s.database.Exec(`UPDATE applications SET port = ? WHERE id = ?`, port, id)
+}
+
+func samePorts(left []int, right []int) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Supervisor) appendLine(id string, live *run, line string) {
@@ -308,7 +448,7 @@ func (s *Supervisor) update(id string, status string, exitCode *int, message str
 	}
 	if starting {
 		_, _ = s.database.Exec(`UPDATE applications
-			SET status = ?, exit_code = NULL, error = '',
+			SET status = ?, exit_code = NULL, error = '', port_conflict = '',
 				started_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
 			WHERE id = ?`, status, id)
 		return
