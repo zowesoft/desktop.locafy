@@ -14,6 +14,7 @@ import (
 
 	"locafy.dev/desktop/internal/applications"
 	"locafy.dev/desktop/internal/db"
+	"locafy.dev/desktop/internal/process"
 	"locafy.dev/desktop/internal/projects"
 )
 
@@ -309,7 +310,7 @@ func (s *Service) InstallLaravelInstaller() (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	command := commandFor(ctx, composer, []string{"global", "require", "laravel/installer", "--no-interaction"})
+	command := process.CommandFor(ctx, composer, []string{"global", "require", "laravel/installer", "--no-interaction"})
 	output, err := command.CombinedOutput()
 	if err != nil {
 		return string(output), fmt.Errorf("install the Laravel installer: %w", err)

@@ -88,6 +88,7 @@ func run() error {
 	var window *application.WebviewWindow
 
 	statusService := status.NewService(database, startedAt)
+	appsService := applications.NewService(database)
 	scaffoldService := scaffold.NewService(database)
 
 	app := application.New(application.Options{
@@ -97,7 +98,7 @@ func run() error {
 			application.NewService(settings.NewService(database)),
 			application.NewService(statusService),
 			application.NewService(projects.NewService(database)),
-			application.NewService(applications.NewService(database)),
+			application.NewService(appsService),
 			application.NewService(scaffoldService),
 			application.NewService(dialogs.NewService()),
 		},
@@ -120,6 +121,9 @@ func run() error {
 			},
 		},
 	})
+
+	// A server started from Locafy must not outlive it.
+	app.OnShutdown(appsService.StopAll)
 
 	startPosition, startX, startY := windowStartPosition()
 

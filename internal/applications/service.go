@@ -2,19 +2,30 @@ package applications
 
 import (
 	"database/sql"
+	"errors"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"locafy.dev/desktop/internal/projects"
 )
 
 // Service exposes applications over the application binding layer. Validation
-// and storage rules live in the package functions.
+// and storage rules live in the package functions; process supervision lives in
+// the supervisor.
 type Service struct {
-	database *sql.DB
+	database   *sql.DB
+	supervisor *Supervisor
 }
 
 // NewService returns an applications service backed by database.
 func NewService(database *sql.DB) *Service {
-	return &Service{database: database}
+	service := &Service{database: database}
+	service.supervisor = NewSupervisor(database, func(name string, data any) {
+		if app := application.Get(); app != nil {
+			app.Event.Emit(name, data)
+		}
+	})
+	return service
 }
 
 // List returns a project's live applications with their dependencies.
@@ -37,12 +48,42 @@ func (s *Service) Create(projectID string, input CreateInput) (Application, erro
 	return Create(s.database, projectID, input)
 }
 
-// Remove takes an application out of Locafy without touching its files.
+// Remove stops an application if it is running, then takes it out of Locafy
+// without touching its files.
 func (s *Service) Remove(id string) error {
+	if err := s.supervisor.Stop(id); err != nil && !errors.Is(err, ErrNotRunning) {
+		return err
+	}
 	return Remove(s.database, id)
 }
 
 // SetDependencies replaces what an application depends on, refusing a cycle.
 func (s *Service) SetDependencies(id string, dependsOn []string) error {
 	return SetDependencies(s.database, id, dependsOn)
+}
+
+// Start runs an application's stored command in its stored folder.
+func (s *Service) Start(id string) (Application, error) {
+	return s.supervisor.Start(id)
+}
+
+// Stop kills an application's process tree.
+func (s *Service) Stop(id string) error {
+	return s.supervisor.Stop(id)
+}
+
+// Restart stops an application and starts it again from the same record.
+func (s *Service) Restart(id string) (Application, error) {
+	return s.supervisor.Restart(id)
+}
+
+// Output returns the recent output of a running application.
+func (s *Service) Output(id string) []string {
+	return s.supervisor.Output(id)
+}
+
+// StopAll kills every supervised process tree, so quitting Locafy leaves no
+// server behind.
+func (s *Service) StopAll() {
+	s.supervisor.StopAll()
 }

@@ -24,8 +24,8 @@ const (
 	SourceManual   = "manual"
 )
 
-// StatusStopped is the state every record starts in; process states belong to
-// the lifecycle work.
+// StatusStopped is the state a record starts in and returns to when its
+// process exits cleanly.
 const StatusStopped = "stopped"
 
 var (
@@ -51,14 +51,19 @@ type Application struct {
 	Marker       string
 	StartCommand string
 	StopCommand  string
-	Status       string
-	Source       string
+	// Status is the record's process state: stopped, starting, running,
+	// stopping or error. ExitCode, Error and StartedAt describe the last run.
+	Status    string
+	ExitCode  *int
+	Error     string
+	StartedAt string
+	Source    string
 	// ScaffoldRecipe names the framework recipe that produced the files, empty
 	// when the application was detected or added by hand.
 	ScaffoldRecipe  string
 	ScaffoldOptions string
 	CreatedAt       string
-	UpdatedAt    string
+	UpdatedAt       string
 	// DependsOn lists the applications of the same project that must be
 	// running first.
 	DependsOn []string
@@ -67,12 +72,12 @@ type Application struct {
 // CreateInput is what a confirmed application carries. Detection fills the
 // same fields; nothing in it is executed here.
 type CreateInput struct {
-	Name         string
-	Directory    string
-	Language     string
-	Framework    string
-	Marker       string
-	StartCommand string
+	Name            string
+	Directory       string
+	Language        string
+	Framework       string
+	Marker          string
+	StartCommand    string
 	StopCommand     string
 	Source          string
 	ScaffoldRecipe  string
@@ -83,7 +88,8 @@ type CreateInput struct {
 // dependencies attached.
 func List(database *sql.DB, projectID string) ([]Application, error) {
 	rows, err := database.Query(`SELECT id, project_id, name, directory, language, framework, marker,
-			start_command, stop_command, status, source, scaffold_recipe, scaffold_options, created_at, updated_at
+			start_command, stop_command, status, exit_code, error, started_at, source, scaffold_recipe,
+			scaffold_options, created_at, updated_at
 		FROM applications WHERE project_id = ? AND deleted_at IS NULL ORDER BY name COLLATE NOCASE`, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("list applications: %w", err)
@@ -115,7 +121,8 @@ func List(database *sql.DB, projectID string) ([]Application, error) {
 // Get returns one live application, or ErrNotFound.
 func Get(database *sql.DB, id string) (Application, error) {
 	row := database.QueryRow(`SELECT id, project_id, name, directory, language, framework, marker,
-			start_command, stop_command, status, source, scaffold_recipe, scaffold_options, created_at, updated_at
+			start_command, stop_command, status, exit_code, error, started_at, source, scaffold_recipe,
+			scaffold_options, created_at, updated_at
 		FROM applications WHERE id = ? AND deleted_at IS NULL`, id)
 	app, err := scan(row)
 	if err != nil {
@@ -167,7 +174,7 @@ func Create(database *sql.DB, projectID string, input CreateInput) (Application,
 	}
 
 	id := db.NewID()
-		_, err = database.Exec(`INSERT INTO applications
+	_, err = database.Exec(`INSERT INTO applications
 			(id, project_id, name, directory, language, framework, marker, start_command, stop_command, source,
 			 scaffold_recipe, scaffold_options)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -252,14 +259,19 @@ func defaultName(directory string, projectName string) string {
 
 func scan(row interface{ Scan(...any) error }) (Application, error) {
 	var app Application
+	var exitCode sql.NullInt64
 	err := row.Scan(&app.ID, &app.ProjectID, &app.Name, &app.Directory, &app.Language, &app.Framework,
-		&app.Marker, &app.StartCommand, &app.StopCommand, &app.Status, &app.Source,
-		&app.ScaffoldRecipe, &app.ScaffoldOptions, &app.CreatedAt, &app.UpdatedAt)
+		&app.Marker, &app.StartCommand, &app.StopCommand, &app.Status, &exitCode, &app.Error, &app.StartedAt,
+		&app.Source, &app.ScaffoldRecipe, &app.ScaffoldOptions, &app.CreatedAt, &app.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Application{}, ErrNotFound
 		}
 		return Application{}, fmt.Errorf("scan application: %w", err)
+	}
+	if exitCode.Valid {
+		value := int(exitCode.Int64)
+		app.ExitCode = &value
 	}
 	return app, nil
 }

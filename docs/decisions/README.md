@@ -18,6 +18,7 @@ Architecture decision records (ADRs) for this repository.
 | [ADR-0010](ADR-0010-applications-and-dependency-graph.md) | Applications are project-scoped records with a confirmed, advisory detection and a cycle-checked dependency graph | Accepted |
 | [ADR-0011](ADR-0011-framework-recipes-and-scaffold-jobs.md) | Framework recipes are shipped data, scaffolds run argv-only with version choice, and only successful installs are registered | Accepted |
 | [ADR-0012](ADR-0012-opt-in-project-override-file.md) | Project settings live in SQLite; `locafy.project.json` is an opt-in override file (supersedes ADR-0007's manifest rules) | Accepted |
+| [ADR-0013](ADR-0013-application-process-supervision.md) | Applications run argv-only from their stored command in their stored folder, one supervised process each, killed with its tree on stop | Accepted |
 | — | Desktop stack selections made in the PRD (Wails v3, Go, React/TS, SQLite) are recorded there and considered approved baseline. | — |
 
 ## Decisions pending (do not guess — PRD section 23)

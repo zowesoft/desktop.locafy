@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import { act } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as ApplicationsService from "../../bindings/locafy.dev/desktop/internal/applications/service";
@@ -17,12 +18,27 @@ vi.mock("../../bindings/locafy.dev/desktop/internal/projects/service", () => ({
   List: vi.fn(),
 }));
 
+const handlers = vi.hoisted(() => new Map<string, (event: { data: unknown }) => void>());
+
+vi.mock("@wailsio/runtime", () => ({
+  Events: {
+    On: (name: string, callback: (event: { data: unknown }) => void) => {
+      handlers.set(name, callback);
+      return () => handlers.delete(name);
+    },
+  },
+}));
+
 vi.mock("../../bindings/locafy.dev/desktop/internal/applications/service", () => ({
   List: vi.fn(),
   Detect: vi.fn(),
   Create: vi.fn(),
   Remove: vi.fn(),
   SetDependencies: vi.fn(),
+  Start: vi.fn(),
+  Stop: vi.fn(),
+  Restart: vi.fn(),
+  Output: vi.fn(),
 }));
 
 const project: Project = {
@@ -48,6 +64,9 @@ const application = (overrides: Partial<Application> = {}): Application => ({
   StartCommand: "php artisan serve",
   StopCommand: "",
   Status: "stopped",
+  ExitCode: null,
+  Error: "",
+  StartedAt: "",
   Source: "detected",
   ScaffoldRecipe: "",
   ScaffoldOptions: "",
@@ -95,6 +114,9 @@ beforeEach(() => {
   vi.mocked(ApplicationsService.Create).mockReset();
   vi.mocked(ApplicationsService.SetDependencies).mockReset();
   vi.mocked(ApplicationsService.SetDependencies).mockResolvedValue(undefined);
+  vi.mocked(ApplicationsService.Start).mockReset();
+  vi.mocked(ApplicationsService.Stop).mockReset();
+  vi.mocked(ApplicationsService.Restart).mockReset();
 });
 
 describe("ApplicationsSection", () => {
@@ -237,6 +259,58 @@ describe("ApplicationsSection", () => {
     // The dialog stays open with the choice, and nothing was stored.
     expect(screen.getByRole("button", { name: "Save dependencies" })).toBeInTheDocument();
     expect(ApplicationsService.SetDependencies).toHaveBeenCalledWith("a2", ["a1"]);
+  });
+
+  it("starts a stopped application from its saved command", async () => {
+    const user = userEvent.setup();
+    vi.mocked(ApplicationsService.List).mockResolvedValue([application()]);
+    vi.mocked(ApplicationsService.Start).mockResolvedValue(application({ Status: "running" }));
+
+    renderAt("/projects/p1/applications");
+
+    await user.click(await screen.findByRole("button", { name: "Start API" }));
+
+    await waitFor(() => expect(ApplicationsService.Start).toHaveBeenCalledWith("a1"));
+  });
+
+  it("stops a running application and shows why a run failed", async () => {
+    const user = userEvent.setup();
+    vi.mocked(ApplicationsService.List).mockResolvedValue([
+      application({ Status: "running" }),
+      application({
+        ID: "a2",
+        Name: "Worker",
+        Directory: "apps/worker",
+        Status: "error",
+        ExitCode: 3,
+        Error: "Exited with code 3.",
+      }),
+    ]);
+    vi.mocked(ApplicationsService.Stop).mockResolvedValue(undefined);
+
+    renderAt("/projects/p1/applications");
+
+    expect(await screen.findByText("Exit code 3.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Stop API" }));
+
+    await waitFor(() => expect(ApplicationsService.Stop).toHaveBeenCalledWith("a1"));
+  });
+
+  it("streams a running application's output", async () => {
+    vi.mocked(ApplicationsService.List).mockResolvedValue([application({ Status: "running" })]);
+
+    renderAt("/projects/p1/applications");
+
+    await screen.findByText("API");
+    act(() => {
+      handlers.get("application:output")?.({
+        data: { applicationId: "a1", line: "Server listening on 8000" },
+      });
+    });
+
+    expect(await screen.findByLabelText("Output of API")).toHaveTextContent(
+      "Server listening on 8000",
+    );
   });
 
   it("saves the chosen dependencies", async () => {

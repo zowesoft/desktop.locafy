@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"locafy.dev/desktop/internal/process"
 )
 
 // ToolCandidate is one installed copy of a tool, so an operator with several
@@ -237,7 +239,7 @@ func pyLauncherPythons() []string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	command := commandFor(ctx, "py", []string{"-0p"})
+	command := process.CommandFor(ctx, "py", []string{"-0p"})
 	command.Env = append(os.Environ(), "NO_COLOR=1")
 	output, err := command.CombinedOutput()
 	if err != nil {
@@ -371,7 +373,7 @@ func toolVersion(path string, name string) string {
 	if name == "php" {
 		args = []string{"-v"}
 	}
-	command := commandFor(ctx, path, args)
+	command := process.CommandFor(ctx, path, args)
 	command.Env = append(os.Environ(), "NO_COLOR=1")
 	output, _ := command.CombinedOutput()
 	version := parseVersion(string(output))

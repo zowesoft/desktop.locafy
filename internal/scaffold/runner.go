@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"locafy.dev/desktop/internal/process"
 )
 
 // Job states, matching the scaffold_jobs CHECK constraint.
@@ -27,7 +29,7 @@ const (
 type Job struct {
 	ID            string
 	ProjectID     string
-	RecipeID     string
+	RecipeID      string
 	Directory     string
 	TargetPath    string
 	Status        string
@@ -164,7 +166,7 @@ func (m *Manager) run(id string, spec RunSpec) {
 }
 
 func (m *Manager) runStep(ctx context.Context, id string, target string, step Step, logFile *os.File) error {
-	command := commandFor(ctx, step.Bin, step.Args)
+	command := process.CommandFor(ctx, step.Bin, step.Args)
 	if step.Cwd == "inside" {
 		command.Dir = target
 	} else {
@@ -318,7 +320,7 @@ func (m *Manager) Cancel(id string) error {
 		live.cancel()
 	}
 	if pid > 0 {
-		killTree(pid)
+		process.KillTree(pid)
 	}
 	return nil
 }

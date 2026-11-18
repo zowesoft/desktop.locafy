@@ -3,7 +3,8 @@
 
 /**
  * Service exposes applications over the application binding layer. Validation
- * and storage rules live in the package functions.
+ * and storage rules live in the package functions; process supervision lives in
+ * the supervisor.
  * @module
  */
 
@@ -38,10 +39,25 @@ export function List(projectID: string): $CancellablePromise<$models.Application
 }
 
 /**
- * Remove takes an application out of Locafy without touching its files.
+ * Output returns the recent output of a running application.
+ */
+export function Output(id: string): $CancellablePromise<string[] | null> {
+    return $Call.ByID(1167796155, id);
+}
+
+/**
+ * Remove stops an application if it is running, then takes it out of Locafy
+ * without touching its files.
  */
 export function Remove(id: string): $CancellablePromise<void> {
     return $Call.ByID(3291561422, id);
+}
+
+/**
+ * Restart stops an application and starts it again from the same record.
+ */
+export function Restart(id: string): $CancellablePromise<$models.Application> {
+    return $Call.ByID(926956637, id);
 }
 
 /**
@@ -49,4 +65,26 @@ export function Remove(id: string): $CancellablePromise<void> {
  */
 export function SetDependencies(id: string, dependsOn: string[] | null): $CancellablePromise<void> {
     return $Call.ByID(2148299495, id, dependsOn);
+}
+
+/**
+ * Start runs an application's stored command in its stored folder.
+ */
+export function Start(id: string): $CancellablePromise<$models.Application> {
+    return $Call.ByID(158238482, id);
+}
+
+/**
+ * Stop kills an application's process tree.
+ */
+export function Stop(id: string): $CancellablePromise<void> {
+    return $Call.ByID(480967378, id);
+}
+
+/**
+ * StopAll kills every supervised process tree, so quitting Locafy leaves no
+ * server behind.
+ */
+export function StopAll(): $CancellablePromise<void> {
+    return $Call.ByID(2825264073);
 }

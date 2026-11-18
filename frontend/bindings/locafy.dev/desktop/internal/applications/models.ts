@@ -16,7 +16,15 @@ export interface Application {
     "Marker": string;
     "StartCommand": string;
     "StopCommand": string;
+
+    /**
+     * Status is the record's process state: stopped, starting, running,
+     * stopping or error. ExitCode, Error and StartedAt describe the last run.
+     */
     "Status": string;
+    "ExitCode": number | null;
+    "Error": string;
+    "StartedAt": string;
     "Source": string;
 
     /**

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useOutletContext } from "react-router-dom";
+import { Events } from "@wailsio/runtime";
 
 import * as ApplicationsService from "../../bindings/locafy.dev/desktop/internal/applications/service";
 import type {
@@ -25,6 +26,19 @@ import {
 
 const applicationsKey = (projectID: string) => ["applications", projectID] as const;
 const detectionKey = (projectID: string) => ["applications", projectID, "detect"] as const;
+
+/* The stored status is a process state; the badge spells it out for the
+ * operator instead of showing the column value. */
+const statusLabels: Record<string, string> = {
+  starting: "Starting",
+  running: "Running",
+  stopping: "Stopping",
+  error: "Failed",
+};
+
+const statusLabel = (status: string) => statusLabels[status] ?? "Stopped";
+
+type LifecycleAction = "start" | "stop" | "restart";
 
 /* A draft is what the operator is looking at before it becomes a record: the
  * proposal's fields, freely editable, and nothing saved. */
@@ -90,11 +104,35 @@ export function ApplicationsSection() {
   const [scaffolding, setScaffolding] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [editingDependencies, setEditingDependencies] = useState<Application | null>(null);
+  // Output arrives as events and stays here while the screen is open; the
+  // supervisor keeps only the live process's buffer.
+  const [output, setOutput] = useState<Record<string, string[]>>({});
 
   const applications = useQuery({
     queryKey: applicationsKey(project.ID),
     queryFn: async () => (await ApplicationsService.List(project.ID)) ?? [],
   });
+
+  useEffect(() => {
+    const offOutput = Events.On("application:output", (event) => {
+      const data = event.data as { applicationId?: string; line?: string };
+      if (!data.applicationId || typeof data.line !== "string") return;
+      setOutput((current) => ({
+        ...current,
+        [data.applicationId!]: [...(current[data.applicationId!] ?? []), data.line as string].slice(-300),
+      }));
+    });
+    const offState = Events.On("application:state", (event) => {
+      const data = event.data as { applicationId?: string };
+      if (!data.applicationId) return;
+      void queryClient.invalidateQueries({ queryKey: ["applications"] });
+      void queryClient.invalidateQueries({ queryKey: notificationsKey });
+    });
+    return () => {
+      offOutput();
+      offState();
+    };
+  }, [queryClient]);
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: applicationsKey(project.ID) });
@@ -102,6 +140,23 @@ export function ApplicationsSection() {
   };
 
   const entries = applications.data ?? [];
+
+  const lifecycle = useMutation({
+    mutationFn: async ({ id, action }: { id: string; action: LifecycleAction }) => {
+      if (action === "start") return ApplicationsService.Start(id);
+      if (action === "stop") return ApplicationsService.Stop(id);
+      return ApplicationsService.Restart(id);
+    },
+    onMutate: ({ id, action }) => {
+      if (action !== "stop") {
+        setOutput((current) => ({ ...current, [id]: [] }));
+      }
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: applicationsKey(project.ID) });
+      void queryClient.invalidateQueries({ queryKey: notificationsKey });
+    },
+  });
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-4 px-6 py-6">
@@ -155,8 +210,28 @@ export function ApplicationsSection() {
                   {app.Language && <Badge variant="secondary">{app.Language}</Badge>}
                   {app.Framework && <Badge variant="outline">{app.Framework}</Badge>}
                   <Badge variant="outline">{app.Source === "detected" ? "Detected" : "Added"}</Badge>
-                  <span className="ml-auto text-xs capitalize text-muted-foreground">{app.Status}</span>
+                  <Badge
+                    variant={app.Status === "error" ? "destructive" : "secondary"}
+                    className="ml-auto"
+                  >
+                    {statusLabel(app.Status)}
+                  </Badge>
                 </div>
+
+                {(app.Error || app.ExitCode != null) && (
+                  <p
+                    className={
+                      app.Status === "error"
+                        ? "mt-2 text-xs text-destructive"
+                        : "mt-2 text-xs text-muted-foreground"
+                    }
+                  >
+                    {app.Error}
+                    {app.ExitCode != null && (
+                      <span className={app.Error ? " ml-1" : ""}>Exit code {app.ExitCode}.</span>
+                    )}
+                  </p>
+                )}
 
                 <dl className="mt-2 grid gap-1.5 text-xs sm:grid-cols-[7rem_1fr]">
                   <dt className="text-muted-foreground">Folder</dt>
@@ -177,6 +252,36 @@ export function ApplicationsSection() {
 
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button
+                    size="sm"
+                    aria-label={`Start ${app.Name}`}
+                    disabled={
+                      lifecycle.isPending || app.Status === "running" || app.Status === "starting"
+                    }
+                    onClick={() => lifecycle.mutate({ id: app.ID, action: "start" })}
+                  >
+                    Start
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label={`Stop ${app.Name}`}
+                    disabled={
+                      lifecycle.isPending || (app.Status !== "running" && app.Status !== "starting")
+                    }
+                    onClick={() => lifecycle.mutate({ id: app.ID, action: "stop" })}
+                  >
+                    Stop
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label={`Restart ${app.Name}`}
+                    disabled={lifecycle.isPending || app.Status === "stopping"}
+                    onClick={() => lifecycle.mutate({ id: app.ID, action: "restart" })}
+                  >
+                    Restart
+                  </Button>
+                  <Button
                     variant="outline"
                     size="sm"
                     aria-label={`Edit dependencies of ${app.Name}`}
@@ -185,6 +290,21 @@ export function ApplicationsSection() {
                     Dependencies
                   </Button>
                 </div>
+
+                {lifecycle.error && lifecycle.variables?.id === app.ID && (
+                  <p role="alert" className="mt-2 text-xs text-destructive">
+                    {String(lifecycle.error)}
+                  </p>
+                )}
+
+                {(output[app.ID] ?? []).length > 0 && (
+                  <pre
+                    aria-label={`Output of ${app.Name}`}
+                    className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-black/40 p-2 font-mono text-[11px] text-foreground"
+                  >
+                    {(output[app.ID] ?? []).slice(-60).join("\n")}
+                  </pre>
+                )}
               </li>
             );
           })}
