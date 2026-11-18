@@ -70,6 +70,39 @@ func TestRecentLimit(t *testing.T) {
 	}
 }
 
+func TestRecentForKeepsOneResource(t *testing.T) {
+	database := openMigrated(t)
+
+	if err := Log(database, ScopeProject, "proj-1", "Project created", "Etugora"); err != nil {
+		t.Fatalf("log first project: %v", err)
+	}
+	if err := Log(database, ScopeProject, "proj-2", "Project linked", "Other"); err != nil {
+		t.Fatalf("log second project: %v", err)
+	}
+	if err := Log(database, ScopeProject, "proj-1", "Project renamed", "Etugora platform"); err != nil {
+		t.Fatalf("log rename: %v", err)
+	}
+	if err := Log(database, ScopeMachine, "", "Engine started", ""); err != nil {
+		t.Fatalf("log machine: %v", err)
+	}
+
+	entries, err := RecentFor(database, ScopeProject, "proj-1", 10)
+	if err != nil {
+		t.Fatalf("recent for: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("entries = %d, want only proj-1's two", len(entries))
+	}
+	if entries[0].Action != "Project renamed" {
+		t.Fatalf("newest = %q, want the project's latest action", entries[0].Action)
+	}
+	for _, entry := range entries {
+		if entry.ScopeID != "proj-1" {
+			t.Fatalf("entry %q belongs to %q, want proj-1", entry.Action, entry.ScopeID)
+		}
+	}
+}
+
 func TestInvalidScopeRejected(t *testing.T) {
 	database := openMigrated(t)
 

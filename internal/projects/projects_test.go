@@ -532,6 +532,71 @@ func TestServiceCreateUsesThePreferredWorkspace(t *testing.T) {
 	}
 }
 
+func TestServiceOpensTheProjectFolder(t *testing.T) {
+	database := newTestDB(t)
+	service := NewService(database)
+	project, err := service.Create("Etugora")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	opened := ""
+	restore := openProjectFolder
+	openProjectFolder = func(path string) error {
+		opened = path
+		return nil
+	}
+	t.Cleanup(func() { openProjectFolder = restore })
+
+	if err := service.OpenFolder(project.ID); err != nil {
+		t.Fatalf("OpenFolder: %v", err)
+	}
+	if opened != project.RootPath {
+		t.Fatalf("opened %q, want %q", opened, project.RootPath)
+	}
+	if err := service.OpenFolder("missing"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown project error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestServiceActivityKeepsOneProject(t *testing.T) {
+	database := newTestDB(t)
+	service := NewService(database)
+	project, err := service.Create("Etugora")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	other, err := service.Create("Other")
+	if err != nil {
+		t.Fatalf("create other: %v", err)
+	}
+	if _, err := service.Rename(project.ID, "Etugora platform"); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+
+	entries, err := service.Activity(project.ID, 10)
+	if err != nil {
+		t.Fatalf("Activity: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("entries = %d, want the project's two actions", len(entries))
+	}
+	if entries[0].Action != "Project renamed" {
+		t.Fatalf("newest = %q, want Project renamed", entries[0].Action)
+	}
+	for _, entry := range entries {
+		if entry.ScopeID != project.ID {
+			t.Fatalf("entry belongs to %q, want %q", entry.ScopeID, project.ID)
+		}
+		if entry.ScopeID == other.ID {
+			t.Fatal("another project's activity leaked into the feed")
+		}
+	}
+	if _, err := service.Activity("missing", 10); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown project error = %v, want ErrNotFound", err)
+	}
+}
+
 func TestIsUniqueViolation(t *testing.T) {
 	if !isUniqueViolation(errors.New("UNIQUE constraint failed: projects.root_path")) {
 		t.Fatal("unique constraint message not recognised")

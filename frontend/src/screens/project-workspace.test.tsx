@@ -4,14 +4,28 @@ import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import * as ApplicationsService from "../../bindings/locafy.dev/desktop/internal/applications/service";
+import type { Application } from "../../bindings/locafy.dev/desktop/internal/applications/models";
 import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/projects/service";
 import type { Project } from "../../bindings/locafy.dev/desktop/internal/projects/models";
+import * as StatusService from "../../bindings/locafy.dev/desktop/internal/status/service";
+import type { Health } from "../../bindings/locafy.dev/desktop/internal/status/models";
 import { projectWorkspaceRoute } from "./project-workspace";
 
 vi.mock("../../bindings/locafy.dev/desktop/internal/projects/service", () => ({
   List: vi.fn(),
+  Activity: vi.fn(),
+  OpenFolder: vi.fn(),
   OverrideStatus: vi.fn(),
   SetOverrideFile: vi.fn(),
+}));
+
+vi.mock("../../bindings/locafy.dev/desktop/internal/applications/service", () => ({
+  List: vi.fn(),
+}));
+
+vi.mock("../../bindings/locafy.dev/desktop/internal/status/service", () => ({
+  Health: vi.fn(),
 }));
 
 const project = (overrides: Partial<Project> = {}): Project => ({
@@ -24,6 +38,43 @@ const project = (overrides: Partial<Project> = {}): Project => ({
   LifecycleState: "stopped",
   CreatedAt: "2026-11-14T09:00:00Z",
   UpdatedAt: "2026-11-14T09:00:00Z",
+  ...overrides,
+});
+
+const application = (overrides: Partial<Application> = {}): Application => ({
+  ID: "app-1",
+  ProjectID: "p1",
+  Name: "api",
+  Directory: ".",
+  Language: "PHP",
+  Framework: "Laravel",
+  Marker: "artisan",
+  StartCommand: "php artisan serve",
+  StopCommand: "",
+  Status: "detected",
+  Source: "detected",
+  ScaffoldRecipe: "laravel",
+  ScaffoldOptions: "{}",
+  CreatedAt: "2026-11-14T09:00:00Z",
+  UpdatedAt: "2026-11-14T09:00:00Z",
+  DependsOn: [],
+  ...overrides,
+});
+
+const health = (overrides: Partial<Health> = {}): Health => ({
+  Name: "locafy",
+  Healthy: true,
+  Summary: "All systems healthy",
+  Hostname: "desktop",
+  Platform: "windows",
+  Architecture: "amd64",
+  DatabasePath: "C:\\Users\\me\\AppData\\Roaming\\Locafy\\data\\locafy.db",
+  DatabaseOK: true,
+  StartedAt: "2026-11-14T09:00:00Z",
+  UptimeSeconds: 120,
+  CPUPercent: 24,
+  Memory: { UsedBytes: 8 * 1024 ** 3, TotalBytes: 32 * 1024 ** 3, Percent: 25 },
+  Disk: { UsedBytes: 120 * 1024 ** 3, TotalBytes: 500 * 1024 ** 3, Percent: 24 },
   ...overrides,
 });
 
@@ -49,6 +100,14 @@ function renderAt(path: string) {
 }
 
 beforeEach(() => {
+  vi.mocked(ProjectsService.Activity).mockReset();
+  vi.mocked(ProjectsService.Activity).mockResolvedValue([]);
+  vi.mocked(ProjectsService.OpenFolder).mockReset();
+  vi.mocked(ProjectsService.OpenFolder).mockResolvedValue();
+  vi.mocked(ApplicationsService.List).mockReset();
+  vi.mocked(ApplicationsService.List).mockResolvedValue([]);
+  vi.mocked(StatusService.Health).mockReset();
+  vi.mocked(StatusService.Health).mockResolvedValue(health());
   vi.mocked(ProjectsService.OverrideStatus).mockReset();
   vi.mocked(ProjectsService.SetOverrideFile).mockReset();
   vi.mocked(ProjectsService.OverrideStatus).mockResolvedValue({
@@ -74,9 +133,62 @@ describe("ProjectWorkspace", () => {
   it("opens on the overview with the project's details", async () => {
     renderAt("/projects/p1");
 
-    expect(await screen.findByText("Project details")).toBeInTheDocument();
+    expect(await screen.findByText("Project status")).toBeInTheDocument();
+    expect(screen.getByText("Project details")).toBeInTheDocument();
     expect(screen.getByText(/Locafy created this folder/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("summarizes the project's applications and machine state", async () => {
+    vi.mocked(ApplicationsService.List).mockResolvedValue([
+      application(),
+      application({ ID: "app-2", Name: "web", Framework: "Vite", Directory: "apps/web" }),
+    ]);
+
+    renderAt("/projects/p1");
+
+    expect(await screen.findByRole("group", { name: "Applications: 2" })).toBeInTheDocument();
+    expect(screen.getByText("2 with a start command")).toBeInTheDocument();
+    expect(await screen.findByText("api")).toBeInTheDocument();
+    expect(screen.getByText("apps/web")).toBeInTheDocument();
+    expect(screen.getByText("All systems healthy")).toBeInTheDocument();
+    expect(screen.getByText("24%")).toBeInTheDocument();
+  });
+
+  it("marks services, domains and tunnels as planned instead of inventing them", async () => {
+    renderAt("/projects/p1");
+
+    expect(await screen.findByRole("group", { name: "Services: 0" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Domains: 0" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Tunnels: 0" })).toBeInTheDocument();
+    expect(screen.getAllByText("Planned for a later phase").length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("opens the project folder on request", async () => {
+    const user = userEvent.setup();
+    renderAt("/projects/p1");
+
+    await user.click(await screen.findByRole("button", { name: /Open folder/ }));
+
+    expect(ProjectsService.OpenFolder).toHaveBeenCalledWith("p1");
+  });
+
+  it("lists the project's recent activity", async () => {
+    vi.mocked(ProjectsService.Activity).mockResolvedValue([
+      {
+        ID: "a1",
+        Scope: "project" as never,
+        ScopeID: "p1",
+        Action: "Application added",
+        Detail: "api",
+        CreatedAt: "2026-11-14T09:00:00Z",
+      },
+    ]);
+
+    renderAt("/projects/p1");
+
+    expect(await screen.findByText("Application added")).toBeInTheDocument();
+    expect(screen.getByText(/— api/)).toBeInTheDocument();
   });
 
   it("describes a linked project as one Locafy never writes into", async () => {

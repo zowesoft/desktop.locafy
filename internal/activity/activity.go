@@ -71,7 +71,24 @@ func Recent(database *sql.DB, limit int, scopes ...Scope) ([]Entry, error) {
 		return nil, fmt.Errorf("list recent activity: %w", err)
 	}
 	defer rows.Close()
+	return scanEntries(rows)
+}
 
+// RecentFor returns up to limit undismissed entries for one resource, newest
+// first.
+func RecentFor(database *sql.DB, scope Scope, scopeID string, limit int) ([]Entry, error) {
+	rows, err := database.Query(`SELECT id, scope_type, COALESCE(scope_id, ''), action, COALESCE(detail, ''), created_at
+		FROM activity_logs
+		WHERE dismissed_at IS NULL AND scope_type = ? AND scope_id = ?
+		ORDER BY created_at DESC, rowid DESC LIMIT ?`, string(scope), scopeID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list activity for %s: %w", scopeID, err)
+	}
+	defer rows.Close()
+	return scanEntries(rows)
+}
+
+func scanEntries(rows *sql.Rows) ([]Entry, error) {
 	var entries []Entry
 	for rows.Next() {
 		var entry Entry

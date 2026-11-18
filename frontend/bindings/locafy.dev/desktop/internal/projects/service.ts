@@ -13,7 +13,19 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as activity$0 from "../activity/models.js";
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as $models from "./models.js";
+
+/**
+ * Activity returns recent recorded actions for one project, newest first, for
+ * the overview's activity feed.
+ */
+export function Activity(id: string, limit: number): $CancellablePromise<activity$0.Entry[] | null> {
+    return $Call.ByID(2009891936, id, limit);
+}
 
 /**
  * ChangeRoot points a linked project at another directory.
@@ -50,6 +62,13 @@ export function LinkMany(paths: string[] | null): $CancellablePromise<$models.Im
  */
 export function List(): $CancellablePromise<$models.Project[] | null> {
     return $Call.ByID(279556301);
+}
+
+/**
+ * OpenFolder reveals a project's directory in the OS file manager.
+ */
+export function OpenFolder(id: string): $CancellablePromise<void> {
+    return $Call.ByID(349844005, id);
 }
 
 /**
