@@ -328,3 +328,101 @@ func TestRequiredToolPrefersTheNewestVersion(t *testing.T) {
 		t.Error("a newer PHP should win when it meets the minimum")
 	}
 }
+
+func probePython(t *testing.T, version string, candidates []ToolCandidate) ToolStatus {
+	t.Helper()
+	django, err := catalogue(t).Find("django")
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	restore := findToolFor
+	findToolFor = func(name string) []ToolCandidate {
+		if name == "python" {
+			return candidates
+		}
+		return nil
+	}
+	t.Cleanup(func() { findToolFor = restore })
+
+	statuses, _, _ := Probe(django, map[string]string{"version": version}, nil)
+	for _, status := range statuses {
+		if status.Tool == "python" {
+			return status
+		}
+	}
+	t.Fatal("the probe reported no python status")
+	return ToolStatus{}
+}
+
+func pythonCandidates(versions ...string) []ToolCandidate {
+	paths := map[string]string{
+		"3.9.13":  `C:\Users\me\AppData\Local\Programs\Python\Python39\python.exe`,
+		"3.10.11": `C:\laragon\bin\python\python-3.10\python.exe`,
+		"3.12.7":  `C:\Program Files\Python312\python.exe`,
+		"3.13.2":  `C:\Program Files\Python313\python.exe`,
+	}
+	candidates := make([]ToolCandidate, 0, len(versions))
+	for _, version := range versions {
+		candidates = append(candidates, ToolCandidate{Path: paths[version], Version: version, Source: "installed"})
+	}
+	return candidates
+}
+
+func TestProbePicksTheNewestPythonForDjango(t *testing.T) {
+	status := probePython(t, "6.1", pythonCandidates("3.10.11", "3.9.13", "3.12.7", "3.13.2"))
+
+	if status.MinVersion != "3.12" {
+		t.Fatalf("minimum = %q, want 3.12 for Django 6.1", status.MinVersion)
+	}
+	if status.Version != "3.13.2" || !strings.Contains(status.Selected, "Python313") {
+		t.Fatalf("selected %q (%q), want the newest interpreter", status.Selected, status.Version)
+	}
+	if !status.OK {
+		t.Fatalf("problem = %q, want a usable interpreter", status.Problem)
+	}
+}
+
+func TestProbeFlagsAPythonTooOldForTheChosenDjango(t *testing.T) {
+	status := probePython(t, "6.1", pythonCandidates("3.9.13", "3.10.11"))
+
+	if status.OK {
+		t.Fatal("an interpreter below 3.12 was reported usable for Django 6.1")
+	}
+	if status.Problem != "needs 3.12 or newer" {
+		t.Fatalf("problem = %q, want needs 3.12 or newer", status.Problem)
+	}
+	if status.Version != "3.10.11" {
+		t.Fatalf("selected version = %q, want the newest copy named so the problem is clear", status.Version)
+	}
+}
+
+func TestDjangoOlderVersionAcceptsAnOlderPython(t *testing.T) {
+	status := probePython(t, "5.2", pythonCandidates("3.10.11", "3.9.13"))
+
+	if status.MinVersion != "3.10" {
+		t.Fatalf("minimum = %q, want 3.10 for Django 5.2", status.MinVersion)
+	}
+	if status.Version != "3.10.11" || !status.OK {
+		t.Fatalf("selected %q (%q), problem %q, want 3.10 accepted", status.Selected, status.Version, status.Problem)
+	}
+}
+
+func TestPyLauncherOutputYieldsEveryInterpreter(t *testing.T) {
+	output := "Installed Pythons found by C:\\Windows\\py.exe Launcher for Windows *\r\n\r\n" +
+		" -3.9-64        C:\\Users\\me\\AppData\\Local\\Programs\\Python\\Python39\\python.exe\r\n" +
+		" -V:3.12 *      C:\\Program Files\\Python312\\python.exe\r\n"
+
+	paths := parsePyLauncher(output)
+	want := []string{
+		`C:\Users\me\AppData\Local\Programs\Python\Python39\python.exe`,
+		`C:\Program Files\Python312\python.exe`,
+	}
+	if len(paths) != len(want) {
+		t.Fatalf("paths = %v, want %v", paths, want)
+	}
+	for index := range want {
+		if paths[index] != want[index] {
+			t.Fatalf("paths = %v, want %v", paths, want)
+		}
+	}
+}

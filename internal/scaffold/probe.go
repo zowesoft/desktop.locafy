@@ -55,13 +55,14 @@ var (
 	versionCacheMu sync.RWMutex
 )
 
-// Probe finds the tools a recipe references. Selected maps a tool to the path
-// the operator chose; an empty or unknown selection falls back to the newest
-// installed version that meets the minimum.
-func Probe(recipe Recipe, selected map[string]string) ([]ToolStatus, map[string]bool, map[string]string) {
+// Probe finds the tools a recipe references. options are the resolved recipe
+// choices, which decide a conditional requirement; tools maps a tool to the
+// path the operator chose, where an empty or unknown selection falls back to
+// the newest installed version that meets the minimum.
+func Probe(recipe Recipe, options map[string]string, tools map[string]string) ([]ToolStatus, map[string]bool, map[string]string) {
 	required := map[string]Requirement{}
 	for _, requirement := range recipe.Requires {
-		if !conditionAllows(requirement.When, recipe, selected) {
+		if !conditionAllows(requirement.When, recipe, options) {
 			continue
 		}
 		required[requirement.Tool] = requirement
@@ -94,7 +95,7 @@ func Probe(recipe Recipe, selected map[string]string) ([]ToolStatus, map[string]
 
 	for _, name := range sortedNames {
 		requirement, isRequired := required[name]
-		candidates := findTool(name)
+		candidates := findToolFor(name)
 		status := ToolStatus{
 			Tool:       name,
 			Label:      name,
@@ -114,7 +115,7 @@ func Probe(recipe Recipe, selected map[string]string) ([]ToolStatus, map[string]
 		}
 
 		present[name] = len(candidates) > 0
-		chosen := chooseCandidate(candidates, selected[name], status.MinVersion)
+		chosen := chooseCandidate(candidates, tools[name], status.MinVersion)
 		if chosen != nil {
 			status.Selected = chosen.Path
 			status.Version = chosen.Version
@@ -175,10 +176,16 @@ func chooseCandidate(candidates []ToolCandidate, selected string, minimum string
 	if best != nil {
 		return best
 	}
-	if len(candidates) > 0 {
-		return &candidates[0]
+	// Nothing meets the minimum: name the newest copy anyway, so the caller
+	// can say which interpreter is too old.
+	var fallback *ToolCandidate
+	for index := range candidates {
+		candidate := &candidates[index]
+		if fallback == nil || compareVersions(candidate.Version, fallback.Version) > 0 {
+			fallback = candidate
+		}
 	}
-	return nil
+	return fallback
 }
 
 // betterCandidate prefers the newest usable version for required tools. For an
@@ -214,6 +221,49 @@ func candidateRank(candidate *ToolCandidate) int {
 	}
 }
 
+// findToolFor is the discovery seam: tests replace it with a fixed set of
+// candidates instead of probing the machine.
+var findToolFor = findTool
+
+// pyLauncherPythons asks the Windows Python launcher which interpreters are
+// registered. It lists Store installs and installers that never touched PATH,
+// which a directory glob cannot see.
+func pyLauncherPythons() []string {
+	if runtime.GOOS != "windows" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	command := commandFor(ctx, "py", []string{"-0p"})
+	command.Env = append(os.Environ(), "NO_COLOR=1")
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return nil
+	}
+	return parsePyLauncher(string(output))
+}
+
+// parsePyLauncher reads the interpreter paths from `py -0p`, whose lines end
+// with the executable they name.
+func parsePyLauncher(output string) []string {
+	var paths []string
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimRight(line, "\r")
+		index := strings.LastIndex(line, ":\\")
+		if index < 1 {
+			continue
+		}
+		// Paths may contain spaces (Program Files), so the executable suffix is
+		// what separates an entry from the header line.
+		path := strings.TrimSpace(line[index-1:])
+		if !strings.HasSuffix(strings.ToLower(path), ".exe") {
+			continue
+		}
+		paths = append(paths, path)
+	}
+	return paths
+}
+
 func findTool(name string) []ToolCandidate {
 	var candidates []ToolCandidate
 	add := func(path string, source string) {
@@ -235,6 +285,13 @@ func findTool(name string) []ToolCandidate {
 
 	if path, err := exec.LookPath(name); err == nil {
 		add(path, "PATH")
+	}
+
+	// "python" on PATH is one copy among many; the launcher knows the rest.
+	if name == "python" {
+		for _, path := range pyLauncherPythons() {
+			add(path, "installed")
+		}
 	}
 
 	for _, path := range knownLocations(name) {
@@ -325,6 +382,11 @@ func knownLocations(name string) []string {
 	case "python":
 		return []string{
 			filepath.Join(localAppData, "Programs", "Python", "Python3*", "python.exe"),
+			filepath.Join(programFiles, "Python3*", "python.exe"),
+			`C:\Python3*\python.exe`,
+			// Laragon ships its own interpreters, which may be older than a
+			// separately installed Python.
+			`C:\laragon\bin\python\python-*\python.exe`,
 			"/opt/homebrew/bin/python3",
 			"/usr/local/bin/python3",
 			"/usr/bin/python3",

@@ -222,6 +222,11 @@ func (c *Catalogue) validate() error {
 			if requirement.Tool == "" || requirement.MinVersion == "" {
 				return fmt.Errorf("recipe %q has an incomplete requirement", recipe.ID)
 			}
+			if requirement.When != "" {
+				if _, err := parseCondition(requirement.When); err != nil {
+					return fmt.Errorf("recipe %q requirement condition: %w", recipe.ID, err)
+				}
+			}
 		}
 
 		for _, command := range recipe.Commands {

@@ -67,7 +67,7 @@ func (s *Service) Preflight(recipeID string, options map[string]string) (Preflig
 		return Preflight{}, err
 	}
 
-	statuses, present, paths := Probe(recipe, resolved)
+	statuses, present, paths := Probe(recipe, resolved, nil)
 	result := Preflight{RecipeID: recipe.ID, Tools: statuses, Installer: present["laravel"]}
 
 	result.Ready = true
@@ -135,7 +135,7 @@ func (s *Service) Start(projectID string, recipeID string, directory string, opt
 		}
 	}
 
-	statuses, present, paths := Probe(recipe, tools)
+	statuses, present, paths := Probe(recipe, resolved, tools)
 	if err := requireReady(statuses); err != nil {
 		return Job{}, err
 	}
@@ -207,7 +207,7 @@ func (s *Service) StartProject(name string, recipeID string, options map[string]
 		return Job{}, err
 	}
 
-	statuses, present, paths := Probe(recipe, tools)
+	statuses, present, paths := Probe(recipe, resolved, tools)
 	if err := requireReady(statuses); err != nil {
 		return Job{}, err
 	}

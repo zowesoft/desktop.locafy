@@ -183,7 +183,8 @@
         }
       ],
       "requires": [
-        { "tool": "python", "label": "Python", "minVersion": "3.10" }
+        { "tool": "python", "label": "Python", "minVersion": "3.12", "when": "option:version=6.1" },
+        { "tool": "python", "label": "Python", "minVersion": "3.10", "when": "option:version=5.2" }
       ],
       "commands": [
         { "bin": "{python}", "cwd": "inside", "args": ["-m", "venv", ".venv"] },
