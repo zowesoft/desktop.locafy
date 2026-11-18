@@ -302,7 +302,9 @@ describe("ScaffoldForm", () => {
     render(<ScaffoldForm mode="project" onDone={() => {}} onCancel={() => {}} />);
 
     await user.type(await screen.findByRole("textbox", { name: "Project name" }), "Etugora");
-    await user.click(screen.getByRole("button", { name: "Create project" }));
+    const create = screen.getByRole("button", { name: "Create project" });
+    await waitFor(() => expect(create).toBeEnabled());
+    await user.click(create);
 
     await waitFor(() =>
       expect(ScaffoldService.StartProject).toHaveBeenCalledWith("Etugora", "laravel", { version: "13" }, {}),
