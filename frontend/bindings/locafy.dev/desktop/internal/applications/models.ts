@@ -29,6 +29,14 @@ export interface Application {
     "StartedAt": string;
     "Port": number | null;
     "PortConflict": string;
+
+    /**
+     * Health is whether anything accepts a connection on the port:
+     * healthy, unhealthy, or empty when unknown.
+     */
+    "Health": string;
+    "HealthDetail": string;
+    "HealthCheckedAt": string;
     "Source": string;
 
     /**

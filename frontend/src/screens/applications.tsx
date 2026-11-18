@@ -122,21 +122,21 @@ export function ApplicationsSection() {
         [data.applicationId!]: [...(current[data.applicationId!] ?? []), data.line as string].slice(-300),
       }));
     });
-    const offState = Events.On("application:state", (event) => {
-      const data = event.data as { applicationId?: string };
-      if (!data.applicationId) return;
-      void queryClient.invalidateQueries({ queryKey: ["applications"] });
-      void queryClient.invalidateQueries({ queryKey: notificationsKey });
-    });
-    const offPorts = Events.On("application:ports", (event) => {
-      const data = event.data as { applicationId?: string };
-      if (!data.applicationId) return;
-      void queryClient.invalidateQueries({ queryKey: ["applications"] });
-    });
+    // Process, port and health changes all change what the card shows, so
+    // they share one refresh.
+    const offChanges = ["application:state", "application:ports", "application:health"].map((name) =>
+      Events.On(name, (event) => {
+        const data = event.data as { applicationId?: string };
+        if (!data.applicationId) return;
+        void queryClient.invalidateQueries({ queryKey: ["applications"] });
+        if (name === "application:state") {
+          void queryClient.invalidateQueries({ queryKey: notificationsKey });
+        }
+      }),
+    );
     return () => {
       offOutput();
-      offState();
-      offPorts();
+      offChanges.forEach((off) => off());
     };
   }, [queryClient]);
 
@@ -216,6 +216,8 @@ export function ApplicationsSection() {
                   {app.Language && <Badge variant="secondary">{app.Language}</Badge>}
                   {app.Framework && <Badge variant="outline">{app.Framework}</Badge>}
                   <Badge variant="outline">{app.Source === "detected" ? "Detected" : "Added"}</Badge>
+                  {app.Health === "healthy" && <Badge variant="secondary">Answering</Badge>}
+                  {app.Health === "unhealthy" && <Badge variant="destructive">Not answering</Badge>}
                   <Badge
                     variant={app.Status === "error" ? "destructive" : "secondary"}
                     className="ml-auto"
@@ -223,6 +225,18 @@ export function ApplicationsSection() {
                     {statusLabel(app.Status)}
                   </Badge>
                 </div>
+
+                {app.HealthDetail && (
+                  <p
+                    className={
+                      app.Health === "unhealthy"
+                        ? "mt-1 text-xs text-destructive"
+                        : "mt-1 text-xs text-muted-foreground"
+                    }
+                  >
+                    {app.HealthDetail}
+                  </p>
+                )}
 
                 {app.PortConflict && (
                   <p

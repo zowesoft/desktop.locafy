@@ -94,13 +94,23 @@ func listenerOn(port int, listeners []listener) (listener, bool) {
 
 // portsOwnedBy returns every listening port of the process tree, lowest first.
 func portsOwnedBy(listeners []listener, root int) []int {
-	seen := map[int]bool{}
+	seenPort := map[int]bool{}
+	// Descent is walked once per process, not once per socket it opened.
+	ownership := map[int]bool{}
 	ports := make([]int, 0, len(listeners))
 	for _, entry := range listeners {
-		if seen[entry.Port] || !ownedBy(entry.PID, root) {
+		if seenPort[entry.Port] {
 			continue
 		}
-		seen[entry.Port] = true
+		owned, checked := ownership[entry.PID]
+		if !checked {
+			owned = ownedBy(entry.PID, root)
+			ownership[entry.PID] = owned
+		}
+		if !owned {
+			continue
+		}
+		seenPort[entry.Port] = true
 		ports = append(ports, entry.Port)
 	}
 	sort.Ints(ports)

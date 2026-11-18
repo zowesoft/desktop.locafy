@@ -61,7 +61,12 @@ type Application struct {
 	StartedAt    string
 	Port         *int
 	PortConflict string
-	Source       string
+	// Health is whether anything accepts a connection on the port:
+	// healthy, unhealthy, or empty when unknown.
+	Health          string
+	HealthDetail    string
+	HealthCheckedAt string
+	Source          string
 	// ScaffoldRecipe names the framework recipe that produced the files, empty
 	// when the application was detected or added by hand.
 	ScaffoldRecipe  string
@@ -92,8 +97,8 @@ type CreateInput struct {
 // dependencies attached.
 func List(database *sql.DB, projectID string) ([]Application, error) {
 	rows, err := database.Query(`SELECT id, project_id, name, directory, language, framework, marker,
-			start_command, stop_command, status, exit_code, error, started_at, port, port_conflict, source,
-			scaffold_recipe, scaffold_options, created_at, updated_at
+			start_command, stop_command, status, exit_code, error, started_at, port, port_conflict,
+			health, health_detail, health_checked_at, source, scaffold_recipe, scaffold_options, created_at, updated_at
 		FROM applications WHERE project_id = ? AND deleted_at IS NULL ORDER BY name COLLATE NOCASE`, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("list applications: %w", err)
@@ -125,8 +130,8 @@ func List(database *sql.DB, projectID string) ([]Application, error) {
 // Get returns one live application, or ErrNotFound.
 func Get(database *sql.DB, id string) (Application, error) {
 	row := database.QueryRow(`SELECT id, project_id, name, directory, language, framework, marker,
-			start_command, stop_command, status, exit_code, error, started_at, port, port_conflict, source,
-			scaffold_recipe, scaffold_options, created_at, updated_at
+			start_command, stop_command, status, exit_code, error, started_at, port, port_conflict,
+			health, health_detail, health_checked_at, source, scaffold_recipe, scaffold_options, created_at, updated_at
 		FROM applications WHERE id = ? AND deleted_at IS NULL`, id)
 	app, err := scan(row)
 	if err != nil {
@@ -266,8 +271,8 @@ func scan(row interface{ Scan(...any) error }) (Application, error) {
 	var exitCode, port sql.NullInt64
 	err := row.Scan(&app.ID, &app.ProjectID, &app.Name, &app.Directory, &app.Language, &app.Framework,
 		&app.Marker, &app.StartCommand, &app.StopCommand, &app.Status, &exitCode, &app.Error, &app.StartedAt,
-		&port, &app.PortConflict, &app.Source, &app.ScaffoldRecipe, &app.ScaffoldOptions, &app.CreatedAt,
-		&app.UpdatedAt)
+		&port, &app.PortConflict, &app.Health, &app.HealthDetail, &app.HealthCheckedAt, &app.Source,
+		&app.ScaffoldRecipe, &app.ScaffoldOptions, &app.CreatedAt, &app.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Application{}, ErrNotFound

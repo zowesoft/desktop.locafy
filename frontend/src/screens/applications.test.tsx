@@ -69,6 +69,9 @@ const application = (overrides: Partial<Application> = {}): Application => ({
   StartedAt: "",
   Port: null,
   PortConflict: "",
+  Health: "",
+  HealthDetail: "",
+  HealthCheckedAt: "",
   Source: "detected",
   ScaffoldRecipe: "",
   ScaffoldOptions: "",
@@ -307,6 +310,33 @@ describe("ApplicationsSection", () => {
 
     expect(await screen.findByText("8123")).toBeInTheDocument();
     expect(screen.getByText("Port")).toBeInTheDocument();
+  });
+
+  it("reports whether a running application answers", async () => {
+    vi.mocked(ApplicationsService.List).mockResolvedValue([
+      application({
+        Status: "running",
+        Port: 8123,
+        Health: "healthy",
+        HealthDetail: "Answering on port 8123.",
+      }),
+      application({
+        ID: "a2",
+        Name: "Worker",
+        Directory: "apps/worker",
+        Status: "running",
+        Port: 9000,
+        Health: "unhealthy",
+        HealthDetail: "No connection was accepted on port 9000.",
+      }),
+    ]);
+
+    renderAt("/projects/p1/applications");
+
+    expect(await screen.findByText("Answering")).toBeInTheDocument();
+    expect(screen.getByText("Answering on port 8123.")).toBeInTheDocument();
+    expect(screen.getByText("Not answering")).toBeInTheDocument();
+    expect(screen.getByText("No connection was accepted on port 9000.")).toBeInTheDocument();
   });
 
   it("flags a port conflict with the process holding it", async () => {

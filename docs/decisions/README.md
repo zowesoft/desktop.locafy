@@ -20,6 +20,7 @@ Architecture decision records (ADRs) for this repository.
 | [ADR-0012](ADR-0012-opt-in-project-override-file.md) | Project settings live in SQLite; `locafy.project.json` is an opt-in override file (supersedes ADR-0007's manifest rules) | Accepted |
 | [ADR-0013](ADR-0013-application-process-supervision.md) | Applications run argv-only from their stored command in their stored folder, one supervised process each, killed with its tree on stop | Accepted |
 | [ADR-0014](ADR-0014-application-ports-and-ownership.md) | Application ports are discovered from the live process tree; a held recorded port refuses the start instead of killing its holder | Accepted |
+| [ADR-0015](ADR-0015-application-health-checks.md) | Health is a TCP connection attempt on the discovered port: healthy, unhealthy, or unknown | Accepted |
 | — | Desktop stack selections made in the PRD (Wails v3, Go, React/TS, SQLite) are recorded there and considered approved baseline. | — |
 
 ## Decisions pending (do not guess — PRD section 23)

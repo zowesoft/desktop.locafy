@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +32,7 @@ const (
 	EventOutput = "application:output"
 	EventState  = "application:state"
 	EventPorts  = "application:ports"
+	EventHealth = "application:health"
 )
 
 // outputLines is how much of a live process's output stays in memory for a
@@ -40,10 +42,10 @@ const outputLines = 500
 // stopTimeout is how long Stop waits for a killed tree to report its exit.
 const stopTimeout = 10 * time.Second
 
-// portScanInterval is how often a running application's listening ports are
-// re-read. Servers bind shortly after they start and may open more sockets
+// runtimeScanInterval is how often a running application's ports and health
+// are re-read. Servers bind shortly after they start and may open sockets
 // later, so one reading at start time would miss them.
-const portScanInterval = 2 * time.Second
+const runtimeScanInterval = 2 * time.Second
 
 const staleRunMessage = "Locafy was closed while this application was running; start it again to bring it back."
 
@@ -59,13 +61,15 @@ var (
 // run is one live process: the output collected so far, the ports it was seen
 // listening on, and the channel its supervisor closes once it has exited.
 type run struct {
-	done    chan struct{}
-	pid     int
-	name    string
-	lines   []string
-	ports   []int
-	stopped bool
-	exited  bool
+	done         chan struct{}
+	pid          int
+	name         string
+	lines        []string
+	ports        []int
+	health       string
+	healthDetail string
+	stopped      bool
+	exited       bool
 }
 
 // Supervisor runs saved applications one process at a time and records what
@@ -177,7 +181,7 @@ func (s *Supervisor) Start(id string) (Application, error) {
 
 	s.emitState(app.ID, StatusRunning, nil, "")
 	go s.supervise(app.ID, live, command, stdout, stderr)
-	go s.trackPorts(app.ID, live, live.pid)
+	go s.trackRuntime(app.ID, live, live.pid)
 
 	started, err := Get(s.database, app.ID)
 	if err != nil {
@@ -326,13 +330,26 @@ func (s *Supervisor) portConflict(app Application) string {
 }
 
 // supervisedApplication names the Locafy application whose process tree holds
-// pid, or returns empty when the process is not one of ours.
+// pid, or returns empty when the process is not one of ours. The runs are
+// copied under the lock so the process walk never holds it.
 func (s *Supervisor) supervisedApplication(pid int) string {
+	type candidate struct {
+		pid  int
+		name string
+	}
+
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	candidates := make([]candidate, 0, len(s.runs))
 	for _, live := range s.runs {
-		if live.pid > 0 && ownedBy(pid, live.pid) {
-			return live.name
+		if live.pid > 0 {
+			candidates = append(candidates, candidate{pid: live.pid, name: live.name})
+		}
+	}
+	s.mu.Unlock()
+
+	for _, entry := range candidates {
+		if ownedBy(pid, entry.pid) {
+			return entry.name
 		}
 	}
 	return ""
@@ -357,12 +374,13 @@ func (s *Supervisor) failConflict(id string, message string) error {
 	return fmt.Errorf("%w: %s", ErrPortInUse, message)
 }
 
-// trackPorts records the ports the tree listens on for as long as it lives.
-func (s *Supervisor) trackPorts(id string, live *run, root int) {
-	ticker := time.NewTicker(portScanInterval)
+// trackRuntime records the ports the tree listens on and whether the current
+// port accepts connections, for as long as the process lives.
+func (s *Supervisor) trackRuntime(id string, live *run, root int) {
+	ticker := time.NewTicker(runtimeScanInterval)
 	defer ticker.Stop()
 	for {
-		s.scanPorts(id, live, root)
+		s.scanRuntime(id, live, root)
 		select {
 		case <-live.done:
 			return
@@ -371,12 +389,28 @@ func (s *Supervisor) trackPorts(id string, live *run, root int) {
 	}
 }
 
-func (s *Supervisor) scanPorts(id string, live *run, root int) {
-	listeners, err := listeningFor()
-	if err != nil {
+func (s *Supervisor) scanRuntime(id string, live *run, root int) {
+	if exited(live) {
 		return
 	}
-	ports := portsOwnedBy(listeners, root)
+	if listeners, err := listeningFor(); err == nil {
+		s.recordPorts(id, live, portsOwnedBy(listeners, root))
+	}
+	s.recordHealth(id, live)
+}
+
+// exited reports whether the process is already gone. A scan that started just
+// before the exit must not write a reading onto a record that has been cleared.
+func exited(live *run) bool {
+	select {
+	case <-live.done:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Supervisor) recordPorts(id string, live *run, ports []int) {
 	if len(ports) == 0 {
 		// Nothing observed yet: keep the last reading rather than flapping to
 		// "no port" between a server's binds.
@@ -384,7 +418,7 @@ func (s *Supervisor) scanPorts(id string, live *run, root int) {
 	}
 
 	s.mu.Lock()
-	changed := !samePorts(live.ports, ports)
+	changed := !slices.Equal(live.ports, ports)
 	if changed {
 		live.ports = ports
 	}
@@ -399,6 +433,50 @@ func (s *Supervisor) scanPorts(id string, live *run, root int) {
 	}
 }
 
+func (s *Supervisor) recordHealth(id string, live *run) {
+	s.mu.Lock()
+	port := 0
+	if len(live.ports) > 0 {
+		port = live.ports[0]
+	}
+	s.mu.Unlock()
+	if port == 0 {
+		// Not bound yet: unknown, not unhealthy.
+		return
+	}
+
+	health := HealthHealthy
+	detail := fmt.Sprintf("Answering on port %d.", port)
+	if err := healthProbe(port); err != nil {
+		health = HealthUnhealthy
+		detail = fmt.Sprintf("No connection was accepted on port %d.", port)
+	}
+	if exited(live) {
+		return
+	}
+
+	s.mu.Lock()
+	changed := live.health != health || live.healthDetail != detail
+	if changed {
+		live.health = health
+		live.healthDetail = detail
+	}
+	s.mu.Unlock()
+	if !changed {
+		return
+	}
+
+	s.updateHealth(id, health, detail)
+	if s.emit != nil {
+		s.emit(EventHealth, map[string]any{
+			"applicationId": id,
+			"health":        health,
+			"detail":        detail,
+			"port":          port,
+		})
+	}
+}
+
 func (s *Supervisor) updatePort(id string, port int) {
 	if s.database == nil {
 		return
@@ -406,16 +484,14 @@ func (s *Supervisor) updatePort(id string, port int) {
 	_, _ = s.database.Exec(`UPDATE applications SET port = ? WHERE id = ?`, port, id)
 }
 
-func samePorts(left []int, right []int) bool {
-	if len(left) != len(right) {
-		return false
+func (s *Supervisor) updateHealth(id string, health string, detail string) {
+	if s.database == nil {
+		return
 	}
-	for index := range left {
-		if left[index] != right[index] {
-			return false
-		}
-	}
-	return true
+	_, _ = s.database.Exec(`UPDATE applications
+		SET health = ?, health_detail = ?,
+			health_checked_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+		WHERE id = ?`, health, detail, id)
 }
 
 func (s *Supervisor) appendLine(id string, live *run, line string) {
@@ -449,12 +525,15 @@ func (s *Supervisor) update(id string, status string, exitCode *int, message str
 	if starting {
 		_, _ = s.database.Exec(`UPDATE applications
 			SET status = ?, exit_code = NULL, error = '', port_conflict = '',
+				health = '', health_detail = '', health_checked_at = '',
 				started_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
 			WHERE id = ?`, status, id)
 		return
 	}
-	_, _ = s.database.Exec(`UPDATE applications SET status = ?, exit_code = ?, error = ? WHERE id = ?`,
-		status, code, message, id)
+	_, _ = s.database.Exec(`UPDATE applications
+		SET status = ?, exit_code = ?, error = ?,
+			health = '', health_detail = '', health_checked_at = ''
+		WHERE id = ?`, status, code, message, id)
 }
 
 func (s *Supervisor) emitState(id string, status string, exitCode *int, message string) {

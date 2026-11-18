@@ -104,6 +104,10 @@ func (r *recorder) emit(name string, data any) {
 			}
 			r.events = append(r.events, "ports:"+strings.Join(values, ","))
 		}
+	case EventHealth:
+		if health, ok := data.(map[string]any)["health"].(string); ok {
+			r.events = append(r.events, "health:"+health)
+		}
 	}
 }
 
