@@ -4,6 +4,7 @@
  * All data is mock/static — Go backend wiring comes later.
  */
 import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useOutletContext } from "react-router-dom";
 import {
   AlertTriangle,
@@ -19,6 +20,7 @@ import {
   Terminal as TerminalIcon,
   Trash2,
 } from "lucide-react";
+import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/projects/service";
 import type { Project } from "../../bindings/locafy.dev/desktop/internal/projects/models";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,12 +33,15 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { projectsKey } from "@/lib/projects-query";
+import { notificationsKey } from "@/components/top-bar-status";
 import { cn } from "@/lib/utils";
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
@@ -759,6 +764,64 @@ function formatDate(iso: string): string {
   return Number.isNaN(ts) ? iso : new Date(ts).toLocaleString();
 }
 
+function OverrideCard({ project }: { project: Project }) {
+  const queryClient = useQueryClient();
+  const key = ["projects", project.ID, "override"] as const;
+  const status = useQuery({
+    queryKey: key,
+    queryFn: () => ProjectsService.OverrideStatus(project.ID),
+  });
+  const toggle = useMutation({
+    mutationFn: (enabled: boolean) => ProjectsService.SetOverrideFile(project.ID, enabled),
+    onSuccess: (state) => {
+      queryClient.setQueryData(key, state);
+      void queryClient.invalidateQueries({ queryKey: projectsKey, exact: true });
+      void queryClient.invalidateQueries({ queryKey: notificationsKey });
+    },
+  });
+
+  const present = status.data?.Present ?? false;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Project settings file</CardTitle>
+        <CardDescription>
+          Locafy keeps this project's settings in its own database. Add an override file only when
+          you want to change them from inside the project folder.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-start justify-between gap-4 rounded-lg border border-border p-4">
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="text-sm font-medium">Override settings from locafy.project.json</p>
+            <p className="text-xs text-muted-foreground">
+              While the file exists, its name and description replace the stored values. Nothing is
+              written into the folder until you turn this on, and turning it off removes the file.
+            </p>
+          </div>
+          <Switch
+            aria-label="Override settings from locafy.project.json"
+            checked={present}
+            disabled={status.isPending || toggle.isPending}
+            onCheckedChange={(next) => toggle.mutate(next)}
+          />
+        </div>
+
+        {present && status.data && (
+          <p className="break-all font-mono text-xs text-muted-foreground">{status.data.Path}</p>
+        )}
+
+        {(status.error ?? toggle.error) && (
+          <p role="alert" className="text-xs text-destructive">
+            {String(status.error ?? toggle.error)}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function ProjectSettingsTab() {
   const project = useOutletContext<Project>();
   const [name, setName] = useState(project.Name);
@@ -810,6 +873,8 @@ export function ProjectSettingsTab() {
           <Button size="sm">Save changes</Button>
         </CardContent>
       </Card>
+
+      <OverrideCard project={project} />
 
       {/* Danger zone */}
       <Card className="border-destructive/30">

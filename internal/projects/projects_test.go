@@ -45,7 +45,7 @@ func activityActions(t *testing.T, database *sql.DB, scopeID string) []string {
 	return actions
 }
 
-func TestCreateWritesDirectoryManifestAndRecord(t *testing.T) {
+func TestCreateWritesDirectoryAndRecordOnly(t *testing.T) {
 	database := newTestDB(t)
 	workspace := t.TempDir()
 
@@ -63,19 +63,13 @@ func TestCreateWritesDirectoryManifestAndRecord(t *testing.T) {
 		t.Fatalf("root = %q, want the slugged directory name", project.RootPath)
 	}
 
-	payload, err := os.ReadFile(filepath.Join(project.RootPath, ManifestFile))
+	// Project folders stay clean until an override is requested.
+	entries, err := os.ReadDir(project.RootPath)
 	if err != nil {
-		t.Fatalf("read manifest: %v", err)
+		t.Fatalf("read project directory: %v", err)
 	}
-	var manifest struct {
-		SchemaVersion int    `json:"schemaVersion"`
-		Name          string `json:"name"`
-	}
-	if err := json.Unmarshal(payload, &manifest); err != nil {
-		t.Fatalf("decode manifest: %v", err)
-	}
-	if manifest.SchemaVersion != 1 || manifest.Name != "Etugora" {
-		t.Fatalf("manifest = %+v, want schemaVersion 1 and name Etugora", manifest)
+	if len(entries) != 0 {
+		t.Fatalf("project directory holds %d entries, want none", len(entries))
 	}
 
 	got, err := Get(database, project.ID)
@@ -87,6 +81,121 @@ func TestCreateWritesDirectoryManifestAndRecord(t *testing.T) {
 	}
 	if actions := activityActions(t, database, project.ID); len(actions) != 1 || actions[0] != "Project created" {
 		t.Fatalf("activity = %v, want a single Project created entry", actions)
+	}
+}
+
+func TestOverrideFileIsOptInAndOverridesStoredValues(t *testing.T) {
+	database := newTestDB(t)
+
+	project, err := Create(database, t.TempDir(), "Etugora")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	path := filepath.Join(project.RootPath, OverrideFile)
+
+	state, err := OverrideStatus(database, project.ID)
+	if err != nil {
+		t.Fatalf("status before enabling: %v", err)
+	}
+	if state.Present || state.Path != path {
+		t.Fatalf("status = %+v, want absent at %q", state, path)
+	}
+
+	if _, err := SetOverrideFile(database, project.ID, true); err != nil {
+		t.Fatalf("enable override: %v", err)
+	}
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read override file: %v", err)
+	}
+	var document struct {
+		SchemaVersion int    `json:"schemaVersion"`
+		Name          string `json:"name"`
+	}
+	if err := json.Unmarshal(payload, &document); err != nil {
+		t.Fatalf("decode override file: %v", err)
+	}
+	if document.SchemaVersion != 1 || document.Name != "Etugora" {
+		t.Fatalf("override file = %+v, want schemaVersion 1 and name Etugora", document)
+	}
+
+	// Editing the file changes what Locafy shows, without touching the row.
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":1,"name":"Etugora Override"}`), 0o644); err != nil {
+		t.Fatalf("edit override file: %v", err)
+	}
+	got, err := Get(database, project.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Name != "Etugora Override" {
+		t.Fatalf("name = %q, want the override file's name", got.Name)
+	}
+	stored, err := projectRow(database, project.ID)
+	if err != nil {
+		t.Fatalf("stored row: %v", err)
+	}
+	if stored.Name != "Etugora" {
+		t.Fatalf("stored name = %q, want it unchanged at Etugora", stored.Name)
+	}
+
+	// A rename while the override is enabled reaches the file, so the
+	// operator's own edit is never masked.
+	if _, err := Rename(database, project.ID, "Etugora Core"); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	renamed, err := Get(database, project.ID)
+	if err != nil {
+		t.Fatalf("get after rename: %v", err)
+	}
+	if renamed.Name != "Etugora Core" {
+		t.Fatalf("name after rename = %q, want Etugora Core", renamed.Name)
+	}
+
+	if _, err := SetOverrideFile(database, project.ID, false); err != nil {
+		t.Fatalf("disable override: %v", err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stat after disabling = %v, want the file removed", err)
+	}
+	restored, err := Get(database, project.ID)
+	if err != nil {
+		t.Fatalf("get after disabling: %v", err)
+	}
+	if restored.Name != "Etugora Core" {
+		t.Fatalf("name after disabling = %q, want the stored value", restored.Name)
+	}
+
+	actions := activityActions(t, database, project.ID)
+	want := []string{"Project created", "Override file written", "Project renamed", "Override file removed"}
+	if len(actions) != len(want) {
+		t.Fatalf("activity = %v, want %v", actions, want)
+	}
+	for i := range want {
+		if actions[i] != want[i] {
+			t.Fatalf("activity = %v, want %v", actions, want)
+		}
+	}
+}
+
+func TestBrokenOverrideFileLeavesStoredValues(t *testing.T) {
+	database := newTestDB(t)
+
+	project, err := Create(database, t.TempDir(), "Etugora")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	path := filepath.Join(project.RootPath, OverrideFile)
+	for _, payload := range []string{"{not json", `{"schemaVersion":2,"name":"Later"}`, `{"schemaVersion":1,"name":"   "}`} {
+		if err := os.WriteFile(path, []byte(payload), 0o644); err != nil {
+			t.Fatalf("write override file: %v", err)
+		}
+		got, err := Get(database, project.ID)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		if got.Name != "Etugora" {
+			t.Fatalf("name with %s = %q, want the stored name", payload, got.Name)
+		}
 	}
 }
 
@@ -314,13 +423,9 @@ func TestRemoveKeepsFilesAndReleasesThePath(t *testing.T) {
 		t.Fatalf("list holds %d projects after remove, want none", len(live))
 	}
 
-	// The directory and its manifest stay on disk: removal never deletes
-	// source files.
+	// The directory stays on disk: removal never deletes source files.
 	if _, err := os.Stat(project.RootPath); err != nil {
 		t.Fatalf("stat project directory: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(project.RootPath, ManifestFile)); err != nil {
-		t.Fatalf("stat manifest: %v", err)
 	}
 
 	// The row released its path: another project may now use it.

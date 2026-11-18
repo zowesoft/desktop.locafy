@@ -22,6 +22,15 @@ export interface ImportOutcome {
 }
 
 /**
+ * OverrideState describes a project's optional override file: where it would
+ * live and whether the operator has enabled it.
+ */
+export interface OverrideState {
+    "Path": string;
+    "Present": boolean;
+}
+
+/**
  * Project is one project record.
  */
 export interface Project {

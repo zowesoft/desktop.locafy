@@ -1,6 +1,6 @@
 # ADR-0007: Project manifest and project storage model
 
-- **Status:** Accepted
+- **Status:** Accepted; the manifest writing and authority rules are superseded by ADR-0012
 - **Date:** 2026-11-14
 - **Depends on:** ADR-0004 (local data model)
 

@@ -120,7 +120,7 @@ func detectMarker(dir string) string {
 // the exact names plus the wildcard forms.
 func matchMarker(name string) string {
 	switch name {
-	case ManifestFile, "composer.json", "artisan", "package.json", "nest-cli.json",
+	case OverrideFile, "composer.json", "artisan", "package.json", "nest-cli.json",
 		"pyproject.toml", "requirements.txt", "manage.py", "go.mod", "Gemfile":
 		return name
 	}

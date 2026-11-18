@@ -111,3 +111,15 @@ func (s *Service) ChangeRoot(id string, rootPath string) (Project, error) {
 func (s *Service) Remove(id string) error {
 	return Remove(s.database, id)
 }
+
+// OverrideStatus reports where the project's override file lives and whether
+// the operator has enabled it.
+func (s *Service) OverrideStatus(id string) (OverrideState, error) {
+	return OverrideStatus(s.database, id)
+}
+
+// SetOverrideFile writes or removes the project's override file. This is the
+// only operation that creates it.
+func (s *Service) SetOverrideFile(id string, enabled bool) (OverrideState, error) {
+	return SetOverrideFile(s.database, id, enabled)
+}

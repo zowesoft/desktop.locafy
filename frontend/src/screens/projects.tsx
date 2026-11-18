@@ -415,7 +415,7 @@ export function ProjectsScreen() {
               </DialogTitle>
               <DialogDescription>
                 {editing?.kind === "create"
-                  ? "Locafy creates the folder in its workspace and writes a project manifest."
+                  ? "Locafy creates the folder in its workspace and keeps its settings in Locafy."
                   : "Locafy records the folder's location. Nothing inside it is moved or changed."}
               </DialogDescription>
             </DialogHeader>

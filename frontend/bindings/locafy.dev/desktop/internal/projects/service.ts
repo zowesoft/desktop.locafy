@@ -53,6 +53,14 @@ export function List(): $CancellablePromise<$models.Project[] | null> {
 }
 
 /**
+ * OverrideStatus reports where the project's override file lives and whether
+ * the operator has enabled it.
+ */
+export function OverrideStatus(id: string): $CancellablePromise<$models.OverrideState> {
+    return $Call.ByID(2107079667, id);
+}
+
+/**
  * Remove takes a project out of Locafy without touching its files.
  */
 export function Remove(id: string): $CancellablePromise<void> {
@@ -72,6 +80,14 @@ export function Rename(id: string, name: string): $CancellablePromise<$models.Pr
  */
 export function ScanFolder(path: string): $CancellablePromise<$models.FolderCandidate[] | null> {
     return $Call.ByID(3952414168, path);
+}
+
+/**
+ * SetOverrideFile writes or removes the project's override file. This is the
+ * only operation that creates it.
+ */
+export function SetOverrideFile(id: string, enabled: boolean): $CancellablePromise<$models.OverrideState> {
+    return $Call.ByID(211525385, id, enabled);
 }
 
 /**

@@ -6,12 +6,12 @@ package projects
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"locafy.dev/desktop/internal/activity"
@@ -25,9 +25,9 @@ const (
 	KindLinked  = "linked"
 )
 
-// ManifestFile is the portable project definition written into managed
-// projects only.
-const ManifestFile = "locafy.project.json"
+// OverrideFile is the optional per-project settings file. It is written only
+// when the operator asks for an override, never during project creation.
+const OverrideFile = "locafy.project.json"
 
 var (
 	ErrNameRequired     = errors.New("a project needs a name")
@@ -68,24 +68,38 @@ func List(database *sql.DB) ([]Project, error) {
 		if err != nil {
 			return nil, err
 		}
-		projects = append(projects, project)
+		projects = append(projects, applyOverride(project))
 	}
-	return projects, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// An override can change the name, so ordering follows what is shown.
+	sort.SliceStable(projects, func(i, j int) bool {
+		return strings.ToLower(projects[i].Name) < strings.ToLower(projects[j].Name)
+	})
+	return projects, nil
 }
 
-// Get returns one live project, or ErrNotFound.
+// Get returns one live project with any override file applied, or ErrNotFound.
 func Get(database *sql.DB, id string) (Project, error) {
+	project, err := projectRow(database, id)
+	if err != nil {
+		return Project{}, err
+	}
+	return applyOverride(project), nil
+}
+
+// projectRow reads the stored record without applying an override file, for
+// operations that read or write those stored values.
+func projectRow(database *sql.DB, id string) (Project, error) {
 	row := database.QueryRow(`SELECT id, name, root_path, description, kind, status, lifecycle_state, created_at, updated_at
 		FROM projects WHERE id = ? AND deleted_at IS NULL`, id)
-	project, err := scan(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Project{}, ErrNotFound
-	}
-	return project, err
+	return scan(row)
 }
 
 // Create makes a managed project: a directory under projectsDir named from
-// the project name, plus its manifest and database record.
+// the project name, plus its database record. No file is written into the
+// directory; settings stay in the database unless an override is requested.
 func Create(database *sql.DB, projectsDir string, name string) (Project, error) {
 	name, err := cleanName(name)
 	if err != nil {
@@ -123,9 +137,6 @@ func RegisterManagedAt(database *sql.DB, name string, root string) (Project, err
 	project, err := insert(database, name, root, KindManaged)
 	if err != nil {
 		return Project{}, err
-	}
-	if err := writeManifest(root, project); err != nil {
-		return project, err
 	}
 	if err := activity.Log(database, activity.ScopeProject, project.ID, "Project created", project.Name); err != nil {
 		return project, err
@@ -222,7 +233,7 @@ func Rename(database *sql.DB, id string, name string) (Project, error) {
 	if err != nil {
 		return Project{}, err
 	}
-	project, err := Get(database, id)
+	project, err := projectRow(database, id)
 	if err != nil {
 		return Project{}, err
 	}
@@ -231,6 +242,9 @@ func Rename(database *sql.DB, id string, name string) (Project, error) {
 		return Project{}, fmt.Errorf("rename project %q: %w", id, err)
 	}
 	project.Name = name
+	if err := syncOverride(project); err != nil {
+		return project, err
+	}
 	if err := activity.Log(database, activity.ScopeProject, id, "Project renamed", name); err != nil {
 		return project, err
 	}
@@ -240,7 +254,7 @@ func Rename(database *sql.DB, id string, name string) (Project, error) {
 // ChangeRoot points a linked project at another existing directory. It never
 // moves, copies or deletes files.
 func ChangeRoot(database *sql.DB, id string, rootPath string) (Project, error) {
-	project, err := Get(database, id)
+	project, err := projectRow(database, id)
 	if err != nil {
 		return Project{}, err
 	}
@@ -405,25 +419,4 @@ func slugify(name string) string {
 		}
 	}
 	return strings.Trim(slug.String(), "-")
-}
-
-func writeManifest(root string, project Project) error {
-	manifest := struct {
-		SchemaVersion int    `json:"schemaVersion"`
-		Name          string `json:"name"`
-		Description   string `json:"description"`
-	}{
-		SchemaVersion: 1,
-		Name:          project.Name,
-		Description:   project.Description,
-	}
-	payload, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		return fmt.Errorf("encode project manifest: %w", err)
-	}
-	payload = append(payload, '\n')
-	if err := os.WriteFile(filepath.Join(root, ManifestFile), payload, 0o644); err != nil {
-		return fmt.Errorf("write project manifest: %w", err)
-	}
-	return nil
 }

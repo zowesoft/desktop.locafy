@@ -10,6 +10,8 @@ import { projectWorkspaceRoute } from "./project-workspace";
 
 vi.mock("../../bindings/locafy.dev/desktop/internal/projects/service", () => ({
   List: vi.fn(),
+  OverrideStatus: vi.fn(),
+  SetOverrideFile: vi.fn(),
 }));
 
 const project = (overrides: Partial<Project> = {}): Project => ({
@@ -47,6 +49,12 @@ function renderAt(path: string) {
 }
 
 beforeEach(() => {
+  vi.mocked(ProjectsService.OverrideStatus).mockReset();
+  vi.mocked(ProjectsService.SetOverrideFile).mockReset();
+  vi.mocked(ProjectsService.OverrideStatus).mockResolvedValue({
+    Path: "C:\\locafy\\projects\\etugora\\locafy.project.json",
+    Present: false,
+  });
   vi.mocked(ProjectsService.List).mockReset();
   vi.mocked(ProjectsService.List).mockResolvedValue([
     project(),
@@ -127,6 +135,27 @@ describe("ProjectWorkspace", () => {
     await user.click(screen.getByRole("link", { name: "Projects" }));
 
     expect(await screen.findByText("projects dashboard")).toBeInTheDocument();
+  });
+
+  it("keeps the settings file absent until an override is turned on", async () => {
+    const user = userEvent.setup();
+    vi.mocked(ProjectsService.SetOverrideFile).mockResolvedValue({
+      Path: "C:\\locafy\\projects\\etugora\\locafy.project.json",
+      Present: true,
+    });
+
+    renderAt("/projects/p1/settings");
+
+    const toggle = await screen.findByRole("switch", { name: /Override settings/ });
+    expect(toggle).not.toBeChecked();
+    expect(screen.queryByText("C:\\locafy\\projects\\etugora\\locafy.project.json")).toBeNull();
+
+    await user.click(toggle);
+
+    expect(ProjectsService.SetOverrideFile).toHaveBeenCalledWith("p1", true);
+    expect(
+      await screen.findByText("C:\\locafy\\projects\\etugora\\locafy.project.json"),
+    ).toBeInTheDocument();
   });
 
   it("surfaces a failure to read projects", async () => {
