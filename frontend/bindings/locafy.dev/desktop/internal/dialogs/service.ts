@@ -17,3 +17,12 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 export function ChooseFolder(title: string): $CancellablePromise<string> {
     return $Call.ByID(616851641, title);
 }
+
+/**
+ * OpenInTerminal opens the operator's terminal at a folder. The folder
+ * must exist; the terminal is started detached so Locafy keeps running
+ * whether the operator closes it or not.
+ */
+export function OpenInTerminal(path: string): $CancellablePromise<string> {
+    return $Call.ByID(3020321915, path);
+}
