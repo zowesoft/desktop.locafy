@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
+import { Copy, ExternalLink, RefreshCw } from "lucide-react";
 
 import * as ScaffoldService from "../../bindings/locafy.dev/desktop/internal/scaffold/service";
 import type {
   Job,
   Preflight,
   Recipe,
+  ToolFix,
 } from "../../bindings/locafy.dev/desktop/internal/scaffold/models";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,6 +44,7 @@ export function ScaffoldForm({ mode, projectID, onDone, onCancel }: Props) {
   const [failure, setFailure] = useState("");
   const [busy, setBusy] = useState(false);
   const [installing, setInstalling] = useState(false);
+  const [checkToken, setCheckToken] = useState(0);
   const finished = useRef(false);
 
   const recipe = useMemo(
@@ -81,7 +84,7 @@ export function ScaffoldForm({ mode, projectID, onDone, onCancel }: Props) {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [recipe, options]);
+  }, [recipe, options, checkToken]);
 
   useEffect(() => {
     const offOutput = Events.On("scaffold:output", (event) => {
@@ -263,6 +266,18 @@ export function ScaffoldForm({ mode, projectID, onDone, onCancel }: Props) {
               <Badge variant={preflight?.Ready ? "secondary" : "outline"}>
                 {preflight ? (preflight.Ready ? "Ready" : "Needs attention") : "Checking…"}
               </Badge>
+              {preflight && !preflight.Ready && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="ml-auto"
+                  disabled={busy}
+                  onClick={() => setCheckToken((current) => current + 1)}
+                >
+                  <RefreshCw /> Check again
+                </Button>
+              )}
               {recipe.ID === "laravel" && preflight && !preflight.Installer && (
                 <Button
                   type="button"
@@ -306,6 +321,9 @@ export function ScaffoldForm({ mode, projectID, onDone, onCancel }: Props) {
                 )}
                 {status.Required && !status.OK && status.Problem && (
                   <span className="text-destructive">{status.Problem}</span>
+                )}
+                {status.Required && !status.OK && status.Fix && (
+                  <ToolFixPanel fix={status.Fix} />
                 )}
               </div>
             ))}
@@ -367,6 +385,55 @@ export function ScaffoldForm({ mode, projectID, onDone, onCancel }: Props) {
             {recipe.VerifiedAt} · <a className="underline" href={recipe.Docs} target="_blank" rel="noreferrer">Official installation guide</a>
           </p>
         </>
+      )}
+    </div>
+  );
+}
+
+/* A blocked tool is not a dead end: the operator gets the reason, the exact
+ * command for this platform and the publisher's own download page. */
+function ToolFixPanel({ fix }: { fix: ToolFix }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(fix.Command);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // A webview without clipboard access still shows the command to type.
+    }
+  };
+
+  return (
+    <div className="mt-1 w-full space-y-1.5 rounded-lg border border-destructive/30 bg-destructive/5 p-2.5">
+      <p className="text-xs text-muted-foreground">{fix.Summary}</p>
+      {fix.Command && (
+        <div className="flex flex-wrap items-center gap-2">
+          <code className="min-w-0 flex-1 break-all rounded-md bg-background/70 px-2 py-1 font-mono text-[11px]">
+            {fix.Command}
+          </code>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            aria-label="Copy the install command"
+            onClick={() => void copy()}
+          >
+            <Copy /> {copied ? "Copied" : "Copy"}
+          </Button>
+        </div>
+      )}
+      {fix.Link && (
+        <a
+          href={fix.Link}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-primary underline"
+        >
+          {fix.LinkLabel || "Official download page"}
+          <ExternalLink className="size-3" aria-hidden />
+        </a>
       )}
     </div>
   );

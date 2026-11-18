@@ -33,6 +33,8 @@ type ToolStatus struct {
 	Version    string
 	OK         bool
 	Problem    string
+	// Fix explains how to satisfy a required tool that is missing or too old.
+	Fix *ToolFix
 }
 
 // Preflight is the answer to "can this recipe run here, and with what".
@@ -125,8 +127,10 @@ func Probe(recipe Recipe, options map[string]string, tools map[string]string) ([
 		switch {
 		case len(candidates) == 0 && isRequired:
 			status.Problem = "not installed"
+			status.Fix = fixFor(name, status.Label, status.MinVersion, "")
 		case chosen != nil && isRequired && !AtLeast(chosen.Version, status.MinVersion):
 			status.Problem = "needs " + status.MinVersion + " or newer"
+			status.Fix = fixFor(name, status.Label, status.MinVersion, chosen.Version)
 		default:
 			status.OK = true
 		}

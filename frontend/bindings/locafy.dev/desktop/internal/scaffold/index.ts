@@ -19,5 +19,6 @@ export type {
     Recipe,
     Requirement,
     ToolCandidate,
+    ToolFix,
     ToolStatus
 } from "./models.js";

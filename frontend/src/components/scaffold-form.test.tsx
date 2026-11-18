@@ -71,6 +71,7 @@ const preflight = (overrides: Partial<Preflight> = {}): Preflight => ({
       Version: "8.4.18",
       OK: true,
       Problem: "",
+      Fix: null,
     },
   ],
   Commands: ["C:\\php84\\php.exe artisan serve"],
@@ -150,6 +151,7 @@ describe("ScaffoldForm", () => {
             Version: "",
             OK: false,
             Problem: "not installed",
+            Fix: null,
           },
         ],
         Commands: [],
@@ -160,6 +162,86 @@ describe("ScaffoldForm", () => {
 
     expect(await screen.findByText("not installed")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Create application" })).toBeDisabled();
+  });
+
+  it("shows how to fix a tool that is missing", async () => {
+    vi.mocked(ScaffoldService.Preflight).mockResolvedValue(
+      preflight({
+        Ready: false,
+        Tools: [
+          {
+            Tool: "php",
+            Label: "PHP",
+            MinVersion: "8.3",
+            Required: true,
+            Candidates: [],
+            Selected: "",
+            Version: "",
+            OK: false,
+            Problem: "not installed",
+            Fix: {
+              Summary: "PHP 8.3 or newer is required and Locafy could not find it.",
+              Command: "winget install --id PHP.PHP.8.4 -e",
+              Link: "https://windows.php.net/download/",
+              LinkLabel: "PHP downloads",
+            },
+          },
+        ],
+        Commands: [],
+      }),
+    );
+
+    render(<ScaffoldForm mode="application" projectID="p1" onDone={() => {}} onCancel={() => {}} />);
+
+    expect(await screen.findByText(/could not find it/)).toBeInTheDocument();
+    expect(screen.getByText("winget install --id PHP.PHP.8.4 -e")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy the install command" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /PHP downloads/ })).toHaveAttribute(
+      "href",
+      "https://windows.php.net/download/",
+    );
+    expect(screen.getByRole("button", { name: "Create application" })).toBeDisabled();
+  });
+
+  it("checks the tools again after the operator installs one", async () => {
+    const user = userEvent.setup();
+    vi.mocked(ScaffoldService.Preflight)
+      .mockResolvedValueOnce(
+        preflight({
+          Ready: false,
+          Tools: [
+            {
+              Tool: "php",
+              Label: "PHP",
+              MinVersion: "8.3",
+              Required: true,
+              Candidates: [],
+              Selected: "",
+              Version: "",
+              OK: false,
+              Problem: "not installed",
+              Fix: {
+                Summary: "PHP 8.3 or newer is required and Locafy could not find it.",
+                Command: "winget install --id PHP.PHP.8.4 -e",
+                Link: "https://windows.php.net/download/",
+                LinkLabel: "PHP downloads",
+              },
+            },
+          ],
+          Commands: [],
+        }),
+      )
+      .mockResolvedValue(preflight());
+
+    render(<ScaffoldForm mode="application" projectID="p1" onDone={() => {}} onCancel={() => {}} />);
+
+    await screen.findByText("not installed");
+    const before = vi.mocked(ScaffoldService.Preflight).mock.calls.length;
+
+    await user.click(screen.getByRole("button", { name: /Check again/ }));
+
+    await waitFor(() => expect(vi.mocked(ScaffoldService.Preflight).mock.calls.length).toBeGreaterThan(before));
+    expect(await screen.findByText("Ready")).toBeInTheDocument();
   });
 
   it("starts with the chosen version and tool path, streams output and reports success", async () => {

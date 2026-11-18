@@ -149,6 +149,17 @@ export interface ToolCandidate {
 }
 
 /**
+ * ToolFix tells the operator how to satisfy a requirement that is missing or
+ * too old, so a blocked scaffold has an obvious next step.
+ */
+export interface ToolFix {
+    "Summary": string;
+    "Command": string;
+    "Link": string;
+    "LinkLabel": string;
+}
+
+/**
  * ToolStatus reports one tool a recipe needs, with every installed version
  * found and the one that would be used.
  */
@@ -162,4 +173,9 @@ export interface ToolStatus {
     "Version": string;
     "OK": boolean;
     "Problem": string;
+
+    /**
+     * Fix explains how to satisfy a required tool that is missing or too old.
+     */
+    "Fix": ToolFix | null;
 }

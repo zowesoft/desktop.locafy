@@ -407,6 +407,73 @@ func TestDjangoOlderVersionAcceptsAnOlderPython(t *testing.T) {
 	}
 }
 
+func TestAnOldInterpreterComesWithAWayToFixIt(t *testing.T) {
+	status := probePython(t, "6.1", pythonCandidates("3.9.13"))
+
+	if status.Fix == nil {
+		t.Fatal("a blocked requirement carries no fix")
+	}
+	if !strings.Contains(status.Fix.Summary, "3.12") || !strings.Contains(status.Fix.Summary, "3.9.13") {
+		t.Fatalf("summary = %q, want the installed and required versions", status.Fix.Summary)
+	}
+	if status.Fix.Link == "" || status.Fix.LinkLabel == "" {
+		t.Fatalf("fix = %+v, want an official download link", status.Fix)
+	}
+	if runtime.GOOS == "windows" && !strings.Contains(status.Fix.Command, "Python.Python.3.12") {
+		t.Fatalf("command = %q, want the winget package for the required Python", status.Fix.Command)
+	}
+}
+
+func TestAMissingToolComesWithAWayToFixIt(t *testing.T) {
+	status := probePython(t, "6.1", nil)
+
+	if status.Problem != "not installed" {
+		t.Fatalf("problem = %q, want not installed", status.Problem)
+	}
+	if status.Fix == nil {
+		t.Fatal("a missing tool carries no fix")
+	}
+	if !strings.Contains(status.Fix.Summary, "could not find it") {
+		t.Fatalf("summary = %q, want an explanation that nothing was found", status.Fix.Summary)
+	}
+	if status.Fix.Link == "" {
+		t.Fatal("a missing tool has no download link")
+	}
+}
+
+func TestToolsWithoutAPackageManagerStillPointAtTheirDownloadPage(t *testing.T) {
+	composer := fixFor("composer", "Composer", "2.2", "1.10.0")
+	if composer.Link != "https://getcomposer.org/download/" {
+		t.Fatalf("composer link = %q, want the official download page", composer.Link)
+	}
+	if composer.Command != "" {
+		t.Fatalf("composer command = %q, want no command where there is no package to install", composer.Command)
+	}
+	if !strings.Contains(composer.Summary, "1.10.0") {
+		t.Fatalf("summary = %q, want the installed version named", composer.Summary)
+	}
+
+	npm := fixFor("npm", "npm", "10", "")
+	if !strings.Contains(npm.Summary, "ships with Node.js") {
+		t.Fatalf("npm summary = %q, want it to point at Node.js", npm.Summary)
+	}
+	if npm.Link != "https://nodejs.org/en/download" {
+		t.Fatalf("npm link = %q, want the Node.js download page", npm.Link)
+	}
+}
+
+func TestRequiredToolsEachCarryAFix(t *testing.T) {
+	for _, tool := range []string{"php", "composer", "node", "npm", "python", "dotnet"} {
+		fix := fixFor(tool, tool, "1.0", "")
+		if fix == nil || fix.Link == "" {
+			t.Fatalf("%s fix = %+v, want a link", tool, fix)
+		}
+		if !strings.Contains(fix.Summary, "1.0") {
+			t.Fatalf("%s summary = %q, want the required version", tool, fix.Summary)
+		}
+	}
+}
+
 func TestPyLauncherOutputYieldsEveryInterpreter(t *testing.T) {
 	output := "Installed Pythons found by C:\\Windows\\py.exe Launcher for Windows *\r\n\r\n" +
 		" -3.9-64        C:\\Users\\me\\AppData\\Local\\Programs\\Python\\Python39\\python.exe\r\n" +
