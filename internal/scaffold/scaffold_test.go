@@ -493,3 +493,182 @@ func TestPyLauncherOutputYieldsEveryInterpreter(t *testing.T) {
 		}
 	}
 }
+
+func locationsInclude(locations []string, want string) bool {
+	for _, location := range locations {
+		if strings.EqualFold(filepath.ToSlash(location), filepath.ToSlash(want)) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestEachPlatformSearchesItsOwnInstallLocations(t *testing.T) {
+	restore := hostOS
+	t.Cleanup(func() { hostOS = restore })
+	t.Setenv("APPDATA", `C:\Users\me\AppData\Roaming`)
+	t.Setenv("LOCALAPPDATA", `C:\Users\me\AppData\Local`)
+	t.Setenv("ProgramFiles", `C:\Program Files`)
+
+	hostOS = "windows"
+	for _, want := range []string{
+		`C:\laragon\bin\python\python-*\python.exe`,
+		`C:\Users\me\AppData\Roaming\Composer\vendor\bin\composer.bat`,
+		`C:\Program Files\nodejs\npm.cmd`,
+		`C:\Program Files\dotnet\dotnet.exe`,
+	} {
+		if !locationsInclude(windowsLocations("python"), want) && !locationsInclude(windowsLocations("composer"), want) &&
+			!locationsInclude(windowsLocations("npm"), want) && !locationsInclude(windowsLocations("dotnet"), want) {
+			t.Errorf("Windows searches no %q", want)
+		}
+	}
+	for _, tool := range []string{"php", "composer", "node", "dotnet", "python"} {
+		for _, location := range windowsLocations(tool) {
+			if strings.HasPrefix(location, "/opt/") || strings.HasPrefix(location, "/usr/") {
+				t.Errorf("Windows %s search includes the Unix path %q", tool, location)
+			}
+		}
+	}
+
+	hostOS = "darwin"
+	if !locationsInclude(darwinLocations("php"), "/opt/homebrew/bin/php") {
+		t.Error("macOS does not search Homebrew's php")
+	}
+	if !locationsInclude(darwinLocations("composer"), filepath.Join(homeDirectory(), ".config", "composer", "vendor", "bin", "composer")) {
+		t.Error("macOS does not search Composer's global bin")
+	}
+	if !locationsInclude(darwinLocations("node"), filepath.Join(homeDirectory(), ".nvm", "versions", "node", "*", "bin", "node")) {
+		t.Error("macOS does not search nvm's node versions")
+	}
+	if !locationsInclude(darwinLocations("python"), "/opt/homebrew/bin/python3.*") {
+		t.Error("macOS does not search versioned Homebrew interpreters")
+	}
+	// Home-derived entries follow the machine running the test, so only the
+	// fixed locations can be held to the simulated platform.
+	home := homeDirectory()
+	for _, tool := range []string{"php", "composer", "node", "dotnet", "python"} {
+		for _, location := range darwinLocations(tool) {
+			if strings.HasPrefix(location, home) {
+				continue
+			}
+			if strings.Contains(location, `C:\`) || strings.Contains(location, "Program Files") {
+				t.Errorf("macOS %s search includes the Windows path %q", tool, location)
+			}
+		}
+	}
+
+	hostOS = "linux"
+	if !locationsInclude(linuxLocations("php"), "/usr/bin/php8.*") {
+		t.Error("Linux does not search the distribution's versioned php")
+	}
+	if !locationsInclude(linuxLocations("composer"), filepath.Join(homeDirectory(), ".config", "composer", "vendor", "bin", "composer")) {
+		t.Error("Linux does not search Composer's global bin")
+	}
+	if !locationsInclude(linuxLocations("dotnet"), "/usr/lib/dotnet/dotnet") {
+		t.Error("Linux does not search the package-managed .NET root")
+	}
+	if !locationsInclude(linuxLocations("python"), "/usr/bin/python3.*") {
+		t.Error("Linux does not search versioned interpreters")
+	}
+	for _, tool := range []string{"php", "composer", "node", "dotnet", "python"} {
+		for _, location := range linuxLocations(tool) {
+			if strings.HasPrefix(location, home) {
+				continue
+			}
+			if strings.HasPrefix(location, "/opt/homebrew") {
+				t.Errorf("Linux %s search includes a macOS-only path %q", tool, location)
+			}
+		}
+	}
+}
+
+func TestEveryLocationIsAbsoluteWithoutInstallVariables(t *testing.T) {
+	restore := hostOS
+	t.Cleanup(func() { hostOS = restore })
+	for _, variable := range []string{"HOME", "APPDATA", "LOCALAPPDATA", "ProgramFiles", "ProgramFiles(x86)"} {
+		t.Setenv(variable, "")
+	}
+
+	for _, platform := range []string{"windows", "darwin", "linux"} {
+		hostOS = platform
+		for _, tool := range []string{"php", "composer", "laravel", "node", "npm", "npx", "dotnet", "python"} {
+			for _, location := range knownLocations(tool) {
+				prefix := location
+				if index := strings.IndexAny(prefix, "*?"); index >= 0 {
+					prefix = prefix[:index]
+				}
+				if !filepath.IsAbs(prefix) && !strings.HasPrefix(prefix, "/") {
+					t.Errorf("%s %s location %q is relative", platform, tool, location)
+				}
+			}
+		}
+	}
+}
+
+func TestUnixAsksForPython3AndWindowsForPython(t *testing.T) {
+	restore := hostOS
+	t.Cleanup(func() { hostOS = restore })
+
+	hostOS = "windows"
+	if got := strings.Join(searchNames("python"), ","); got != "python" {
+		t.Errorf("Windows names = %q, want python", got)
+	}
+	for _, platform := range []string{"darwin", "linux"} {
+		hostOS = platform
+		if got := strings.Join(searchNames("python"), ","); got != "python,python3" {
+			t.Errorf("%s names = %q, want python and python3", platform, got)
+		}
+	}
+	hostOS = "linux"
+	if got := strings.Join(searchNames("php"), ","); got != "php" {
+		t.Errorf("php names = %q, want php", got)
+	}
+}
+
+func TestVersionGlobsDoNotStandInForAnInterpreter(t *testing.T) {
+	for _, path := range []string{"/opt/homebrew/bin/python3.12", "/usr/bin/python3", `C:\Python312\python.exe`} {
+		if !usableCopy("python", path) {
+			t.Errorf("%q was rejected as an interpreter", path)
+		}
+	}
+	for _, path := range []string{"/opt/homebrew/bin/python3.12-config", "/usr/bin/python3.12-dbg.py", "/usr/bin/python3-config"} {
+		if usableCopy("python", path) {
+			t.Errorf("%q was accepted as an interpreter", path)
+		}
+	}
+	if !usableCopy("php", "/usr/bin/php8.3") {
+		t.Error("only python locations need the interpreter filter")
+	}
+}
+
+func TestLinuxInstallsNameTheDistributionsPackage(t *testing.T) {
+	restoreOS, restoreManager := hostOS, linuxPackageManager
+	t.Cleanup(func() {
+		hostOS = restoreOS
+		linuxPackageManager = restoreManager
+	})
+	hostOS = "linux"
+	linuxPackageManager = func() string { return "apt" }
+
+	python := fixFor("python", "Python", "3.12", "3.10.6")
+	if python.Command != "sudo apt install python3.12" {
+		t.Errorf("python command = %q, want the distribution package for the required series", python.Command)
+	}
+	dotnet := fixFor("dotnet", ".NET SDK", "10", "")
+	if dotnet.Command != "sudo apt install dotnet-sdk-10.0" {
+		t.Errorf("dotnet command = %q, want the package for the required major", dotnet.Command)
+	}
+	node := fixFor("node", "Node.js", "20.19", "18.20.0")
+	if node.Command != "" {
+		t.Errorf("node command = %q, want the download page because distributions freeze one major", node.Command)
+	}
+	if !strings.Contains(node.Summary, "Distribution packages") || node.Link != "https://nodejs.org/en/download" {
+		t.Errorf("node fix = %+v, want a note and the download page", node)
+	}
+
+	linuxPackageManager = func() string { return "" }
+	php := fixFor("php", "PHP", "8.3", "")
+	if php.Command != "" || php.Link != "https://windows.php.net/download/" {
+		t.Errorf("php fix without a package manager = %+v, want the download page only", php)
+	}
+}

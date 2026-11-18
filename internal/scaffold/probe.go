@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -233,7 +232,7 @@ var findToolFor = findTool
 // registered. It lists Store installs and installers that never touched PATH,
 // which a directory glob cannot see.
 func pyLauncherPythons() []string {
-	if runtime.GOOS != "windows" {
+	if hostOS != "windows" {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -268,27 +267,56 @@ func parsePyLauncher(output string) []string {
 	return paths
 }
 
+// searchNames are the executable names to ask PATH about. Unix names its
+// interpreter python3, so a recipe that asks for python must still find a
+// machine whose only copy is python3.
+func searchNames(name string) []string {
+	if name == "python" && hostOS != "windows" {
+		return []string{"python", "python3"}
+	}
+	return []string{name}
+}
+
+// pythonBinary is the executable a Python location must name. A version glob
+// also matches companions such as python3.12-config, which are not interpreters.
+var pythonBinary = regexp.MustCompile(`(?i)^python(\d+(\.\d+)*)?(\.exe)?$`)
+
+func usableCopy(name string, path string) bool {
+	if name != "python" {
+		return true
+	}
+	return pythonBinary.MatchString(filepath.Base(path))
+}
+
 func findTool(name string) []ToolCandidate {
 	var candidates []ToolCandidate
+	seen := map[string]bool{}
 	add := func(path string, source string) {
 		path = strings.TrimSpace(path)
-		if path == "" {
+		if path == "" || !usableCopy(name, path) {
 			return
 		}
 		info, err := os.Stat(path)
 		if err != nil || info.IsDir() {
 			return
 		}
-		for _, existing := range candidates {
-			if strings.EqualFold(existing.Path, path) {
-				return
-			}
+		// Homebrew and the system link several names at one binary, so a copy
+		// reached twice must not appear twice in the picker.
+		key := filepath.Clean(path)
+		if resolved, err := filepath.EvalSymlinks(path); err == nil {
+			key = filepath.Clean(resolved)
 		}
+		if seen[strings.ToLower(key)] {
+			return
+		}
+		seen[strings.ToLower(key)] = true
 		candidates = append(candidates, ToolCandidate{Path: path, Source: source})
 	}
 
-	if path, err := exec.LookPath(name); err == nil {
-		add(path, "PATH")
+	for _, search := range searchNames(name) {
+		if path, err := exec.LookPath(search); err == nil {
+			add(path, "PATH")
+		}
 	}
 
 	// "python" on PATH is one copy among many; the launcher knows the rest.
@@ -324,86 +352,6 @@ func findTool(name string) []ToolCandidate {
 		return compareVersions(candidates[i].Version, candidates[j].Version) > 0
 	})
 	return candidates
-}
-
-// knownLocations covers the installers developers actually use beside PATH:
-// Laragon and XAMPP on Windows, Composer's global bin, the .NET installer, and
-// Homebrew and system paths elsewhere.
-func knownLocations(name string) []string {
-	appData := os.Getenv("APPDATA")
-	localAppData := os.Getenv("LOCALAPPDATA")
-	programFiles := os.Getenv("ProgramFiles")
-
-	switch name {
-	case "php":
-		return append([]string{
-			`C:\laragon\bin\php\php-*\php.exe`,
-			`C:\xampp\php\php.exe`,
-			`C:\tools\php*\php.exe`,
-			"/opt/homebrew/bin/php",
-			"/usr/local/bin/php",
-			"/usr/bin/php",
-		}, laragonTool(name)...)
-	case "composer":
-		return []string{
-			filepath.Join(appData, "Composer", "vendor", "bin", "composer.bat"),
-			`C:\laragon\bin\composer\composer.bat`,
-			"/usr/local/bin/composer",
-			"/opt/homebrew/bin/composer",
-		}
-	case "laravel":
-		return []string{
-			filepath.Join(appData, "Composer", "vendor", "bin", "laravel.bat"),
-			filepath.Join(appData, "Composer", "vendor", "bin", "laravel"),
-			"/usr/local/bin/laravel",
-			"/opt/homebrew/bin/laravel",
-		}
-	case "node":
-		return []string{
-			filepath.Join(programFiles, "nodejs", "node.exe"),
-			filepath.Join(localAppData, "Programs", "nodejs", "node.exe"),
-			"/opt/homebrew/bin/node",
-			"/usr/local/bin/node",
-		}
-	case "npm":
-		return []string{
-			filepath.Join(programFiles, "nodejs", "npm.cmd"),
-			"/opt/homebrew/bin/npm",
-			"/usr/local/bin/npm",
-		}
-	case "npx":
-		return []string{
-			filepath.Join(programFiles, "nodejs", "npx.cmd"),
-			"/opt/homebrew/bin/npx",
-			"/usr/local/bin/npx",
-		}
-	case "dotnet":
-		return []string{
-			filepath.Join(programFiles, "dotnet", "dotnet.exe"),
-			"/usr/local/share/dotnet/dotnet",
-			"/opt/homebrew/bin/dotnet",
-		}
-	case "python":
-		return []string{
-			filepath.Join(localAppData, "Programs", "Python", "Python3*", "python.exe"),
-			filepath.Join(programFiles, "Python3*", "python.exe"),
-			`C:\Python3*\python.exe`,
-			// Laragon ships its own interpreters, which may be older than a
-			// separately installed Python.
-			`C:\laragon\bin\python\python-*\python.exe`,
-			"/opt/homebrew/bin/python3",
-			"/usr/local/bin/python3",
-			"/usr/bin/python3",
-		}
-	}
-	return nil
-}
-
-func laragonTool(string) []string {
-	if runtime.GOOS != "windows" {
-		return nil
-	}
-	return nil
 }
 
 // toolVersion runs the tool's own version flag with a short timeout. A tool

@@ -2,7 +2,7 @@ package scaffold
 
 import (
 	"fmt"
-	"runtime"
+	"os/exec"
 	"strings"
 )
 
@@ -24,6 +24,9 @@ type installHint struct {
 	link    string
 	label   string
 	note    string
+	// linuxNote warns where the distribution's package is usually older than
+	// the version a recipe requires.
+	linuxNote string
 }
 
 var installHints = map[string]installHint{
@@ -39,10 +42,11 @@ var installHints = map[string]installHint{
 		note:  "On Windows, Composer-Setup.exe installs Composer and adds it to PATH.",
 	},
 	"node": {
-		windows: "winget install --id OpenJS.NodeJS.LTS -e",
-		darwin:  "brew install node",
-		link:    "https://nodejs.org/en/download",
-		label:   "Node.js downloads",
+		windows:   "winget install --id OpenJS.NodeJS.LTS -e",
+		darwin:    "brew install node",
+		link:      "https://nodejs.org/en/download",
+		label:     "Node.js downloads",
+		linuxNote: "Distribution packages usually trail the required release, so install from the download page or NodeSource.",
 	},
 	"npm": {
 		link:  "https://nodejs.org/en/download",
@@ -83,7 +87,7 @@ func fixFor(tool string, label string, minVersion string, installed string) *Too
 	// Version-specific package identifiers follow the minimum the recipe
 	// states, so the suggested install satisfies the requirement.
 	version := requirementSeries(minVersion)
-	switch runtime.GOOS {
+	switch hostOS {
 	case "windows":
 		switch tool {
 		case "python":
@@ -99,6 +103,11 @@ func fixFor(tool string, label string, minVersion string, installed string) *Too
 		}
 	case "darwin":
 		fix.Command = hint.darwin
+	default:
+		fix.Command = linuxCommand(tool, version)
+		if hint.linuxNote != "" {
+			fix.Summary += " " + hint.linuxNote
+		}
 	}
 
 	if hint.note != "" {
@@ -106,10 +115,101 @@ func fixFor(tool string, label string, minVersion string, installed string) *Too
 	}
 	fix.Link = hint.link
 	fix.LinkLabel = hint.label
-	if fix.Command != "" {
+	if hint.link != "" {
 		fix.Summary += " After installing, reopen Locafy so the new PATH is picked up."
 	}
 	return fix
+}
+
+// linuxPackageManager names the installer this machine actually has, so a
+// suggested command is one the operator can run. It is a seam for tests.
+var linuxPackageManager = func() string {
+	for _, manager := range []struct{ binary, name string }{
+		{"apt-get", "apt"},
+		{"dnf", "dnf"},
+		{"pacman", "pacman"},
+		{"zypper", "zypper"},
+		{"apk", "apk"},
+	} {
+		if _, err := exec.LookPath(manager.binary); err == nil {
+			return manager.name
+		}
+	}
+	return ""
+}
+
+// linuxCommand is the install command for a tool whose distribution package
+// carries the required release. Node.js is left to its download page because
+// distributions freeze a single major, and Composer and npm have no package of
+// their own.
+func linuxCommand(tool string, version string) string {
+	manager := linuxPackageManager()
+	if manager == "" {
+		return ""
+	}
+	series := strings.TrimSpace(version)
+	major := strings.Split(series, ".")[0]
+
+	switch manager {
+	case "apt":
+		switch tool {
+		case "php":
+			return "sudo apt install php-cli"
+		case "python":
+			if series != "" {
+				return "sudo apt install python3." + minorOf(series)
+			}
+		case "dotnet":
+			if major != "" {
+				return "sudo apt install dotnet-sdk-" + major + ".0"
+			}
+		}
+	case "dnf":
+		switch tool {
+		case "php":
+			return "sudo dnf install php-cli"
+		case "python":
+			if series != "" {
+				return "sudo dnf install python3." + minorOf(series)
+			}
+		case "dotnet":
+			if major != "" {
+				return "sudo dnf install dotnet-sdk-" + major + ".0"
+			}
+		}
+	case "pacman":
+		switch tool {
+		case "php":
+			return "sudo pacman -S php"
+		case "python":
+			return "sudo pacman -S python"
+		}
+	case "zypper":
+		switch tool {
+		case "php":
+			return "sudo zypper install php8"
+		case "python":
+			return "sudo zypper install python3"
+		}
+	case "apk":
+		switch tool {
+		case "php":
+			return "sudo apk add php83"
+		case "python":
+			return "sudo apk add python3"
+		}
+	}
+	return ""
+}
+
+// minorOf keeps the minor part of a major.minor requirement, which is how
+// distributions name a Python series.
+func minorOf(version string) string {
+	parts := strings.Split(version, ".")
+	if len(parts) < 2 {
+		return version
+	}
+	return parts[1]
 }
 
 // requirementSeries keeps the major and minor parts of a minimum version,
