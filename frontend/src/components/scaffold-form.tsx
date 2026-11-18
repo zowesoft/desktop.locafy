@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { Copy, ExternalLink, RefreshCw } from "lucide-react";
+import { Copy, ExternalLink, RefreshCw, SquareTerminal } from "lucide-react";
 
+import * as DialogsService from "../../bindings/locafy.dev/desktop/internal/dialogs/service";
 import * as ScaffoldService from "../../bindings/locafy.dev/desktop/internal/scaffold/service";
 import type {
   Job,
@@ -369,6 +370,19 @@ export function ScaffoldForm({ mode, projectID, onDone, onCancel }: Props) {
             {job && job.Status === "running" && (
               <Button type="button" variant="outline" onClick={cancel}>
                 Stop
+              </Button>
+            )}
+            {job && (job.Status === "failed" || job.Status === "cancelled") && job.TargetPath && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  DialogsService.OpenInTerminal(job.TargetPath!).catch((error) =>
+                    setFailure(String(error)),
+                  );
+                }}
+              >
+                <SquareTerminal /> Open terminal
               </Button>
             )}
             {job && (job.Status === "failed" || job.Status === "cancelled") && job.CreatedTarget && (

@@ -3,9 +3,14 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import * as DialogsService from "../../bindings/locafy.dev/desktop/internal/dialogs/service";
 import * as ScaffoldService from "../../bindings/locafy.dev/desktop/internal/scaffold/service";
 import type { JobSummary } from "../../bindings/locafy.dev/desktop/internal/scaffold/models";
 import { ScaffoldHistoryDialog } from "./scaffold-history";
+
+vi.mock("../../bindings/locafy.dev/desktop/internal/dialogs/service", () => ({
+  OpenInTerminal: vi.fn(),
+}));
 
 vi.mock("../../bindings/locafy.dev/desktop/internal/scaffold/service", () => ({
   History: vi.fn(),
@@ -95,6 +100,19 @@ describe("ScaffoldHistoryDialog", () => {
     );
 
     expect(ScaffoldService.OpenLog).toHaveBeenCalledWith("job-1");
+  });
+
+  it("opens a terminal in the run's folder on request", async () => {
+    const user = userEvent.setup();
+    vi.mocked(DialogsService.OpenInTerminal).mockResolvedValue("Opened Windows Terminal");
+
+    renderDialog();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open a terminal in the Laravel folder" }),
+    );
+
+    expect(DialogsService.OpenInTerminal).toHaveBeenCalledWith("C:\\locafy\\projects\\shop");
   });
 
   it("says when no install has run yet", async () => {

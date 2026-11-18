@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, FileText, FolderOpen, RefreshCw } from "lucide-react";
+import { ArrowLeft, FileText, FolderOpen, RefreshCw, SquareTerminal } from "lucide-react";
 
+import * as DialogsService from "../../bindings/locafy.dev/desktop/internal/dialogs/service";
 import * as ScaffoldService from "../../bindings/locafy.dev/desktop/internal/scaffold/service";
 import type { JobSummary } from "../../bindings/locafy.dev/desktop/internal/scaffold/models";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +48,7 @@ function formatWhen(iso: string): string {
  */
 export function ScaffoldHistoryDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [viewing, setViewing] = useState<JobSummary | null>(null);
+  const [terminalError, setTerminalError] = useState("");
 
   const history = useQuery({
     queryKey: historyKey,
@@ -119,6 +121,20 @@ export function ScaffoldHistoryDialog({ open, onClose }: { open: boolean; onClos
                       >
                         <FileText /> View log
                       </Button>
+                      {job.TargetPath && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          aria-label={`Open a terminal in the ${job.RecipeLabel} folder`}
+                          onClick={() =>
+                            DialogsService.OpenInTerminal(job.TargetPath).catch((error) =>
+                              setTerminalError(String(error)),
+                            )
+                          }
+                        >
+                          <SquareTerminal /> Open terminal
+                        </Button>
+                      )}
                       {job.LogAvailable && (
                         <Button
                           variant="ghost"
@@ -134,6 +150,12 @@ export function ScaffoldHistoryDialog({ open, onClose }: { open: boolean; onClos
                 ))
               )}
             </div>
+
+            {terminalError && (
+              <p role="alert" className="mt-3 text-xs text-destructive">
+                {terminalError}
+              </p>
+            )}
 
             <DialogFooter className="mt-5">
               <Button
@@ -165,6 +187,7 @@ function ScaffoldLog({
   onBack: () => void;
   onClose: () => void;
 }) {
+  const [terminalError, setTerminalError] = useState("");
   const log = useQuery({
     queryKey: logKey(job.ID),
     queryFn: () => ScaffoldService.JobLog(job.ID),
@@ -213,12 +236,31 @@ function ScaffoldLog({
             Could not open the log file: {String(openFile.error)}
           </p>
         )}
+        {terminalError && (
+          <p role="alert" className="mt-2 text-xs text-destructive">
+            {terminalError}
+          </p>
+        )}
       </div>
 
       <DialogFooter className="mt-5">
         <Button type="button" variant="outline" onClick={onBack}>
           Back
         </Button>
+        {job.TargetPath && (
+          <Button
+            type="button"
+            variant="outline"
+            aria-label={`Open a terminal in the ${job.RecipeLabel} folder`}
+            onClick={() =>
+              DialogsService.OpenInTerminal(job.TargetPath).catch((error) =>
+                setTerminalError(String(error)),
+              )
+            }
+          >
+            <SquareTerminal /> Open terminal
+          </Button>
+        )}
         <Button
           type="button"
           variant="outline"

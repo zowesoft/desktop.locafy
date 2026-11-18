@@ -94,6 +94,19 @@ never elevated. System installers (winget, choco, apt) are never invoked.
 summary, log path and outcome, so the interface can survive closing the dialog
 and the future downloads view (DESK-DL-001) has a history to read.
 
+### The operator can open a terminal at the run
+
+A scaffold only ever runs Locafy-defined commands. Everything after that —
+`php artisan migrate`, extra packages, debugging a half-finished install —
+is the operator's own session. Locafy offers an "Open terminal" button on
+a failed run and on every entry of the scaffold history: the platform's
+terminal launches at the run's folder (`wt -d` on Windows with an explicit
+path, never through cmd's parser, with a cmd fallback only when the path is
+quote- and percent-free; `open -a Terminal` on macOS; gnome-terminal, konsole,
+xfce4-terminal, kitty, alacritty or wezterm on Linux, argv throughout).
+Typed commands in that terminal are the operator's actions, not Locafy
+actions, so they are never confirmed, rebuilt or logged as commands.
+
 ## Consequences
 
 - The advertised framework list is small and verified: five official

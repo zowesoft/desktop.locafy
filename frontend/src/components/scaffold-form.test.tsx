@@ -2,9 +2,14 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import * as DialogsService from "../../bindings/locafy.dev/desktop/internal/dialogs/service";
 import * as ScaffoldService from "../../bindings/locafy.dev/desktop/internal/scaffold/service";
 import type { Job, Preflight, Recipe } from "../../bindings/locafy.dev/desktop/internal/scaffold/models";
 import { ScaffoldForm } from "./scaffold-form";
+
+vi.mock("../../bindings/locafy.dev/desktop/internal/dialogs/service", () => ({
+  OpenInTerminal: vi.fn(),
+}));
 
 const handlers = vi.hoisted(() => new Map<string, (event: { data: unknown }) => void>());
 
@@ -295,6 +300,26 @@ describe("ScaffoldForm", () => {
     await user.click(screen.getByRole("button", { name: "Remove partial folder" }));
     expect(ScaffoldService.Discard).toHaveBeenCalledWith("job-1");
     expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it("offers a terminal in the failed run's folder", async () => {
+    vi.mocked(DialogsService.OpenInTerminal).mockResolvedValue("Opened Windows Terminal");
+    render(<ScaffoldForm mode="application" projectID="p1" onDone={() => {}} onCancel={() => {}} />);
+
+    const user = userEvent.setup();
+    const start = await screen.findByRole("button", { name: "Create application" });
+    await waitFor(() => expect(start).toBeEnabled());
+    await user.click(start);
+    await waitFor(() => expect(ScaffoldService.Start).toHaveBeenCalled());
+
+    await act(async () => {
+      handlers.get("scaffold:state")?.({
+        data: { jobId: "job-1", status: "failed", error: "composer create-project failed" },
+      });
+    });
+
+    await user.click(await screen.findByRole("button", { name: "Open terminal" }));
+    expect(DialogsService.OpenInTerminal).toHaveBeenCalledWith("C:\\locafy\\projects\\demo\\laravel");
   });
 
   it("creates a project from a name in project mode", async () => {
