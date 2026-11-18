@@ -58,6 +58,26 @@ export interface JobResult {
 }
 
 /**
+ * JobSummary is one recorded scaffold run as the history view lists it. The
+ * recipe label is resolved here so the view does not have to join the
+ * catalogue itself.
+ */
+export interface JobSummary {
+    "ID": string;
+    "ProjectID": string;
+    "RecipeID": string;
+    "RecipeLabel": string;
+    "Directory": string;
+    "TargetPath": string;
+    "Status": string;
+    "Error": string;
+    "LogPath": string;
+    "LogAvailable": boolean;
+    "CreatedAt": string;
+    "UpdatedAt": string;
+}
+
+/**
  * Option is a closed choice on a recipe. The values are the only strings a
  * command can be bound to, which is why options are not free text.
  */

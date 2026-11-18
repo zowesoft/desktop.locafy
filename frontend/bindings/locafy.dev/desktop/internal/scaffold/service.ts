@@ -31,6 +31,13 @@ export function Discard(jobID: string): $CancellablePromise<void> {
 }
 
 /**
+ * History returns recent scaffold runs, newest first.
+ */
+export function History(limit: number): $CancellablePromise<$models.JobSummary[] | null> {
+    return $Call.ByID(1141993591, limit);
+}
+
+/**
  * InstallLaravelInstaller installs the Laravel CLI at the user level through
  * Composer. It is the one preparation step Locafy runs itself, and it never
  * elevates.
@@ -44,6 +51,21 @@ export function InstallLaravelInstaller(): $CancellablePromise<string> {
  */
 export function Job(jobID: string): $CancellablePromise<$models.JobResult> {
     return $Call.ByID(1928744596, jobID);
+}
+
+/**
+ * JobLog returns a run's saved output. A run that has not written its file yet
+ * falls back to the output held in memory.
+ */
+export function JobLog(jobID: string): $CancellablePromise<string> {
+    return $Call.ByID(1162197990, jobID);
+}
+
+/**
+ * OpenLog hands the saved log file to the OS default application.
+ */
+export function OpenLog(jobID: string): $CancellablePromise<void> {
+    return $Call.ByID(2295795949, jobID);
 }
 
 /**

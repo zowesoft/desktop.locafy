@@ -10,6 +10,7 @@ import type {
 } from "../../bindings/locafy.dev/desktop/internal/applications/models";
 import type { Project } from "../../bindings/locafy.dev/desktop/internal/projects/models";
 import { ScaffoldForm } from "@/components/scaffold-form";
+import { ScaffoldHistoryDialog } from "@/components/scaffold-history";
 import { notificationsKey } from "@/components/top-bar-status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -87,6 +88,7 @@ export function ApplicationsSection() {
   const queryClient = useQueryClient();
   const [adding, setAdding] = useState(false);
   const [scaffolding, setScaffolding] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [editingDependencies, setEditingDependencies] = useState<Application | null>(null);
 
   const applications = useQuery({
@@ -114,6 +116,9 @@ export function ApplicationsSection() {
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => setAdding(true)}>
             Add existing
+          </Button>
+          <Button variant="outline" onClick={() => setHistoryOpen(true)}>
+            History
           </Button>
           <Button onClick={() => setScaffolding(true)}>New application</Button>
         </div>
@@ -208,6 +213,8 @@ export function ApplicationsSection() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ScaffoldHistoryDialog open={historyOpen} onClose={() => setHistoryOpen(false)} />
 
       <AddApplicationDialog
         project={project}

@@ -12,6 +12,7 @@ export type {
     Command,
     Job,
     JobResult,
+    JobSummary,
     Option,
     OptionValue,
     Preflight,
