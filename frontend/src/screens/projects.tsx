@@ -8,6 +8,7 @@ import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/pro
 import type { Project } from "../../bindings/locafy.dev/desktop/internal/projects/models";
 import { LifecycleBadge } from "@/components/lifecycle-badge";
 import { notificationsKey } from "@/components/top-bar-status";
+import { ScaffoldForm } from "@/components/scaffold-form";
 import { ImportDialog } from "./projects-import";
 import {
   AlertDialog,
@@ -96,6 +97,7 @@ function StatTile({
  */
 type Editing =
   | { kind: "create" }
+  | { kind: "scaffold" }
   | { kind: "link" }
   | { kind: "import" }
   | { kind: "rename"; project: Project }
@@ -418,6 +420,23 @@ export function ProjectsScreen() {
               </DialogDescription>
             </DialogHeader>
 
+            {editing?.kind === "create" && (
+              <div className="mt-4 space-y-2">
+                <span className="text-xs font-medium text-muted-foreground">Start from</span>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" size="sm" variant="secondary" onClick={() => open({ kind: "create" })}>
+                    Blank folder
+                  </Button>
+                  <Button type="button" size="sm" variant="outline" onClick={() => open({ kind: "link" })}>
+                    Existing folder
+                  </Button>
+                  <Button type="button" size="sm" variant="outline" onClick={() => open({ kind: "scaffold" })}>
+                    Framework
+                  </Button>
+                </div>
+              </div>
+            )}
+
             <div className="mt-4">
               <label className="text-sm font-medium" htmlFor="project-value">
                 {editing?.kind === "create" ? "Project name" : "Folder path"}
@@ -459,6 +478,28 @@ export function ProjectsScreen() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editing?.kind === "scaffold"} onOpenChange={(next) => !next && close()}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>New project from a framework</DialogTitle>
+            <DialogDescription>
+              Locafy runs the framework's own installer in a new workspace folder and registers the
+              project only once its files are there.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 max-h-[60vh] overflow-y-auto pr-1">
+            <ScaffoldForm
+              mode="project"
+              onDone={() => {
+                refresh();
+                close();
+              }}
+              onCancel={close}
+            />
+          </div>
         </DialogContent>
       </Dialog>
 

@@ -49,6 +49,8 @@ const application = (overrides: Partial<Application> = {}): Application => ({
   StopCommand: "",
   Status: "stopped",
   Source: "detected",
+  ScaffoldRecipe: "",
+  ScaffoldOptions: "",
   CreatedAt: "2026-11-14T09:00:00Z",
   UpdatedAt: "2026-11-14T09:00:00Z",
   DependsOn: [],
@@ -146,7 +148,7 @@ describe("ApplicationsSection", () => {
 
     renderAt("/projects/p1/applications");
 
-    await user.click(await screen.findByRole("button", { name: "Add application" }));
+    await user.click(await screen.findByRole("button", { name: "Add existing" }));
     expect(await screen.findByRole("button", { name: "Use the Storefront proposal" })).toBeInTheDocument();
     expect(ApplicationsService.Create).not.toHaveBeenCalled();
 
@@ -174,7 +176,7 @@ describe("ApplicationsSection", () => {
 
     renderAt("/projects/p1/applications");
 
-    await user.click(await screen.findByRole("button", { name: "Add application" }));
+    await user.click(await screen.findByRole("button", { name: "Add existing" }));
     const command = await screen.findByRole("textbox", { name: "Start command" });
     await user.clear(command);
     await user.type(command, "npm start");
@@ -194,7 +196,7 @@ describe("ApplicationsSection", () => {
 
     renderAt("/projects/p1/applications");
 
-    await user.click(await screen.findByRole("button", { name: "Add application" }));
+    await user.click(await screen.findByRole("button", { name: "Add existing" }));
     expect(await screen.findByText(/Nothing recognizable was found/)).toBeInTheDocument();
 
     await user.type(screen.getByRole("textbox", { name: "Application name" }), "Worker");

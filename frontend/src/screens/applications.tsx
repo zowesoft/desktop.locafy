@@ -9,6 +9,7 @@ import type {
   Detection,
 } from "../../bindings/locafy.dev/desktop/internal/applications/models";
 import type { Project } from "../../bindings/locafy.dev/desktop/internal/projects/models";
+import { ScaffoldForm } from "@/components/scaffold-form";
 import { notificationsKey } from "@/components/top-bar-status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -71,6 +72,8 @@ function inputFor(draft: Draft): CreateInput {
     StartCommand: draft.startCommand.trim(),
     StopCommand: draft.stopCommand.trim(),
     Source: draft.detected ? "detected" : "manual",
+    ScaffoldRecipe: "",
+    ScaffoldOptions: "",
   };
 }
 
@@ -83,6 +86,7 @@ export function ApplicationsSection() {
   const project = useOutletContext<Project>();
   const queryClient = useQueryClient();
   const [adding, setAdding] = useState(false);
+  const [scaffolding, setScaffolding] = useState(false);
   const [editingDependencies, setEditingDependencies] = useState<Application | null>(null);
 
   const applications = useQuery({
@@ -107,7 +111,12 @@ export function ApplicationsSection() {
             is saved or started until you confirm it.
           </p>
         </div>
-        <Button onClick={() => setAdding(true)}>Add application</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => setAdding(true)}>
+            Add existing
+          </Button>
+          <Button onClick={() => setScaffolding(true)}>New application</Button>
+        </div>
       </div>
 
       {applications.isPending ? (
@@ -176,6 +185,29 @@ export function ApplicationsSection() {
           })}
         </ul>
       )}
+
+      <Dialog open={scaffolding} onOpenChange={(next) => !next && setScaffolding(false)}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>New application from a framework</DialogTitle>
+            <DialogDescription>
+              The framework's installer runs in a new folder inside this project, and the application
+              is recorded only after its files exist.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 max-h-[60vh] overflow-y-auto pr-1">
+            <ScaffoldForm
+              mode="application"
+              projectID={project.ID}
+              onDone={() => {
+                setScaffolding(false);
+                refresh();
+              }}
+              onCancel={() => setScaffolding(false)}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <AddApplicationDialog
         project={project}
