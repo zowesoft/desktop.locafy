@@ -53,7 +53,11 @@ type Application struct {
 	StopCommand  string
 	Status       string
 	Source       string
-	CreatedAt    string
+	// ScaffoldRecipe names the framework recipe that produced the files, empty
+	// when the application was detected or added by hand.
+	ScaffoldRecipe  string
+	ScaffoldOptions string
+	CreatedAt       string
 	UpdatedAt    string
 	// DependsOn lists the applications of the same project that must be
 	// running first.
@@ -69,15 +73,17 @@ type CreateInput struct {
 	Framework    string
 	Marker       string
 	StartCommand string
-	StopCommand  string
-	Source       string
+	StopCommand     string
+	Source          string
+	ScaffoldRecipe  string
+	ScaffoldOptions string
 }
 
 // List returns a project's live applications ordered by name, with their
 // dependencies attached.
 func List(database *sql.DB, projectID string) ([]Application, error) {
 	rows, err := database.Query(`SELECT id, project_id, name, directory, language, framework, marker,
-			start_command, stop_command, status, source, created_at, updated_at
+			start_command, stop_command, status, source, scaffold_recipe, scaffold_options, created_at, updated_at
 		FROM applications WHERE project_id = ? AND deleted_at IS NULL ORDER BY name COLLATE NOCASE`, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("list applications: %w", err)
@@ -109,7 +115,7 @@ func List(database *sql.DB, projectID string) ([]Application, error) {
 // Get returns one live application, or ErrNotFound.
 func Get(database *sql.DB, id string) (Application, error) {
 	row := database.QueryRow(`SELECT id, project_id, name, directory, language, framework, marker,
-			start_command, stop_command, status, source, created_at, updated_at
+			start_command, stop_command, status, source, scaffold_recipe, scaffold_options, created_at, updated_at
 		FROM applications WHERE id = ? AND deleted_at IS NULL`, id)
 	app, err := scan(row)
 	if err != nil {
@@ -161,11 +167,13 @@ func Create(database *sql.DB, projectID string, input CreateInput) (Application,
 	}
 
 	id := db.NewID()
-	_, err = database.Exec(`INSERT INTO applications
-			(id, project_id, name, directory, language, framework, marker, start_command, stop_command, source)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		_, err = database.Exec(`INSERT INTO applications
+			(id, project_id, name, directory, language, framework, marker, start_command, stop_command, source,
+			 scaffold_recipe, scaffold_options)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, projectID, name, directory, strings.TrimSpace(input.Language), strings.TrimSpace(input.Framework),
-		strings.TrimSpace(input.Marker), strings.TrimSpace(input.StartCommand), strings.TrimSpace(input.StopCommand), source)
+		strings.TrimSpace(input.Marker), strings.TrimSpace(input.StartCommand), strings.TrimSpace(input.StopCommand), source,
+		strings.TrimSpace(input.ScaffoldRecipe), strings.TrimSpace(input.ScaffoldOptions))
 	if err != nil {
 		if isUniqueViolation(err) {
 			return Application{}, ErrDirectoryInUse
@@ -245,7 +253,8 @@ func defaultName(directory string, projectName string) string {
 func scan(row interface{ Scan(...any) error }) (Application, error) {
 	var app Application
 	err := row.Scan(&app.ID, &app.ProjectID, &app.Name, &app.Directory, &app.Language, &app.Framework,
-		&app.Marker, &app.StartCommand, &app.StopCommand, &app.Status, &app.Source, &app.CreatedAt, &app.UpdatedAt)
+		&app.Marker, &app.StartCommand, &app.StopCommand, &app.Status, &app.Source,
+		&app.ScaffoldRecipe, &app.ScaffoldOptions, &app.CreatedAt, &app.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Application{}, ErrNotFound

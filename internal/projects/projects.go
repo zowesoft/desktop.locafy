@@ -16,6 +16,7 @@ import (
 
 	"locafy.dev/desktop/internal/activity"
 	"locafy.dev/desktop/internal/db"
+	"locafy.dev/desktop/internal/settings"
 )
 
 // Kind records who owns a project's directory.
@@ -99,10 +100,28 @@ func Create(database *sql.DB, projectsDir string, name string) (Project, error) 
 		return Project{}, err
 	}
 
-	project, err := insert(database, name, root, KindManaged)
+	project, err := RegisterManagedAt(database, name, root)
 	if err != nil {
 		// The directory exists only because this call created it.
 		_ = os.RemoveAll(root)
+		return Project{}, err
+	}
+	return project, nil
+}
+
+// RegisterManagedAt records a managed project whose directory a framework
+// installer has already created, so the project exists only once its files do.
+func RegisterManagedAt(database *sql.DB, name string, root string) (Project, error) {
+	name, err := cleanName(name)
+	if err != nil {
+		return Project{}, err
+	}
+	if strings.TrimSpace(root) == "" {
+		return Project{}, ErrPathRequired
+	}
+
+	project, err := insert(database, name, root, KindManaged)
+	if err != nil {
 		return Project{}, err
 	}
 	if err := writeManifest(root, project); err != nil {
@@ -112,6 +131,57 @@ func Create(database *sql.DB, projectsDir string, name string) (Project, error) 
 		return project, err
 	}
 	return project, nil
+}
+
+// AllocateManagedPath returns a unique path for a new managed project without
+// creating it, so an installer can create the folder itself and a failed
+// scaffold leaves no directory behind.
+func AllocateManagedPath(projectsDir string, name string) (string, error) {
+	name, err := cleanName(name)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(projectsDir) == "" {
+		return "", ErrPathRequired
+	}
+	if err := os.MkdirAll(projectsDir, 0o755); err != nil {
+		return "", fmt.Errorf("prepare projects directory: %w", err)
+	}
+
+	base := slugify(name)
+	if base == "" {
+		base = "project"
+	}
+	for attempt := 1; attempt <= 100; attempt++ {
+		candidate := filepath.Join(projectsDir, base)
+		if attempt > 1 {
+			candidate = filepath.Join(projectsDir, fmt.Sprintf("%s-%d", base, attempt))
+		}
+		if _, err := os.Stat(candidate); errors.Is(err, fs.ErrNotExist) {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("create project directory: too many projects named %q", name)
+}
+
+// WorkspaceDirectory returns where new managed projects are created: the
+// operator's stored preference, or the platform default.
+func WorkspaceDirectory(database *sql.DB) (string, error) {
+	dir, err := settings.String(database, WorkspaceRootKey)
+	if errors.Is(err, settings.ErrNotFound) {
+		return db.DefaultProjectsDir()
+	}
+	if err != nil {
+		return "", err
+	}
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return db.DefaultProjectsDir()
+	}
+	if !filepath.IsAbs(dir) {
+		return "", fmt.Errorf("%w: %q", ErrWorkspaceInvalid, dir)
+	}
+	return dir, nil
 }
 
 // Link registers an existing directory without taking ownership of its files.

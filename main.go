@@ -21,6 +21,7 @@ import (
 	"locafy.dev/desktop/internal/logs"
 	"locafy.dev/desktop/internal/machine"
 	"locafy.dev/desktop/internal/projects"
+	"locafy.dev/desktop/internal/scaffold"
 	"locafy.dev/desktop/internal/settings"
 	"locafy.dev/desktop/internal/status"
 )
@@ -87,6 +88,7 @@ func run() error {
 	var window *application.WebviewWindow
 
 	statusService := status.NewService(database, startedAt)
+	scaffoldService := scaffold.NewService(database)
 
 	app := application.New(application.Options{
 		Name:        "Locafy",
@@ -96,6 +98,7 @@ func run() error {
 			application.NewService(statusService),
 			application.NewService(projects.NewService(database)),
 			application.NewService(applications.NewService(database)),
+			application.NewService(scaffoldService),
 			application.NewService(dialogs.NewService()),
 		},
 		Assets: application.AssetOptions{

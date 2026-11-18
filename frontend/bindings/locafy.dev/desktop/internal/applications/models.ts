@@ -18,6 +18,13 @@ export interface Application {
     "StopCommand": string;
     "Status": string;
     "Source": string;
+
+    /**
+     * ScaffoldRecipe names the framework recipe that produced the files, empty
+     * when the application was detected or added by hand.
+     */
+    "ScaffoldRecipe": string;
+    "ScaffoldOptions": string;
     "CreatedAt": string;
     "UpdatedAt": string;
 
@@ -41,6 +48,8 @@ export interface CreateInput {
     "StartCommand": string;
     "StopCommand": string;
     "Source": string;
+    "ScaffoldRecipe": string;
+    "ScaffoldOptions": string;
 }
 
 /**
