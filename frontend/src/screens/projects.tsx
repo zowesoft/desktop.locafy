@@ -8,6 +8,7 @@ import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/pro
 import type { Project } from "../../bindings/locafy.dev/desktop/internal/projects/models";
 import { LifecycleBadge } from "@/components/lifecycle-badge";
 import { notificationsKey } from "@/components/top-bar-status";
+import { useProjectLifecycles } from "@/lib/lifecycle-query";
 import { ScaffoldForm } from "@/components/scaffold-form";
 import { ImportDialog } from "./projects-import";
 import {
@@ -151,6 +152,8 @@ export function ProjectsScreen() {
   });
 
   const rows = projects.data ?? [];
+  const lifecycles = useProjectLifecycles();
+  const stateOf = (project: Project) => lifecycles.data?.[project.ID] ?? project.LifecycleState;
   const needle = filter.trim().toLowerCase();
   const visible = needle
     ? rows.filter(
@@ -160,7 +163,7 @@ export function ProjectsScreen() {
       )
     : rows;
   const lifecycleCount = (state: string) =>
-    rows.filter((project) => project.LifecycleState === state).length;
+    rows.filter((project) => stateOf(project) === state).length;
 
   const busy = create.isPending || link.isPending || rename.isPending || changeRoot.isPending || remove.isPending;
 
@@ -318,7 +321,7 @@ export function ProjectsScreen() {
                         </p>
                       )}
                     </div>
-                    <LifecycleBadge state={project.LifecycleState} />
+                    <LifecycleBadge state={stateOf(project)} />
                   </div>
 
                   <div className="flex flex-wrap items-center gap-1.5">

@@ -85,3 +85,15 @@ export interface Detection {
     "Marker": string;
     "StartCommand": string;
 }
+
+/**
+ * ProjectReport summarises one orchestration run, application by application.
+ */
+export interface ProjectReport {
+    "projectID": string;
+    "started": string[] | null;
+    "alreadyRunning": string[] | null;
+    "skipped": string[] | null;
+    "failed": string[] | null;
+    "stopped": string[] | null;
+}

@@ -6,6 +6,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as DialogsService from "../../bindings/locafy.dev/desktop/internal/dialogs/service";
+import * as ApplicationsService from "../../bindings/locafy.dev/desktop/internal/applications/service";
 import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/projects/service";
 import type { Project } from "../../bindings/locafy.dev/desktop/internal/projects/models";
 import { notificationsKey } from "@/components/top-bar-status";
@@ -13,6 +14,16 @@ import { ProjectsScreen } from "./projects";
 
 vi.mock("../../bindings/locafy.dev/desktop/internal/dialogs/service", () => ({
   ChooseFolder: vi.fn(),
+}));
+
+vi.mock("@wailsio/runtime", () => ({
+  Events: {
+    On: vi.fn(() => () => undefined),
+  },
+}));
+
+vi.mock("../../bindings/locafy.dev/desktop/internal/applications/service", () => ({
+  Lifecycles: vi.fn(),
 }));
 
 vi.mock("../../bindings/locafy.dev/desktop/internal/projects/service", () => ({
@@ -58,6 +69,8 @@ beforeEach(() => {
     vi.mocked(fn).mockReset();
   }
   vi.mocked(DialogsService.ChooseFolder).mockReset();
+  vi.mocked(ApplicationsService.Lifecycles).mockReset();
+  vi.mocked(ApplicationsService.Lifecycles).mockResolvedValue({});
   vi.mocked(ProjectsService.WorkspaceDir).mockResolvedValue(
     "C:\\Users\\dev\\AppData\\Roaming\\Locafy\\projects",
   );
@@ -116,6 +129,17 @@ describe("ProjectsScreen", () => {
     const cards = await screen.findAllByRole("listitem");
     expect(within(cards[0]).getByText("Stopped")).toBeInTheDocument();
     expect(within(cards[1]).getByText("Running")).toBeInTheDocument();
+  });
+
+  it("prefers the state derived from the applications over the stored word", async () => {
+    vi.mocked(ProjectsService.List).mockResolvedValue([project()]);
+    vi.mocked(ApplicationsService.Lifecycles).mockResolvedValue({ p1: "partial" });
+
+    renderWithQuery(<ProjectsScreen />);
+
+    const cards = await screen.findAllByRole("listitem");
+    expect(within(cards[0]).getByText("Partially running")).toBeInTheDocument();
+    expect(within(cards[0]).queryByText("Stopped")).not.toBeInTheDocument();
   });
 
   it("summarizes the portfolio in a row of stats", async () => {

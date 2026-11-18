@@ -5,6 +5,7 @@ import { Link, useLocation } from "react-router-dom";
 import { LifecycleBadge } from "@/components/lifecycle-badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useProjectLifecycles } from "@/lib/lifecycle-query";
 import { useProjects } from "@/lib/projects-query";
 import { cn } from "@/lib/utils";
 
@@ -16,9 +17,11 @@ export function ProjectSwitcher({ projectId }: { projectId: string }) {
   const [open, setOpen] = useState(false);
   const location = useLocation();
   const projects = useProjects();
+  const lifecycles = useProjectLifecycles();
 
   const rows = projects.data ?? [];
   const current = rows.find((project) => project.ID === projectId);
+  const stateOf = (projectID: string, fallback: string) => lifecycles.data?.[projectID] ?? fallback;
 
   // `/projects/<id>/services` keeps `services` when another project is chosen.
   const section = location.pathname.split("/").slice(3).join("/");
@@ -41,7 +44,7 @@ export function ProjectSwitcher({ projectId }: { projectId: string }) {
         >
           <FolderKanban className="text-primary" />
           <span className="truncate font-medium">{current?.Name ?? "Unknown project"}</span>
-          {current && <LifecycleBadge state={current.LifecycleState} />}
+          {current && <LifecycleBadge state={stateOf(current.ID, current.LifecycleState)} />}
           <ChevronsUpDown className="text-muted-foreground" />
         </PopoverTrigger>
 
@@ -60,7 +63,7 @@ export function ProjectSwitcher({ projectId }: { projectId: string }) {
                     className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted"
                   >
                     <span className="min-w-0 flex-1 truncate">{project.Name}</span>
-                    <LifecycleBadge state={project.LifecycleState} />
+                    <LifecycleBadge state={stateOf(project.ID, project.LifecycleState)} />
                     <Check className={cn("size-4 shrink-0", isCurrent ? "opacity-100" : "opacity-0")} />
                   </Link>
                 </li>

@@ -9,5 +9,6 @@ export {
 export type {
     Application,
     CreateInput,
-    Detection
+    Detection,
+    ProjectReport
 } from "./models.js";

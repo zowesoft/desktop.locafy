@@ -81,6 +81,9 @@ type Supervisor struct {
 
 	mu   sync.Mutex
 	runs map[string]*run
+	// busy marks projects mid-orchestration so only one project action runs
+	// at a time.
+	busy map[string]string
 }
 
 // NewSupervisor returns a supervisor for applications stored in database. emit

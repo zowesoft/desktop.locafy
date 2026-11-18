@@ -22,6 +22,10 @@ vi.mock("../../bindings/locafy.dev/desktop/internal/projects/service", () => ({
 
 vi.mock("../../bindings/locafy.dev/desktop/internal/applications/service", () => ({
   List: vi.fn(),
+  Lifecycle: vi.fn(),
+  StartProject: vi.fn(),
+  StopProject: vi.fn(),
+  RestartProject: vi.fn(),
 }));
 
 vi.mock("../../bindings/locafy.dev/desktop/internal/status/service", () => ({
@@ -114,6 +118,20 @@ beforeEach(() => {
   vi.mocked(ProjectsService.OpenFolder).mockResolvedValue();
   vi.mocked(ApplicationsService.List).mockReset();
   vi.mocked(ApplicationsService.List).mockResolvedValue([]);
+  vi.mocked(ApplicationsService.Lifecycle).mockReset();
+  vi.mocked(ApplicationsService.Lifecycle).mockResolvedValue("stopped");
+  vi.mocked(ApplicationsService.StartProject).mockReset();
+  vi.mocked(ApplicationsService.StartProject).mockResolvedValue({
+    projectID: "p1", started: [], alreadyRunning: [], skipped: [], failed: [], stopped: [],
+  });
+  vi.mocked(ApplicationsService.StopProject).mockReset();
+  vi.mocked(ApplicationsService.StopProject).mockResolvedValue({
+    projectID: "p1", started: [], alreadyRunning: [], skipped: [], failed: [], stopped: [],
+  });
+  vi.mocked(ApplicationsService.RestartProject).mockReset();
+  vi.mocked(ApplicationsService.RestartProject).mockResolvedValue({
+    projectID: "p1", started: [], alreadyRunning: [], skipped: [], failed: [], stopped: [],
+  });
   vi.mocked(StatusService.Health).mockReset();
   vi.mocked(StatusService.Health).mockResolvedValue(health());
   vi.mocked(ProjectsService.OverrideStatus).mockReset();
@@ -284,5 +302,39 @@ describe("ProjectWorkspace", () => {
     renderAt("/projects/p1");
 
     expect(await screen.findByRole("alert")).toHaveTextContent("database is locked");
+  });
+
+  it("starts, stops and restarts the project from the overview", async () => {
+    const user = userEvent.setup();
+    renderAt("/projects/p1");
+
+    await user.click(await screen.findByRole("button", { name: /Start project/i }));
+    expect(ApplicationsService.StartProject).toHaveBeenCalledWith("p1");
+    await user.click(await screen.findByRole("button", { name: /Stop project/i }));
+    expect(ApplicationsService.StopProject).toHaveBeenCalledWith("p1");
+    await user.click(await screen.findByRole("button", { name: /^Restart/i }));
+    expect(ApplicationsService.RestartProject).toHaveBeenCalledWith("p1");
+  });
+
+  it("shows the derived lifecycle state instead of the stored word", async () => {
+    vi.mocked(ApplicationsService.Lifecycle).mockResolvedValue("partial");
+
+    renderAt("/projects/p1");
+
+    expect((await screen.findAllByText("Partially running")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Stopped")).not.toBeInTheDocument();
+  });
+
+  it("reports a refused project action inside the overview", async () => {
+    vi.mocked(ApplicationsService.StartProject).mockRejectedValue(
+      new Error("a project start or stop is already in progress: the project is starting"),
+    );
+    const user = userEvent.setup();
+    renderAt("/projects/p1");
+
+    await user.click(await screen.findByRole("button", { name: /Start project/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("The project action failed:");
+    expect(screen.getByRole("alert")).toHaveTextContent("already in progress");
   });
 });

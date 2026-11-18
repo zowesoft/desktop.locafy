@@ -87,3 +87,28 @@ func (s *Service) Output(id string) []string {
 func (s *Service) StopAll() {
 	s.supervisor.StopAll()
 }
+
+// StartProject starts a project's applications in dependency order.
+func (s *Service) StartProject(projectID string) (*ProjectReport, error) {
+	return s.supervisor.StartProject(projectID)
+}
+
+// StopProject stops a project's applications in reverse dependency order.
+func (s *Service) StopProject(projectID string) (*ProjectReport, error) {
+	return s.supervisor.StopProject(projectID)
+}
+
+// RestartProject stops a project and starts it again.
+func (s *Service) RestartProject(projectID string) (*ProjectReport, error) {
+	return s.supervisor.RestartProject(projectID)
+}
+
+// Lifecycle derives a project's state from its applications' statuses.
+func (s *Service) Lifecycle(projectID string) (string, error) {
+	return s.supervisor.ProjectState(projectID)
+}
+
+// Lifecycles derives a state word for every project that owns applications.
+func (s *Service) Lifecycles() (map[string]string, error) {
+	return s.supervisor.ProjectStates()
+}

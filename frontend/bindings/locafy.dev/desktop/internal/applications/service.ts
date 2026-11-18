@@ -32,6 +32,20 @@ export function Detect(projectID: string): $CancellablePromise<$models.Detection
 }
 
 /**
+ * Lifecycle derives a project's state from its applications' statuses.
+ */
+export function Lifecycle(projectID: string): $CancellablePromise<string> {
+    return $Call.ByID(584068190, projectID);
+}
+
+/**
+ * Lifecycles derives a state word for every project that owns applications.
+ */
+export function Lifecycles(): $CancellablePromise<{ [_ in string]?: string } | null> {
+    return $Call.ByID(4206201559);
+}
+
+/**
  * List returns a project's live applications with their dependencies.
  */
 export function List(projectID: string): $CancellablePromise<$models.Application[] | null> {
@@ -61,6 +75,13 @@ export function Restart(id: string): $CancellablePromise<$models.Application> {
 }
 
 /**
+ * RestartProject stops a project and starts it again.
+ */
+export function RestartProject(projectID: string): $CancellablePromise<$models.ProjectReport | null> {
+    return $Call.ByID(1008169862, projectID);
+}
+
+/**
  * SetDependencies replaces what an application depends on, refusing a cycle.
  */
 export function SetDependencies(id: string, dependsOn: string[] | null): $CancellablePromise<void> {
@@ -72,6 +93,13 @@ export function SetDependencies(id: string, dependsOn: string[] | null): $Cancel
  */
 export function Start(id: string): $CancellablePromise<$models.Application> {
     return $Call.ByID(158238482, id);
+}
+
+/**
+ * StartProject starts a project's applications in dependency order.
+ */
+export function StartProject(projectID: string): $CancellablePromise<$models.ProjectReport | null> {
+    return $Call.ByID(543192371, projectID);
 }
 
 /**
@@ -87,4 +115,11 @@ export function Stop(id: string): $CancellablePromise<void> {
  */
 export function StopAll(): $CancellablePromise<void> {
     return $Call.ByID(2825264073);
+}
+
+/**
+ * StopProject stops a project's applications in reverse dependency order.
+ */
+export function StopProject(projectID: string): $CancellablePromise<$models.ProjectReport | null> {
+    return $Call.ByID(2633146611, projectID);
 }

@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 
 const states: Record<string, { label: string; dot: string }> = {
   running: { label: "Running", dot: "bg-success" },
+  partial: { label: "Partially running", dot: "bg-accent" },
   starting: { label: "Starting", dot: "bg-accent" },
   stopping: { label: "Stopping", dot: "bg-accent" },
   stopped: { label: "Stopped", dot: "bg-muted-foreground" },

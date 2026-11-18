@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity as ActivityIcon,
   ArrowLeft,
@@ -14,6 +14,7 @@ import {
   Play,
   RotateCw,
   Server,
+  Square,
   TerminalSquare,
   Zap,
   type LucideIcon,
@@ -27,6 +28,8 @@ import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/pro
 import * as StatusService from "../../bindings/locafy.dev/desktop/internal/status/service";
 import { LifecycleBadge } from "@/components/lifecycle-badge";
 import { PlannedTag } from "@/components/app-shell";
+import { lifecycleKey, lifecyclesKey, useProjectLifecycle } from "@/lib/lifecycle-query";
+import { notificationsKey } from "@/components/top-bar-status";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -72,6 +75,7 @@ export function ProjectWorkspace() {
   const { projectId } = useParams();
   const projects = useProjects();
   const project = projects.data?.find((candidate) => candidate.ID === projectId);
+  const lifecycle = useProjectLifecycle(projectId ?? "");
 
   if (projects.isPending) {
     return <p className="px-6 py-10 text-sm text-muted-foreground">Loading project…</p>;
@@ -112,7 +116,7 @@ export function ProjectWorkspace() {
           <div className="min-w-0 flex-1 space-y-1">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="truncate text-2xl font-semibold tracking-tight">{project.Name}</h1>
-              <LifecycleBadge state={project.LifecycleState} />
+              <LifecycleBadge state={lifecycle.data ?? project.LifecycleState} />
               <Badge variant={project.Kind === "managed" ? "secondary" : "outline"}>
                 {project.Kind === "managed" ? "Managed" : "Linked"}
               </Badge>
@@ -307,11 +311,34 @@ function HealthChip({
  */
 export function ProjectOverview() {
   const project = useOutletContext<Project>();
+  const queryClient = useQueryClient();
 
   const applications = useQuery({
     queryKey: ["applications", project.ID],
     queryFn: async () => (await ApplicationsService.List(project.ID)) ?? [],
   });
+  const lifecycle = useProjectLifecycle(project.ID);
+  const refreshAfterLifecycle = () => {
+    void queryClient.invalidateQueries({ queryKey: ["applications", project.ID] });
+    void queryClient.invalidateQueries({ queryKey: lifecycleKey(project.ID) });
+    void queryClient.invalidateQueries({ queryKey: lifecyclesKey });
+    void queryClient.invalidateQueries({ queryKey: notificationsKey });
+  };
+  const startProject = useMutation({
+    mutationFn: () => ApplicationsService.StartProject(project.ID),
+    onSuccess: refreshAfterLifecycle,
+  });
+  const stopProject = useMutation({
+    mutationFn: () => ApplicationsService.StopProject(project.ID),
+    onSuccess: refreshAfterLifecycle,
+  });
+  const restartProject = useMutation({
+    mutationFn: () => ApplicationsService.RestartProject(project.ID),
+    onSuccess: refreshAfterLifecycle,
+  });
+  const lifecyclePending =
+    startProject.isPending || stopProject.isPending || restartProject.isPending;
+  const lifecycleError = startProject.error ?? stopProject.error ?? restartProject.error;
   const health = useQuery({
     queryKey: ["status", "health"],
     queryFn: () => StatusService.Health(),
@@ -343,7 +370,7 @@ export function ProjectOverview() {
             <div className="min-w-0 space-y-1.5">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="truncate text-xl font-semibold tracking-tight">{project.Name}</h2>
-                <LifecycleBadge state={project.LifecycleState} />
+                <LifecycleBadge state={lifecycle.data ?? project.LifecycleState} />
                 <Badge variant={project.Kind === "managed" ? "secondary" : "outline"}>
                   {project.Kind === "managed" ? "Managed" : "Linked"}
                 </Badge>
@@ -366,16 +393,24 @@ export function ProjectOverview() {
                 >
                   <FolderOpen /> Open folder
                 </Button>
-                <Button size="sm" variant="outline" disabled title="Starting a project arrives with project lifecycle">
-                  <Play /> Start project
+                <Button size="sm" variant="outline" disabled={lifecyclePending} onClick={() => startProject.mutate()}>
+                  <Play /> {startProject.isPending ? "Starting…" : "Start project"}
                 </Button>
-                <Button size="sm" variant="outline" disabled title="Restarting a project arrives with project lifecycle">
-                  <RotateCw /> Restart
+                <Button size="sm" variant="outline" disabled={lifecyclePending} onClick={() => stopProject.mutate()}>
+                  <Square /> {stopProject.isPending ? "Stopping…" : "Stop project"}
+                </Button>
+                <Button size="sm" variant="outline" disabled={lifecyclePending} onClick={() => restartProject.mutate()}>
+                  <RotateCw /> {restartProject.isPending ? "Restarting…" : "Restart"}
                 </Button>
                 <span className="flex items-center gap-1 text-[0.7rem] uppercase tracking-wide text-muted-foreground">
-                  Lifecycle <PlannedTag className="ml-0" />
+                  Lifecycle
                 </span>
               </div>
+              {lifecycleError && (
+                <p role="alert" className="text-xs text-destructive">
+                  The project action failed: {String(lifecycleError)}
+                </p>
+              )}
               {openFolder.error && (
                 <p role="alert" className="text-xs text-destructive">
                   Could not open the folder: {String(openFolder.error)}
@@ -618,7 +653,7 @@ export function ProjectOverview() {
             <CardContent>
               <dl className="divide-y divide-border text-sm">
                 <Detail label="State">
-                  <LifecycleBadge state={project.LifecycleState} />
+                  <LifecycleBadge state={lifecycle.data ?? project.LifecycleState} />
                 </Detail>
                 <Detail label="Configuration">
                   <span className="capitalize">{project.Status}</span>
