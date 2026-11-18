@@ -21,9 +21,9 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { useMachineStatus } from "@/lib/usage-query";
 import { playNotificationSound } from "@/lib/notification-sound";
 
-const statusKey = ["engine-status"] as const;
 // Exported so other screens can refetch the bell after they record activity.
 export const notificationsKey = ["notifications"] as const;
 // Shared with Settings, which writes these choices.
@@ -139,11 +139,7 @@ function ResourceBar({
 
 /** Engine and machine state, read from the backend rather than assumed. */
 export function EngineStatus() {
-  const status = useQuery({
-    queryKey: statusKey,
-    queryFn: () => StatusService.Health(),
-    refetchInterval: 30_000,
-  });
+  const status = useMachineStatus();
 
   const healthy = status.data?.Healthy === true;
   const label = status.isPending
