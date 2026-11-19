@@ -24,6 +24,7 @@ import * as SettingsService from "../../bindings/locafy.dev/desktop/internal/set
 import * as StatusService from "../../bindings/locafy.dev/desktop/internal/status/service";
 import type { NotificationPreferences } from "../../bindings/locafy.dev/desktop/internal/status/models";
 import { notificationPreferencesKey } from "@/components/top-bar-status";
+import { useRuntimeCatalog } from "@/lib/runtimes-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -776,172 +777,86 @@ function ServicesTab() {
 
 // ─── Tab: Runtimes ────────────────────────────────────────────────────────────
 
-const RUNTIMES = [
-  {
-    id: "php",
-    language: "PHP",
-    name: "PHP",
-    usedBy: "Etugora API",
-    versions: ["8.1", "8.2", "8.3", "8.4"],
-    defaultVersion: "8.4",
-    color: "bg-blue-500/15 text-blue-400",
-  },
-  {
-    id: "node",
-    language: "Node.js",
-    name: "Node.js",
-    usedBy: "Etugora Auth, Dashboard",
-    versions: ["20", "22", "24"],
-    defaultVersion: "24",
-    color: "bg-green-500/15 text-green-400",
-  },
-  {
-    id: "python",
-    language: "Python",
-    name: "Python",
-    usedBy: "ML Service",
-    versions: ["3.11", "3.12", "3.13"],
-    defaultVersion: "3.13",
-    color: "bg-yellow-500/15 text-yellow-400",
-  },
-  {
-    id: "go",
-    language: "Go",
-    name: "Go",
-    usedBy: "Locafy engine",
-    versions: ["1.22", "1.23", "1.24"],
-    defaultVersion: "1.24",
-    color: "bg-cyan-500/15 text-cyan-400",
-  },
-  {
-    id: "ruby",
-    language: "Ruby",
-    name: "Ruby",
-    usedBy: "—",
-    versions: ["3.2", "3.3", "3.4"],
-    defaultVersion: "3.4",
-    color: "bg-red-500/15 text-red-400",
-  },
-];
 
 function RuntimesTab() {
-  const [versionHandling, setVersionHandling] = useState({
-    isolateDeps: true,
-    detectFromFiles: true,
-    autoPatch: false,
-  });
-  const [diskUsed] = useState("3.2 GB");
-  const [installDir] = useState("~/.locafy/runtimes");
+  const catalog = useRuntimeCatalog();
+  const entries = catalog.data ?? [];
+  const copies = entries.reduce((count, entry) => count + (entry.copies?.length ?? 0), 0);
+  const goDownloads = () => {
+    window.location.hash = "#/downloads";
+  };
 
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold">Language runtimes</h2>
-        <Button size="sm" variant="outline">
-          + Add runtime
+        <div>
+          <h2 className="text-base font-semibold">Language runtimes</h2>
+          <p className="text-xs text-muted-foreground">
+            {catalog.isPending
+              ? "Reading the machine…"
+              : `${copies} installed ${copies === 1 ? "copy" : "copies"} across ${entries.length} runtime kinds, read by Locafy`}
+          </p>
+        </div>
+        <Button size="sm" variant="outline" onClick={goDownloads}>
+          Install a runtime
         </Button>
       </div>
 
-      {/* Update banner */}
-      <div className="flex items-center gap-3 rounded-lg border border-blue-500/20 bg-blue-500/5 px-4 py-3">
-        <Info className="size-4 shrink-0 text-blue-400" />
-        <span className="flex-1 text-sm">
-          Updates available for Node.js 24 and PHP 8.4
-        </span>
-        <Button size="sm" variant="outline" className="shrink-0 text-xs">
-          Update all
-        </Button>
-      </div>
+      {catalog.isError && (
+        <p role="alert" className="text-sm text-destructive">
+          Could not read the runtimes: {String(catalog.error)}
+        </p>
+      )}
 
-      {/* Runtime rows */}
+      {/* Runtime rows: one per kind, copies managed first, newest after */}
       <div className="divide-y divide-border rounded-lg border border-border">
-        {RUNTIMES.map((rt) => (
-          <div key={rt.id} className="flex flex-wrap items-center gap-4 px-4 py-3">
-            <span
-              className={cn(
-                "inline-flex min-w-[72px] items-center justify-center rounded px-2 py-0.5 text-xs font-medium",
-                rt.color,
+        {entries.map((entry) => (
+          <div key={entry.kind.id} className="flex flex-wrap items-start gap-4 px-4 py-3">
+            <div className="min-w-[80px]">
+              <p className="text-sm font-medium">{entry.kind.label}</p>
+              {entry.copies && entry.copies.length > 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  {entry.copies.length === 1 ? "1 copy" : `${entry.copies.length} copies`}
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">Not found</p>
               )}
-            >
-              {rt.language}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">{rt.name}</p>
-              <p className="text-xs text-muted-foreground">Used by {rt.usedBy}</p>
             </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {rt.versions.map((v) => (
-                <Badge
-                  key={v}
-                  variant={v === rt.defaultVersion ? "default" : "outline"}
-                  className="font-mono text-xs"
-                >
-                  {v}
-                </Badge>
-              ))}
-              <button className="text-xs text-primary hover:underline">+ Install version</button>
+            <div className="min-w-0 flex-1 space-y-1">
+              {entry.copies && entry.copies.length > 0 ? (
+                entry.copies.map((copy) => (
+                  <div key={copy.id} className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className="font-mono text-xs">
+                      {copy.version || "unknown version"}
+                    </Badge>
+                    {copy.source === "managed" && <Badge className="text-xs">Locafy-managed</Badge>}
+                    {copy.source === "PATH" && <Badge variant="outline" className="text-xs">PATH</Badge>}
+                    <span
+                      className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground"
+                      title={copy.path}
+                    >
+                      {copy.path}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No {entry.kind.label} executable on this machine.{" "}
+                  <button className="text-primary hover:underline" onClick={goDownloads}>
+                    Install from Downloads
+                  </button>
+                </p>
+              )}
             </div>
           </div>
         ))}
       </div>
 
-      {/* Version handling */}
-      <div>
-        <SectionHeader title="Version handling" />
-        <div className="divide-y divide-border rounded-lg border border-border">
-          <div className="px-4">
-            <SwitchRow
-              label="Isolate dependencies per project"
-              description="Each project gets its own vendor/node_modules folder"
-              checked={versionHandling.isolateDeps}
-              onChange={(v) => setVersionHandling((p) => ({ ...p, isolateDeps: v }))}
-            />
-          </div>
-          <div className="px-4">
-            <SwitchRow
-              label="Detect version from project files"
-              description=".nvmrc, .ruby-version, composer.json, pyproject.toml…"
-              checked={versionHandling.detectFromFiles}
-              onChange={(v) => setVersionHandling((p) => ({ ...p, detectFromFiles: v }))}
-            />
-          </div>
-          <div className="px-4">
-            <SwitchRow
-              label="Auto-update patch releases"
-              description="Keeps installed runtimes on the latest patch (e.g. 8.4.1 → 8.4.2)"
-              checked={versionHandling.autoPatch}
-              onChange={(v) => setVersionHandling((p) => ({ ...p, autoPatch: v }))}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Install location */}
-      <div>
-        <SectionHeader
-          title="Install location"
-          description="Where runtime binaries and toolchains are stored"
-        />
-        <div className="space-y-3">
-          <div className="flex gap-2">
-            <Input
-              value={installDir}
-              readOnly
-              className="font-mono text-xs text-muted-foreground"
-            />
-            <Button variant="outline">Change</Button>
-          </div>
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>Disk used</span>
-              <span className="font-medium text-foreground">{diskUsed}</span>
-            </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-              <div className="h-full w-1/3 rounded-full bg-primary" />
-            </div>
-          </div>
-        </div>
-      </div>
+      <p className="text-xs text-muted-foreground">
+        Reading runtimes never changes the machine. An application can pin one of these copies from
+        its card in the project's Applications tab; a Locafy-managed copy installs from the
+        Downloads screen and is preferred in the picker.
+      </p>
     </div>
   );
 }

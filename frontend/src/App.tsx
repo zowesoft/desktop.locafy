@@ -8,7 +8,6 @@ import { EngineStatus, Notifications } from "@/components/top-bar-status";
 const navPaths: Record<NavId, string> = {
   overview: "/",
   projects: "/projects",
-  runtimes: "/runtimes",
   downloads: "/downloads",
   analytics: "/analytics",
   tunnels: "/tunnels",
@@ -22,7 +21,6 @@ const navPaths: Record<NavId, string> = {
 const searchPlaceholders: Record<NavId, string> = {
   overview: "Search projects, apps…",
   projects: "Search projects…",
-  runtimes: "Search runtimes…",
   downloads: "Search downloads…",
   analytics: "Search analytics…",
   tunnels: "Search tunnels…",

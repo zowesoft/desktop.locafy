@@ -53,7 +53,6 @@ describe("AppShell navigation", () => {
     expect(labels).toEqual([
       "Overview",
       "Projects",
-      "Runtimes",
       "Downloads",
       "Analytics",
       "Logs",

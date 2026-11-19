@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import {
   Blocks,
-  Box,
   ChartColumn,
   CircleQuestionMark,
   Download,
@@ -25,7 +24,6 @@ import { cn } from "@/lib/utils";
 export type NavId =
   | "overview"
   | "projects"
-  | "runtimes"
   | "downloads"
   | "analytics"
   | "tunnels"
@@ -60,7 +58,6 @@ function focusSearch() {
 const NAV: ReadonlyArray<NavItem> = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "projects", label: "Projects", icon: FolderKanban },
-  { id: "runtimes", label: "Runtimes", icon: Box },
   { id: "downloads", label: "Downloads", icon: Download },
   { id: "analytics", label: "Analytics", icon: ChartColumn },
   { id: "tunnels", label: "Tunnels", icon: Zap, planned: true },

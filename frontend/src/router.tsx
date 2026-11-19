@@ -10,7 +10,6 @@ import { Placeholder } from "@/screens/placeholder";
 import { projectWorkspaceRoute } from "@/screens/project-workspace";
 import { ProjectsScreen } from "@/screens/projects";
 import { RouteError } from "@/screens/route-error";
-import { RuntimesScreen } from "@/screens/runtimes";
 import { SettingsScreen } from "@/screens/settings";
 import { TerminalScreen } from "@/screens/terminal";
 
@@ -28,7 +27,6 @@ export const router = createHashRouter([
       { index: true, element: <Dashboard /> },
       { path: "projects", element: <ProjectsScreen /> },
       projectWorkspaceRoute,
-      { path: "runtimes", element: <RuntimesScreen /> },
       { path: "downloads", element: <DownloadsScreen /> },
       { path: "analytics", element: <AnalyticsScreen /> },
       { path: "logs", element: <LogsScreen /> },
