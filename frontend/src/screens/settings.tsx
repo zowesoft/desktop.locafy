@@ -794,7 +794,7 @@ function RuntimesTab() {
           <p className="text-xs text-muted-foreground">
             {catalog.isPending
               ? "Reading the machine…"
-              : `${copies} installed ${copies === 1 ? "copy" : "copies"} across ${entries.length} runtime kinds, read by Locafy`}
+              : `${copies} installed ${copies === 1 ? "copy" : "copies"} across ${entries.length} runtime kinds`}
           </p>
         </div>
         <Button size="sm" variant="outline" onClick={goDownloads}>
@@ -808,44 +808,39 @@ function RuntimesTab() {
         </p>
       )}
 
-      {/* Runtime rows: one per kind, copies managed first, newest after */}
+      {/* One row per kind: colored kind pill, versions as pills. The path a
+          version stands for is its tooltip, not a line of monospace. */}
       <div className="divide-y divide-border rounded-lg border border-border">
         {entries.map((entry) => (
-          <div key={entry.kind.id} className="flex flex-wrap items-start gap-4 px-4 py-3">
-            <div className="min-w-[80px]">
-              <p className="text-sm font-medium">{entry.kind.label}</p>
-              {entry.copies && entry.copies.length > 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  {entry.copies.length === 1 ? "1 copy" : `${entry.copies.length} copies`}
-                </p>
-              ) : (
-                <p className="text-xs text-muted-foreground">Not found</p>
+          <div key={entry.kind.id} className="flex flex-wrap items-center gap-4 px-4 py-3">
+            <span
+              className={cn(
+                "inline-flex min-w-[72px] items-center justify-center rounded px-2 py-0.5 text-xs font-medium",
+                kindColors[entry.kind.id] ?? "bg-muted text-foreground",
               )}
-            </div>
-            <div className="min-w-0 flex-1 space-y-1">
+            >
+              {entry.kind.label}
+            </span>
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
               {entry.copies && entry.copies.length > 0 ? (
                 entry.copies.map((copy) => (
-                  <div key={copy.id} className="flex flex-wrap items-center gap-2">
-                    <Badge variant="outline" className="font-mono text-xs">
-                      {copy.version || "unknown version"}
-                    </Badge>
-                    {copy.source === "managed" && <Badge className="text-xs">Locafy-managed</Badge>}
-                    {copy.source === "PATH" && <Badge variant="outline" className="text-xs">PATH</Badge>}
-                    <span
-                      className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground"
-                      title={copy.path}
-                    >
-                      {copy.path}
-                    </span>
-                  </div>
+                  <Badge
+                    key={copy.id}
+                    variant={copy.source === "managed" ? "default" : "outline"}
+                    className="cursor-default font-mono text-xs"
+                    title={copy.path}
+                  >
+                    {copy.version || "unknown"}
+                    {copy.source === "managed" && " · managed"}
+                  </Badge>
                 ))
               ) : (
-                <p className="text-xs text-muted-foreground">
-                  No {entry.kind.label} executable on this machine.{" "}
+                <span className="text-xs text-muted-foreground">
+                  Not installed —{" "}
                   <button className="text-primary hover:underline" onClick={goDownloads}>
-                    Install from Downloads
+                    install from Downloads
                   </button>
-                </p>
+                </span>
               )}
             </div>
           </div>
@@ -853,13 +848,24 @@ function RuntimesTab() {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Reading runtimes never changes the machine. An application can pin one of these copies from
-        its card in the project's Applications tab; a Locafy-managed copy installs from the
-        Downloads screen and is preferred in the picker.
+        Hover a version for its location. Reading runtimes never changes the machine; an application
+        pins one of these copies from its card in the project's Applications tab, and a managed copy
+        installs from the Downloads screen.
       </p>
     </div>
   );
 }
+
+// The kind pill's color, matching the labels used across the design.
+const kindColors: Record<string, string> = {
+  php: "bg-blue-500/15 text-blue-400",
+  node: "bg-green-500/15 text-green-400",
+  python: "bg-yellow-500/15 text-yellow-400",
+  go: "bg-cyan-500/15 text-cyan-400",
+  java: "bg-orange-500/15 text-orange-400",
+  ruby: "bg-red-500/15 text-red-400",
+  dotnet: "bg-violet-500/15 text-violet-400",
+};
 
 // ─── Tab: Domains & HTTPS ─────────────────────────────────────────────────────
 
