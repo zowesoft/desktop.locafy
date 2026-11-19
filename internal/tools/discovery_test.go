@@ -217,3 +217,49 @@ func TestPyLauncherOutputYieldsEveryInterpreter(t *testing.T) {
 		}
 	}
 }
+
+func TestToolVersionRetriesAndSelfHeals(t *testing.T) {
+	versionCacheMu.Lock()
+	versionCache = map[string]string{}
+	versionCacheMu.Unlock()
+
+	attempts := 0
+	restore := probe
+	t.Cleanup(func() { probe = restore })
+
+	// A copy that misses its first probe (an antivirus-slowed first launch)
+	// is asked again, and the second answer is cached.
+	probe = func(path string, name string) string {
+		attempts++
+		if attempts == 1 {
+			return ""
+		}
+		return "8.3.7"
+	}
+	if got := toolVersion(`C:\stub\php.exe`, "php"); got != "8.3.7" {
+		t.Fatalf("version = %q, want the retry's answer", got)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+	if got := toolVersion(`C:\stub\php.exe`, "php"); got != "8.3.7" || attempts != 2 {
+		t.Fatalf("cached answer lost: %q after %d attempts", got, attempts)
+	}
+
+	// A copy that never answers stays unknown for this read, but is not
+	// cached: the next read probes it again instead of giving up forever.
+	probe = func(path string, name string) string {
+		attempts++
+		return ""
+	}
+	if got := toolVersion(`C:\stub\other.exe`, "php"); got != "" {
+		t.Fatalf("version = %q, want empty", got)
+	}
+	before := attempts
+	if got := toolVersion(`C:\stub\other.exe`, "php"); got != "" {
+		t.Fatalf("version = %q, want empty", got)
+	}
+	if attempts <= before {
+		t.Error("an unanswered copy was probed again on the next read")
+	}
+}

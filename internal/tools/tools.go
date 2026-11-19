@@ -189,8 +189,11 @@ func usableCopy(name string, path string) bool {
 	return pythonBinary.MatchString(base)
 }
 
-// toolVersion runs the tool's own version flag with a short timeout. A tool
-// that answers with something unparseable is kept, with an empty version.
+// toolVersion runs the tool's own version flag with a short timeout, twice —
+// a first launch on Windows can stall on an antivirus scan, and two attempts
+// catch the slow start without hanging discovery. An answer that never parses
+// is not cached, so the next catalog read asks the copy again instead of
+// calling it unknown for the whole session.
 func toolVersion(path string, name string) string {
 	versionCacheMu.RLock()
 	cached, ok := versionCache[path]
@@ -199,6 +202,27 @@ func toolVersion(path string, name string) string {
 		return cached
 	}
 
+	version := ""
+	for attempt := 0; attempt < 2; attempt++ {
+		version = probe(path, name)
+		if version != "" {
+			break
+		}
+	}
+	if version != "" {
+		versionCacheMu.Lock()
+		versionCache[path] = version
+		versionCacheMu.Unlock()
+	}
+	return version
+}
+
+// probe is the version-probe seam: tests replace it instead of launching
+// executables.
+var probe = probeOnce
+
+// probeOnce runs the tool's own version flag once with a short timeout.
+func probeOnce(path string, name string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
@@ -209,14 +233,7 @@ func toolVersion(path string, name string) string {
 	command := process.CommandFor(ctx, path, args)
 	command.Env = append(os.Environ(), "NO_COLOR=1")
 	output, _ := command.CombinedOutput()
-	version := parseVersion(string(output))
-
-	// A tool that answered with something unparseable is still a tool; cache
-	// the empty answer so a slow executable is not launched again.
-	versionCacheMu.Lock()
-	versionCache[path] = version
-	versionCacheMu.Unlock()
-	return version
+	return parseVersion(string(output))
 }
 
 func parseVersion(output string) string {
