@@ -9,6 +9,7 @@ import * as DialogsService from "../../bindings/locafy.dev/desktop/internal/dial
 import * as ApplicationsService from "../../bindings/locafy.dev/desktop/internal/applications/service";
 import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/projects/service";
 import type { Project } from "../../bindings/locafy.dev/desktop/internal/projects/models";
+import type { Application } from "../../bindings/locafy.dev/desktop/internal/applications/models";
 import { notificationsKey } from "@/components/top-bar-status";
 import { ProjectsScreen } from "./projects";
 
@@ -24,6 +25,9 @@ vi.mock("@wailsio/runtime", () => ({
 
 vi.mock("../../bindings/locafy.dev/desktop/internal/applications/service", () => ({
   Lifecycles: vi.fn(),
+  Detect: vi.fn(),
+  Create: vi.fn(),
+  List: vi.fn(),
 }));
 
 vi.mock("../../bindings/locafy.dev/desktop/internal/projects/service", () => ({
@@ -71,6 +75,11 @@ beforeEach(() => {
   vi.mocked(DialogsService.ChooseFolder).mockReset();
   vi.mocked(ApplicationsService.Lifecycles).mockReset();
   vi.mocked(ApplicationsService.Lifecycles).mockResolvedValue({});
+  vi.mocked(ApplicationsService.Detect).mockReset();
+  vi.mocked(ApplicationsService.Detect).mockResolvedValue([]);
+  vi.mocked(ApplicationsService.Create).mockReset();
+  vi.mocked(ApplicationsService.List).mockReset();
+  vi.mocked(ApplicationsService.List).mockResolvedValue([]);
   vi.mocked(ProjectsService.WorkspaceDir).mockResolvedValue(
     "C:\\Users\\dev\\AppData\\Roaming\\Locafy\\projects",
   );
@@ -394,11 +403,14 @@ describe("ProjectsScreen", () => {
 
   it("imports a batch of folders and hides the ones without a marker", async () => {
     const user = userEvent.setup();
-    vi.mocked(ProjectsService.ScanFolder).mockResolvedValue([
-      { Path: "C:\\laragon\\www\\etugora", Name: "etugora", Marker: "composer.json" },
-      { Path: "C:\\laragon\\www\\checkout", Name: "checkout", Marker: "package.json" },
-      { Path: "C:\\laragon\\www\\uploads", Name: "uploads", Marker: "" },
-    ]);
+    vi.mocked(ProjectsService.ScanFolder).mockResolvedValue({
+      Root: { Path: "C:\\laragon\\www", Name: "www", Marker: "" },
+      Children: [
+        { Path: "C:\\laragon\\www\\etugora", Name: "etugora", Marker: "composer.json" },
+        { Path: "C:\\laragon\\www\\checkout", Name: "checkout", Marker: "package.json" },
+        { Path: "C:\\laragon\\www\\uploads", Name: "uploads", Marker: "" },
+      ],
+    });
     vi.mocked(ProjectsService.LinkMany).mockResolvedValue([
       { Path: "C:\\laragon\\www\\etugora", Error: "" },
       { Path: "C:\\laragon\\www\\checkout", Error: "" },
@@ -411,6 +423,9 @@ describe("ProjectsScreen", () => {
     await user.click(screen.getByRole("button", { name: "Scan" }));
 
     expect(await screen.findByText("3 folders found")).toBeInTheDocument();
+    expect(
+      screen.getByRole("radio", { name: "Import folders inside as separate projects" }),
+    ).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "etugora" })).toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: "uploads" })).not.toBeInTheDocument();
 
@@ -432,6 +447,134 @@ describe("ProjectsScreen", () => {
     await waitFor(() => expect(ProjectsService.List).toHaveBeenCalledTimes(2));
   });
 
+  it("imports the selected folder as one project with its applications", async () => {
+    const user = userEvent.setup();
+    vi.mocked(ProjectsService.ScanFolder).mockResolvedValue({
+      Root: { Path: "C:\\Projects\\Etugora", Name: "Etugora", Marker: "package.json" },
+      Children: [
+        {
+          Path: "C:\\Projects\\Etugora\\admin.etugora.frontend",
+          Name: "admin.etugora.frontend",
+          Marker: "package.json",
+        },
+        {
+          Path: "C:\\Projects\\Etugora\\user.etugora.frontend",
+          Name: "user.etugora.frontend",
+          Marker: "package.json",
+        },
+      ],
+    });
+    vi.mocked(ProjectsService.Link).mockResolvedValue(
+      project({ ID: "p9", Name: "Etugora", RootPath: "C:\\Projects\\Etugora" }),
+    );
+    vi.mocked(ApplicationsService.Detect).mockResolvedValue([
+      {
+        Name: "etugora-workspace-root",
+        Directory: ".",
+        Language: "JavaScript",
+        Framework: "",
+        Marker: "package.json",
+        StartCommand: "",
+      },
+      {
+        Name: "admin.etugora.frontend",
+        Directory: "admin.etugora.frontend",
+        Language: "TypeScript",
+        Framework: "Next.js",
+        Marker: "package.json",
+        StartCommand: "npm run dev",
+      },
+      {
+        Name: "user.etugora.frontend",
+        Directory: "user.etugora.frontend",
+        Language: "TypeScript",
+        Framework: "Next.js",
+        Marker: "package.json",
+        StartCommand: "npm run dev",
+      },
+    ]);
+    vi.mocked(ApplicationsService.List).mockResolvedValue([]);
+    vi.mocked(ApplicationsService.Create).mockResolvedValue({} as Application);
+
+    renderWithQuery(<ProjectsScreen />);
+
+    await user.click(screen.getByRole("button", { name: "Import folder" }));
+    await user.type(await screen.findByLabelText("Folder path"), "C:\\Projects\\Etugora");
+    await user.click(screen.getByRole("button", { name: "Scan" }));
+
+    // The root carries a project marker, so it is offered as one project first.
+    expect(
+      await screen.findByRole("radio", { name: "Import Etugora as one project" }),
+    ).toBeChecked();
+    expect(screen.queryByRole("checkbox", { name: "admin.etugora.frontend" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Import Etugora" }));
+
+    expect(await screen.findByText("Applications in Etugora")).toBeInTheDocument();
+    expect(ProjectsService.Link).toHaveBeenCalledWith("C:\\Projects\\Etugora");
+    expect(ApplicationsService.Detect).toHaveBeenCalledWith("p9");
+
+    // The workspace root itself is not an application of its own here.
+    expect(screen.getByRole("checkbox", { name: "etugora-workspace-root" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "admin.etugora.frontend" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "user.etugora.frontend" })).toBeChecked();
+
+    await user.click(screen.getByRole("checkbox", { name: "user.etugora.frontend" }));
+    await user.click(await screen.findByRole("button", { name: "Add 1 application" }));
+
+    expect(ApplicationsService.Create).toHaveBeenCalledTimes(1);
+    const [, input] = vi.mocked(ApplicationsService.Create).mock.calls[0];
+    expect(input.Directory).toBe("admin.etugora.frontend");
+    expect(input.Source).toBe("detected");
+    expect(screen.queryByText("Applications in Etugora")).not.toBeInTheDocument();
+  });
+
+  it("adds only what is missing when the folder is already a project", async () => {
+    const user = userEvent.setup();
+    vi.mocked(ProjectsService.ScanFolder).mockResolvedValue({
+      Root: { Path: "C:\\Projects\\Etugora", Name: "Etugora", Marker: "package.json" },
+      Children: [],
+    });
+    vi.mocked(ProjectsService.Link).mockRejectedValue(
+      new Error("another project already uses this directory"),
+    );
+    vi.mocked(ProjectsService.List).mockResolvedValue([
+      project({ ID: "p9", Name: "Etugora", RootPath: "C:\\projects\\etugora" }),
+    ]);
+    vi.mocked(ApplicationsService.Detect).mockResolvedValue([
+      {
+        Name: "admin.etugora.frontend",
+        Directory: "admin.etugora.frontend",
+        Language: "TypeScript",
+        Framework: "Next.js",
+        Marker: "package.json",
+        StartCommand: "npm run dev",
+      },
+    ]);
+    vi.mocked(ApplicationsService.List).mockResolvedValue([
+      { Directory: "admin.etugora.frontend" } as Application,
+    ]);
+
+    renderWithQuery(<ProjectsScreen />);
+
+    await user.click(screen.getByRole("button", { name: "Import folder" }));
+    await user.type(await screen.findByLabelText("Folder path"), "C:\\Projects\\Etugora");
+    await user.click(screen.getByRole("button", { name: "Scan" }));
+    await user.click(await screen.findByRole("button", { name: "Import Etugora" }));
+
+    expect(await screen.findByText("Applications in Etugora")).toBeInTheDocument();
+    // The already recorded application is not offered again.
+    expect(ApplicationsService.Detect).toHaveBeenCalledWith("p9");
+    expect(screen.queryByRole("checkbox", { name: "admin.etugora.frontend" })).not.toBeInTheDocument();
+    expect(
+      await screen.findByText("Every application Locafy found here is already registered."),
+    ).toBeInTheDocument();
+    expect(ApplicationsService.Create).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.queryByText("Applications in Etugora")).not.toBeInTheDocument();
+  });
+
   it("fills the parent folder from the native picker", async () => {
     const user = userEvent.setup();
     vi.mocked(DialogsService.ChooseFolder).mockResolvedValue("C:\\laragon\\www");
@@ -447,10 +590,13 @@ describe("ProjectsScreen", () => {
 
   it("keeps folders that failed to import listed with the reason", async () => {
     const user = userEvent.setup();
-    vi.mocked(ProjectsService.ScanFolder).mockResolvedValue([
-      { Path: "C:\\laragon\\www\\etugora", Name: "etugora", Marker: "composer.json" },
-      { Path: "C:\\laragon\\www\\broken", Name: "broken", Marker: "package.json" },
-    ]);
+    vi.mocked(ProjectsService.ScanFolder).mockResolvedValue({
+      Root: { Path: "C:\\laragon\\www", Name: "www", Marker: "" },
+      Children: [
+        { Path: "C:\\laragon\\www\\etugora", Name: "etugora", Marker: "composer.json" },
+        { Path: "C:\\laragon\\www\\broken", Name: "broken", Marker: "package.json" },
+      ],
+    });
     vi.mocked(ProjectsService.LinkMany).mockResolvedValue([
       { Path: "C:\\laragon\\www\\etugora", Error: "" },
       { Path: "C:\\laragon\\www\\broken", Error: "another project already uses this directory" },
