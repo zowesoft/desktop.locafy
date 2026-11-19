@@ -24,6 +24,7 @@ Architecture decision records (ADRs) for this repository.
 | [ADR-0016](ADR-0016-project-lifecycle-orchestration.md) | Project start/stop/restart run applications in dependency order with readiness waits; the displayed state is derived, never stored | Accepted |
 | [ADR-0017](ADR-0017-project-resource-usage.md) | Project usage is the CPU and memory of the process trees Locafy started, sampled on the runtime loop and normalized to the machine scale | Accepted |
 | [ADR-0018](ADR-0018-runtime-registry-and-assignment.md) | The runtime registry is data with a shared tools discovery; an application can pin a copy, resolved ahead of PATH at start | Accepted |
+| [ADR-0019](ADR-0019-install-jobs-and-managed-runtimes.md) | Installs are portable archives unpacked into a runtimes directory Locafy owns; jobs are rows with progress, outcome and retry; managed copies surface through the registry | Accepted |
 | — | Desktop stack selections made in the PRD (Wails v3, Go, React/TS, SQLite) are recorded there and considered approved baseline. | — |
 
 ## Decisions pending (do not guess — PRD section 23)

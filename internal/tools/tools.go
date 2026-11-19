@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"locafy.dev/desktop/internal/db"
 	"locafy.dev/desktop/internal/process"
 )
 
@@ -93,7 +94,14 @@ func find(name string) []Candidate {
 			continue
 		}
 		for _, match := range matches {
-			add(match, "installed")
+			// A copy under Locafy's own runtimes directory was installed by an
+			// install job, and the catalog marks it managed so the picker can
+			// prefer it.
+			source := "installed"
+			if root := ManagedRoot(); root != "" && strings.HasPrefix(match, root) {
+				source = "managed"
+			}
+			add(match, source)
 		}
 	}
 
@@ -232,6 +240,9 @@ func knownLocations(name string) []string {
 	default:
 		locations = linuxLocations(name)
 	}
+	// A runtime Locafy installed itself lives in the managed runtimes
+	// directory and is found like any other copy, but marked as managed.
+	locations = append(locations, managedLocations(name)...)
 
 	// An unset base directory contributes nothing rather than an empty glob.
 	compacted := locations[:0]
@@ -241,6 +252,33 @@ func knownLocations(name string) []string {
 		}
 	}
 	return compacted
+}
+
+// ManagedRoot is the directory Locafy unpacks managed runtimes into: a
+// platform data directory Locafy owns, named so discovery can find what the
+// install jobs produce. Empty when the platform cannot say its data home.
+func ManagedRoot() string {
+	home, err := db.DataHome()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, db.AppDirName(), "runtimes")
+}
+
+// managedLocations lists the globs inside the managed runtimes directory,
+// where an install job unpacks one version per folder.
+func managedLocations(name string) []string {
+	root := ManagedRoot()
+	if root == "" {
+		return nil
+	}
+	if hostOS == "windows" {
+		return []string{locate(root, name, "*", name+".exe")}
+	}
+	return []string{
+		locate(root, name, "*", name),
+		locate(root, name, "*", "bin", name),
+	}
 }
 
 func homeDirectory() string {

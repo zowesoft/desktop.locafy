@@ -22,7 +22,7 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 | DESK-SCAF-002 | Scaffold runner and job history | desktop.locafy | 3 | IN_PROGRESS | DESK-SCAF-001 |
 | DESK-SCAF-003 | New application from a framework | desktop.locafy | 3 | IN_PROGRESS | DESK-APP-001, DESK-SCAF-002 |
 | DESK-RUN-001 | Runtime detection and assignment | desktop.locafy | 4 | IN_REVIEW | DESK-APP-002 |
-| DESK-DL-001 | Downloads view for install jobs | desktop.locafy | 4 | NOT_STARTED | DESK-RUN-001 |
+| DESK-DL-001 | Downloads view for install jobs | desktop.locafy | 4 | IN_REVIEW | DESK-RUN-001 |
 | DESK-SVC-001 | Service catalogue and lifecycle | desktop.locafy | 5 | NOT_STARTED | DESK-APP-002 |
 | DESK-NET-001 | Local domains and reverse proxy | desktop.locafy | 6 | NOT_STARTED | DESK-APP-002, DESK-SVC-001 |
 | DESK-DEVX-001 | Integrated terminal and logs | desktop.locafy | 7 | NOT_STARTED | DESK-PROJ-002, DESK-APP-002, DESK-SVC-001 |
@@ -227,10 +227,11 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 - **Description:** Global machine-scoped view of in-progress and completed download/install jobs — runtimes and other Locafy-managed components — with progress, outcome, and retry (PRD section 6.5).
 - **Dependencies:** DESK-RUN-001
 - **Acceptance criteria:** Install jobs appear with live progress; completed and failed jobs are retained with their outcome; retry re-runs a failed job; the view is machine-scoped and works without an account (PRD sections 6.5, 9, Phase 4).
-- **Status:** NOT_STARTED
+- **Status:** IN_REVIEW
 - **Assigned agent:** —
-- **Files/modules:** —
-- **Tests:** Job list and progress updates; retry flow; history retention
+- **Files/modules:** `internal/downloads` (catalogue, manager with download/verify/unpack, store, service), `internal/db/migrations/0011_install_jobs.sql`, `internal/tools/tools.go` (managed runtimes directory in discovery, source `managed`), `internal/runtimes/registry.go` (managed copies first within a kind), `main.go` wiring, `frontend/src/screens/downloads.tsx`, `frontend/src/lib` event wiring in the screen
+- **Tests:** 5 Go tests in `internal/downloads`: a full install (download with progress, wrap folder stripped, expected executable present, second install refused), explanations for a missing executable and a truncated download, a cancelled job marked cancelled with nothing unpacked, retry re-running a failed job as a fresh attempt that then succeeds (history keeps both attempts; removal drops a finished row without touching installed files), and refusals for unknown jobs. 4 screen tests in `frontend/src/screens/downloads.test.tsx` (catalogue plus jobs with live progress and outcomes, start an install, retry and remove, empty catalogue state). All other packages green; 166 frontend tests pass.
+- **Blockers:** Live run pending review (the engine is proven against an in-process fake nodejs.org; a real download from nodejs.org has not been performed here). Checksum-pinned catalogue entries are deferred per ADR-0019; the catalogue ships Node.js only for this slice. The managed-runtime stance (managed copies preferred in the picker) is recorded but the runtime picker's managed-first rendering has not been exercised in the live window.
 - **Blockers:** Job creation depends on the runtime installation strategy (PRD section 23)
 - **Evidence:** —
 

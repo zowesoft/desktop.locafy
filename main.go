@@ -18,6 +18,7 @@ import (
 	"locafy.dev/desktop/internal/applications"
 	"locafy.dev/desktop/internal/db"
 	"locafy.dev/desktop/internal/dialogs"
+	"locafy.dev/desktop/internal/downloads"
 	"locafy.dev/desktop/internal/logs"
 	"locafy.dev/desktop/internal/machine"
 	"locafy.dev/desktop/internal/projects"
@@ -25,6 +26,7 @@ import (
 	"locafy.dev/desktop/internal/scaffold"
 	"locafy.dev/desktop/internal/settings"
 	"locafy.dev/desktop/internal/status"
+	"locafy.dev/desktop/internal/tools"
 )
 
 // Wails uses Go's `embed` package to embed the frontend files into the binary.
@@ -92,6 +94,15 @@ func run() error {
 	appsService := applications.NewService(database)
 	scaffoldService := scaffold.NewService(database)
 	runtimesService := runtimes.NewService()
+	downloadsService := downloads.NewService(downloads.NewManager(
+		database,
+		tools.ManagedRoot(),
+		func(name string, data any) {
+			if app := application.Get(); app != nil {
+				app.Event.Emit(name, data)
+			}
+		},
+	))
 
 	app := application.New(application.Options{
 		Name:        "Locafy",
@@ -103,6 +114,7 @@ func run() error {
 			application.NewService(appsService),
 			application.NewService(scaffoldService),
 			application.NewService(runtimesService),
+			application.NewService(downloadsService),
 			application.NewService(dialogs.NewService()),
 		},
 		Assets: application.AssetOptions{

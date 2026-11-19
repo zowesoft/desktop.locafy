@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"locafy.dev/desktop/internal/tools"
@@ -73,6 +74,14 @@ func Catalog() ([]Kind, [][]Copy, error) {
 				Source:  candidate.Source,
 			})
 		}
+		// A managed copy is the primary path: it comes first within its kind,
+		// ahead of the machine's own copies, newest first after that.
+		sort.SliceStable(copies, func(i, j int) bool {
+			if (copies[i].Source == "managed") != (copies[j].Source == "managed") {
+				return copies[i].Source == "managed"
+			}
+			return tools.CompareVersions(copies[i].Version, copies[j].Version) > 0
+		})
 		copiesPerKind[index] = copies
 	}
 	return list, copiesPerKind, nil
