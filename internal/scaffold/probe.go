@@ -1,7 +1,6 @@
 package scaffold
 
 import (
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -193,7 +192,9 @@ func betterCandidate(candidate *ToolCandidate, best *ToolCandidate, minimum stri
 
 // candidateRank orders install locations from most to least canonical.
 func candidateRank(candidate *ToolCandidate) int {
-	path := strings.ToLower(filepath.ToSlash(candidate.Path))
+	// Both separators are normalised so a Windows path is recognised on any
+	// host, the way the location tables are read on every platform.
+	path := strings.ToLower(strings.ReplaceAll(candidate.Path, `\`, "/"))
 	switch {
 	case strings.Contains(path, "composersetup"), strings.Contains(path, "composer/vendor/bin"):
 		return 0
