@@ -49,15 +49,24 @@ func TestScanFolderListsChildrenWithAdvisoryMarkers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}
-	markers := make(map[string]string, len(got))
-	for _, candidate := range got {
+	if got.Root.Path != root {
+		t.Errorf("root path = %q, want %q", got.Root.Path, root)
+	}
+	if got.Root.Name != filepath.Base(root) {
+		t.Errorf("root name = %q, want %q", got.Root.Name, filepath.Base(root))
+	}
+	if got.Root.Marker != "" {
+		t.Errorf("root marker = %q, want it unrecognized", got.Root.Marker)
+	}
+	markers := make(map[string]string, len(got.Children))
+	for _, candidate := range got.Children {
 		markers[candidate.Name] = candidate.Marker
 		if want := filepath.Join(root, candidate.Name); candidate.Path != want {
 			t.Errorf("path = %q, want %q", candidate.Path, want)
 		}
 	}
-	if len(got) != 3 {
-		t.Fatalf("candidates = %d (%+v), want the three unlinked directories", len(got), got)
+	if len(got.Children) != 3 {
+		t.Fatalf("candidates = %d (%+v), want the three unlinked directories", len(got.Children), got.Children)
 	}
 	if markers["etugora"] != "composer.json" {
 		t.Errorf("etugora marker = %q, want composer.json", markers["etugora"])
@@ -73,6 +82,25 @@ func TestScanFolderListsChildrenWithAdvisoryMarkers(t *testing.T) {
 	}
 	if _, ok := markers["already"]; ok {
 		t.Error("already linked directory offered as a candidate")
+	}
+}
+
+func TestScanFolderReportsTheSelectedFoldersOwnMarker(t *testing.T) {
+	database := newTestDB(t)
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write marker: %v", err)
+	}
+
+	got, err := ScanFolder(database, root)
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if got.Root.Marker != "package.json" {
+		t.Errorf("root marker = %q, want package.json", got.Root.Marker)
+	}
+	if len(got.Children) != 0 {
+		t.Errorf("children = %d, want none", len(got.Children))
 	}
 }
 

@@ -24,25 +24,41 @@ type ImportOutcome struct {
 	Error string
 }
 
+// ScanResult is what one scan offers: the selected folder itself, with the
+// marker its own contents suggest, and the child directories inside it that
+// are not already projects. Root lets the caller present importing the folder
+// as a single project alongside importing its children separately.
+type ScanResult struct {
+	Root     FolderCandidate
+	Children []FolderCandidate
+}
+
 // ScanFolder lists the child directories of rootPath that are not already
-// project roots, marking the ones that look like projects. It reads directory
-// entries and marker file names only; nothing is written or executed.
-func ScanFolder(database *sql.DB, rootPath string) ([]FolderCandidate, error) {
+// project roots, marking the ones that look like projects, together with the
+// selected folder itself. It reads directory entries and marker file names
+// only; nothing is written or executed.
+func ScanFolder(database *sql.DB, rootPath string) (ScanResult, error) {
 	root, err := resolveRoot(rootPath)
 	if err != nil {
-		return nil, err
+		return ScanResult{}, err
 	}
 
 	entries, err := os.ReadDir(root)
 	if err != nil {
-		return nil, fmt.Errorf("read %q: %w", root, err)
+		return ScanResult{}, fmt.Errorf("read %q: %w", root, err)
 	}
 	linked, err := liveRoots(database)
 	if err != nil {
-		return nil, err
+		return ScanResult{}, err
 	}
 
-	var candidates []FolderCandidate
+	result := ScanResult{
+		Root: FolderCandidate{
+			Path:   root,
+			Name:   filepath.Base(root),
+			Marker: detectMarker(root),
+		},
+	}
 	for _, entry := range entries {
 		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 			continue
@@ -51,13 +67,13 @@ func ScanFolder(database *sql.DB, rootPath string) ([]FolderCandidate, error) {
 		if linked[strings.ToLower(path)] {
 			continue
 		}
-		candidates = append(candidates, FolderCandidate{
+		result.Children = append(result.Children, FolderCandidate{
 			Path:   path,
 			Name:   entry.Name(),
 			Marker: detectMarker(path),
 		})
 	}
-	return candidates, nil
+	return result, nil
 }
 
 // LinkMany links each selected directory as a linked project. Every path is

@@ -86,9 +86,9 @@ func (s *Service) Link(rootPath string) (Project, error) {
 	return Link(s.database, strings.TrimSpace(rootPath))
 }
 
-// ScanFolder lists the child directories of a folder that are not already
-// projects, marking the ones that look like projects.
-func (s *Service) ScanFolder(path string) ([]FolderCandidate, error) {
+// ScanFolder reports a folder for import: the folder itself with its own
+// marker, and the child directories inside it that are not already projects.
+func (s *Service) ScanFolder(path string) (ScanResult, error) {
 	return ScanFolder(s.database, path)
 }
 

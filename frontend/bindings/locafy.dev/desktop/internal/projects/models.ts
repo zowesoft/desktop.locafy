@@ -44,3 +44,14 @@ export interface Project {
     "CreatedAt": string;
     "UpdatedAt": string;
 }
+
+/**
+ * ScanResult is what one scan offers: the selected folder itself, with the
+ * marker its own contents suggest, and the child directories inside it that
+ * are not already projects. Root lets the caller present importing the folder
+ * as a single project alongside importing its children separately.
+ */
+export interface ScanResult {
+    "Root": FolderCandidate;
+    "Children": FolderCandidate[] | null;
+}

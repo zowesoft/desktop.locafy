@@ -10,5 +10,6 @@ export type {
     FolderCandidate,
     ImportOutcome,
     OverrideState,
-    Project
+    Project,
+    ScanResult
 } from "./models.js";

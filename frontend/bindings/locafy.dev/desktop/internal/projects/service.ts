@@ -94,10 +94,10 @@ export function Rename(id: string, name: string): $CancellablePromise<$models.Pr
 }
 
 /**
- * ScanFolder lists the child directories of a folder that are not already
- * projects, marking the ones that look like projects.
+ * ScanFolder reports a folder for import: the folder itself with its own
+ * marker, and the child directories inside it that are not already projects.
  */
-export function ScanFolder(path: string): $CancellablePromise<$models.FolderCandidate[] | null> {
+export function ScanFolder(path: string): $CancellablePromise<$models.ScanResult> {
     return $Call.ByID(3952414168, path);
 }
 
