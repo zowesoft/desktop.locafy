@@ -8,6 +8,8 @@ export const lifecyclesKey = ["applications", "lifecycles"] as const;
 
 export const lifecycleKey = (projectID: string) => ["applications", "lifecycle", projectID] as const;
 
+export const projectUsageKey = (projectID: string) => ["applications", "usage", projectID] as const;
+
 /*
  * Process state changes arrive as application:state events; any surface that
  * displays a derived lifecycle reacts to them instead of polling.
@@ -45,5 +47,33 @@ export function useProjectLifecycles() {
   return useQuery({
     queryKey: lifecyclesKey,
     queryFn: async () => (await ApplicationsService.Lifecycles()) ?? {},
+  });
+}
+
+/*
+ * The project's managed usage: what the applications Locafy runs for this
+ * project consume right now. Per-application readings arrive as
+ * application:usage events; the aggregate is refetched when they change.
+ */
+export function useProjectUsage(projectID: string) {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const off = Events.On("application:usage", (event) => {
+      const data = event.data as { applicationId?: string };
+      if (!data.applicationId) return;
+      void queryClient.invalidateQueries({ queryKey: projectUsageKey(projectID) });
+    });
+    return off;
+  }, [queryClient, projectID]);
+
+  return useQuery({
+    queryKey: projectUsageKey(projectID),
+    queryFn: async () =>
+      (await ApplicationsService.ProjectUsage(projectID)) ?? {
+        cpuPercent: 0,
+        memoryBytes: 0,
+        runningApplications: 0,
+      },
   });
 }

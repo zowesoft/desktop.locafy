@@ -97,3 +97,13 @@ export interface ProjectReport {
     "failed": string[] | null;
     "stopped": string[] | null;
 }
+
+/**
+ * ProjectUsage aggregates the usage of a project's running applications.
+ * Nothing running reports zeros, not a failure.
+ */
+export interface ProjectUsage {
+    "cpuPercent": number;
+    "memoryBytes": number;
+    "runningApplications": number;
+}

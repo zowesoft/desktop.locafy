@@ -112,3 +112,8 @@ func (s *Service) Lifecycle(projectID string) (string, error) {
 func (s *Service) Lifecycles() (map[string]string, error) {
 	return s.supervisor.ProjectStates()
 }
+
+// ProjectUsage sums the CPU and memory the project's managed trees use now.
+func (s *Service) ProjectUsage(projectID string) (*ProjectUsage, error) {
+	return s.supervisor.ProjectUsage(projectID)
+}

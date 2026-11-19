@@ -60,6 +60,13 @@ export function Output(id: string): $CancellablePromise<string[] | null> {
 }
 
 /**
+ * ProjectUsage sums the CPU and memory the project's managed trees use now.
+ */
+export function ProjectUsage(projectID: string): $CancellablePromise<$models.ProjectUsage | null> {
+    return $Call.ByID(3218544074, projectID);
+}
+
+/**
  * Remove stops an application if it is running, then takes it out of Locafy
  * without touching its files.
  */

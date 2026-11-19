@@ -23,6 +23,7 @@ vi.mock("../../bindings/locafy.dev/desktop/internal/projects/service", () => ({
 vi.mock("../../bindings/locafy.dev/desktop/internal/applications/service", () => ({
   List: vi.fn(),
   Lifecycle: vi.fn(),
+  ProjectUsage: vi.fn(),
   StartProject: vi.fn(),
   StopProject: vi.fn(),
   RestartProject: vi.fn(),
@@ -120,6 +121,12 @@ beforeEach(() => {
   vi.mocked(ApplicationsService.List).mockResolvedValue([]);
   vi.mocked(ApplicationsService.Lifecycle).mockReset();
   vi.mocked(ApplicationsService.Lifecycle).mockResolvedValue("stopped");
+  vi.mocked(ApplicationsService.ProjectUsage).mockReset();
+  vi.mocked(ApplicationsService.ProjectUsage).mockResolvedValue({
+    cpuPercent: 0,
+    memoryBytes: 0,
+    runningApplications: 0,
+  });
   vi.mocked(ApplicationsService.StartProject).mockReset();
   vi.mocked(ApplicationsService.StartProject).mockResolvedValue({
     projectID: "p1", started: [], alreadyRunning: [], skipped: [], failed: [], stopped: [],
@@ -170,6 +177,11 @@ describe("ProjectWorkspace", () => {
       application(),
       application({ ID: "app-2", Name: "web", Framework: "Vite", Directory: "apps/web" }),
     ]);
+    vi.mocked(ApplicationsService.ProjectUsage).mockResolvedValue({
+      cpuPercent: 24,
+      memoryBytes: 48 * 1024 ** 3,
+      runningApplications: 1,
+    });
 
     renderAt("/projects/p1");
 
@@ -178,7 +190,12 @@ describe("ProjectWorkspace", () => {
     expect(await screen.findByText("api")).toBeInTheDocument();
     expect(screen.getByText("apps/web")).toBeInTheDocument();
     expect(screen.getByText("All systems healthy")).toBeInTheDocument();
+    // The CPU meter is the project's managed usage, not the machine's.
     expect(screen.getByText("24%")).toBeInTheDocument();
+    expect(screen.getByText("Managed CPU")).toBeInTheDocument();
+    expect(screen.getByText("1 managed application running")).toBeInTheDocument();
+    expect(screen.getByText("Machine memory")).toBeInTheDocument();
+    expect(screen.getByText("Machine disk")).toBeInTheDocument();
   });
 
   it("marks services, domains and tunnels as planned instead of inventing them", async () => {

@@ -68,6 +68,7 @@ type run struct {
 	ports        []int
 	health       string
 	healthDetail string
+	usage        Usage
 	stopped      bool
 	exited       bool
 }
@@ -84,12 +85,20 @@ type Supervisor struct {
 	// busy marks projects mid-orchestration so only one project action runs
 	// at a time.
 	busy map[string]string
+	// cpuBaseline holds each tree's last CPU sample for the usage delta, keyed
+	// by the tree's root pid.
+	cpuBaseline map[int]cpuTimes
 }
 
 // NewSupervisor returns a supervisor for applications stored in database. emit
 // receives EventOutput and EventState; it may be nil in tests.
 func NewSupervisor(database *sql.DB, emit func(string, any)) *Supervisor {
-	supervisor := &Supervisor{database: database, emit: emit, runs: map[string]*run{}}
+	supervisor := &Supervisor{
+		database:    database,
+		emit:        emit,
+		runs:        map[string]*run{},
+		cpuBaseline: map[int]cpuTimes{},
+	}
 	supervisor.reconcile()
 	return supervisor
 }
@@ -225,6 +234,7 @@ func (s *Supervisor) supervise(id string, live *run, command *exec.Cmd, stdout i
 	delete(s.runs, id)
 	s.mu.Unlock()
 	close(live.done)
+	s.dropBaseline(live.pid)
 
 	status := StatusStopped
 	message := ""
@@ -400,6 +410,7 @@ func (s *Supervisor) scanRuntime(id string, live *run, root int) {
 		s.recordPorts(id, live, portsOwnedBy(listeners, root))
 	}
 	s.recordHealth(id, live)
+	s.recordUsage(id, live, root)
 }
 
 // exited reports whether the process is already gone. A scan that started just

@@ -27,7 +27,7 @@ import type { Project } from "../../bindings/locafy.dev/desktop/internal/project
 import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/projects/service";
 import { LifecycleBadge } from "@/components/lifecycle-badge";
 import { PlannedTag } from "@/components/app-shell";
-import { lifecycleKey, lifecyclesKey, useProjectLifecycle } from "@/lib/lifecycle-query";
+import { lifecycleKey, lifecyclesKey, useProjectLifecycle, useProjectUsage } from "@/lib/lifecycle-query";
 import { notificationsKey } from "@/components/top-bar-status";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -340,6 +340,7 @@ export function ProjectOverview() {
     startProject.isPending || stopProject.isPending || restartProject.isPending;
   const lifecycleError = startProject.error ?? stopProject.error ?? restartProject.error;
   const health = useMachineStatus();
+  const usage = useProjectUsage(project.ID);
   const activity = useQuery({
     queryKey: ["projects", project.ID, "activity"],
     queryFn: async () => (await ProjectsService.Activity(project.ID, 6)) ?? [],
@@ -417,19 +418,24 @@ export function ProjectOverview() {
 
           <div className="grid w-full shrink-0 gap-3 sm:w-64">
             <Meter
-              label="CPU"
+              label="Managed CPU"
               icon={Cpu}
-              value={`${Math.round(machine?.CPUPercent ?? 0)}%`}
-              percent={machine?.CPUPercent ?? 0}
+              value={`${Math.round(usage.data?.cpuPercent ?? 0)}%`}
+              percent={usage.data?.cpuPercent ?? 0}
             />
+            <p className="-mt-1 text-[0.7rem] text-muted-foreground">
+              {usage.data?.runningApplications
+                ? `${usage.data.runningApplications} managed application${usage.data.runningApplications === 1 ? "" : "s"} running`
+                : "No managed application is running"}
+            </p>
             <Meter
-              label="Memory"
+              label="Machine memory"
               icon={MemoryStick}
               value={`${gigabytes(machine?.Memory.UsedBytes ?? 0)} / ${gigabytes(machine?.Memory.TotalBytes ?? 0)}`}
               percent={machine?.Memory.Percent ?? 0}
             />
             <Meter
-              label="Disk"
+              label="Machine disk"
               icon={HardDrive}
               value={`${gigabytes(machine?.Disk.UsedBytes ?? 0)} / ${gigabytes(machine?.Disk.TotalBytes ?? 0)}`}
               percent={diskPercent}
