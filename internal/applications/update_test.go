@@ -44,8 +44,11 @@ func TestUpdateKeepsEveryEditInsideTheProject(t *testing.T) {
 	app := addApplication(t, database, project.ID, "web")
 
 	// A directory outside the project stays refused, exactly as at creation.
-	if _, err := Update(database, app.ID, UpdateInput{Name: "X", Directory: `C:\elsewhere`}); !errors.Is(err, ErrDirectoryOutsideProject) {
-		t.Errorf("outside err = %v, want the outside refusal", err)
+	outside := t.TempDir()
+	for _, directory := range []string{"../elsewhere", outside} {
+		if _, err := Update(database, app.ID, UpdateInput{Name: "X", Directory: directory}); !errors.Is(err, ErrDirectoryOutsideProject) {
+			t.Errorf("outside err = %v, want the outside refusal for %q", err, directory)
+		}
 	}
 	// A directory that does not exist is refused too.
 	if _, err := Update(database, app.ID, UpdateInput{Name: "X", Directory: "nope"}); !errors.Is(err, ErrDirectoryMissing) {
