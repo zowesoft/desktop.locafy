@@ -164,7 +164,9 @@ func TestPortsOwnedByKeepsOnlyTheApplicationTree(t *testing.T) {
 	if !processOwnedBy(os.Getpid(), os.Getpid()) {
 		t.Fatal("a process is not its own tree")
 	}
-	if processOwnedBy(os.Getpid(), 1) {
+	// Init is an ancestor of every process on Unix, so the unrelated root is
+	// one no longer in service rather than pid 1.
+	if processOwnedBy(os.Getpid(), 999999) {
 		t.Fatal("an unrelated root claimed the process")
 	}
 }
