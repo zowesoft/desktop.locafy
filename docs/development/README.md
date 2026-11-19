@@ -67,6 +67,18 @@ Rules:
 - Build orchestration lives in `Taskfile.yml`; prefer adding tasks there over ad-hoc scripts.
 - Cross-platform builds (per ADR-0001) follow the official cross-platform guide; CI builds and tests on Windows, macOS, and Linux.
 
+## Cross-platform test portability
+
+CI runs the whole suite on Windows, macOS and Linux (the `verify` jobs in `.github/workflows/ci.yml`), so a green local run on one host proves nothing about the others. The Go path helpers follow the host rather than the platform a test simulates, and that has already cost a red run. The patterns to follow:
+
+- **Normalise separators yourself.** `filepath.Base`, `filepath.ToSlash` and `filepath.IsAbs` behave per the GOOS running the test: on Linux `filepath.ToSlash` leaves `\` untouched and `filepath.IsAbs("C:\\x")` is false. A test that simulates another platform's locations (through a seam such as `internal/tools.hostOS`) compares after `strings.ReplaceAll(path, "\\", "/")`, or takes a base name with `strings.LastIndexAny(base, "/\\")`.
+- **Assert absolute-ness for the platform under test.** A helper such as `absoluteFor(platform, path)` answers with that platform's rules — drive letter or UNC for Windows, `/` prefix for Unix — and the check also accepts a host-absolute path, because entries derived from the home directory follow the machine running the test.
+- **Branch filesystem-layout expectations on `runtime.GOOS`** exactly where the implementation does. `scaffold.VenvPython` returns `.venv\Scripts\python.exe` on Windows and `.venv/bin/python` elsewhere; a test asserting it must choose the same way.
+- **Never use pid 1 as an unrelated process-tree root.** Init is an ancestor of every process on Unix, so an ownership walk claims the test process by design. Use a pid out of service (999999); the walk terminates at `current <= 1` and answers false.
+- **Read the failing assertion's actual value.** CI prints the host's real output — a path with `/`, a platform's own layout — which is usually enough to see which assumption was Windows-only.
+
+Verifying off-host without CI: pure-Go packages run in WSL (or any second machine) with a user-local Go toolchain and no extra packages. Anything importing `github.com/wailsapp/wails/v3/pkg/application` needs CGO plus the GTK4 and WebKitGTK development packages from Prerequisites — CI installs them on its Linux job only; macOS gets the frameworks from the Xcode Command Line Tools.
+
 ## Inspecting the live window
 
 There is no view into the running webview by default. Set `LOCAFY_DEBUG_PORT` to

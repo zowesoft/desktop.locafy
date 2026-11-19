@@ -52,6 +52,7 @@ Do not implement features before the repository foundation feature `LOC-FOUND-00
 - Platform-specific behavior (process lifecycle and signals, PTY, runtime installation, service management, paths and permissions, local DNS resolution, certificate trust stores, packaging) is implemented and tested per platform as each feature is built — never deferred to a later phase.
 - CI builds and tests on all three platforms; a feature is not complete if it works on only one.
 - Avoid Windows-only or Unix-only assumptions outside clearly isolated, per-platform code paths.
+- Tests are held to the same rule: expectations must not depend on the host running them. Branch filesystem-layout assertions on `runtime.GOOS`, normalise path separators before comparing simulated paths, assert absolute-ness for the platform under test, and never use pid 1 as an unrelated process-tree root. The full patterns and how CI proves them are in `docs/development/README.md` (Cross-platform test portability).
 
 ## Decisions you must NOT guess (PRD section 23)
 
