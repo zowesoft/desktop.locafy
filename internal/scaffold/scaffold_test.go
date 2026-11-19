@@ -181,11 +181,15 @@ func TestDjangoRunsInAVirtualEnvironment(t *testing.T) {
 	if steps[0].Bin != `C:\Python312\python.exe` || strings.Join(steps[0].Args, " ") != "-m venv .venv" {
 		t.Errorf("first step = %+v", steps[0])
 	}
-	if !strings.Contains(filepath.ToSlash(steps[1].Bin), ".venv/Scripts/python.exe") ||
+	venvPython := filepath.Join(".venv", "Scripts", "python.exe")
+	if runtime.GOOS != "windows" {
+		venvPython = filepath.Join(".venv", "bin", "python")
+	}
+	if !strings.Contains(filepath.ToSlash(steps[1].Bin), filepath.ToSlash(venvPython)) ||
 		!strings.Contains(strings.Join(steps[1].Args, " "), "django~=5.2.0") {
 		t.Errorf("install step = %+v", steps[1])
 	}
-	if !strings.Contains(filepath.ToSlash(steps[2].Bin), ".venv/Scripts/python.exe") ||
+	if !strings.Contains(filepath.ToSlash(steps[2].Bin), filepath.ToSlash(venvPython)) ||
 		!strings.Contains(strings.Join(steps[2].Args, " "), "startproject config .") {
 		t.Errorf("startproject step = %+v", steps[2])
 	}
