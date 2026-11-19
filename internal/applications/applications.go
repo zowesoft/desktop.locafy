@@ -212,6 +212,10 @@ func Remove(database *sql.DB, id string) error {
 	if err != nil {
 		return err
 	}
+	switch app.Status {
+	case StatusStarting, StatusRunning, StatusStopping:
+		return fmt.Errorf("%w: %s is %s", ErrApplicationBusy, app.Name, app.Status)
+	}
 
 	err = db.WithTx(database, func(tx *sql.Tx) error {
 		if _, err := tx.Exec(`DELETE FROM application_dependencies

@@ -113,3 +113,18 @@ export interface ProjectUsage {
     "memoryBytes": number;
     "runningApplications": number;
 }
+
+/**
+ * UpdateInput carries the fields an operator may edit after the record exists.
+ * Source, scaffold facts and runtime assignment are not here: they are the
+ * record's history, or a separate control.
+ */
+export interface UpdateInput {
+    "Name": string;
+    "Directory": string;
+    "Language": string;
+    "Framework": string;
+    "Marker": string;
+    "StartCommand": string;
+    "StopCommand": string;
+}

@@ -137,3 +137,11 @@ export function StopAll(): $CancellablePromise<void> {
 export function StopProject(projectID: string): $CancellablePromise<$models.ProjectReport | null> {
     return $Call.ByID(2633146611, projectID);
 }
+
+/**
+ * Update rewrites the fields an operator edits by hand, refusing a change to
+ * an application that is starting, running or stopping.
+ */
+export function Update(id: string, input: $models.UpdateInput): $CancellablePromise<$models.Application> {
+    return $Call.ByID(2600913699, id, input);
+}

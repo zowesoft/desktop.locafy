@@ -107,6 +107,8 @@ export function ApplicationsSection() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [editingDependencies, setEditingDependencies] = useState<Application | null>(null);
   const [editingRuntime, setEditingRuntime] = useState<Application | null>(null);
+  const [editing, setEditing] = useState<Application | null>(null);
+  const [removing, setRemoving] = useState<Application | null>(null);
   // Output arrives as events and stays here while the screen is open; the
   // supervisor keeps only the live process's buffer.
   const [output, setOutput] = useState<Record<string, string[]>>({});
@@ -338,6 +340,24 @@ export function ApplicationsSection() {
                   <Button
                     variant="outline"
                     size="sm"
+                    aria-label={`Edit ${app.Name}`}
+                    onClick={() => setEditing(app)}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    aria-label={`Remove ${app.Name}`}
+                    disabled={app.Status === "running" || app.Status === "starting"}
+                    onClick={() => setRemoving(app)}
+                  >
+                    Remove
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     aria-label={`Choose the runtime of ${app.Name}`}
                     onClick={() => setEditingRuntime(app)}
                   >
@@ -418,6 +438,28 @@ export function ApplicationsSection() {
           onClose={() => setEditingRuntime(null)}
           onSaved={() => {
             setEditingRuntime(null);
+            refresh();
+          }}
+        />
+      )}
+
+      {editing && (
+        <EditDialog
+          app={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            refresh();
+          }}
+        />
+      )}
+
+      {removing && (
+        <RemoveDialog
+          app={removing}
+          onClose={() => setRemoving(null)}
+          onSaved={() => {
+            setRemoving(null);
             refresh();
           }}
         />
@@ -747,9 +789,15 @@ function RuntimeDialog({
   });
 
   const entries = catalog.data ?? [];
-  const copies = kind.data
-    ? (entries.find((entry) => entry.kind.id === kind.data)?.copies ?? [])
-    : [];
+  // A language that is not recorded cannot name a kind, so every kind's
+  // copies are offered, grouped, instead of nothing.
+  const grouped = kind.data
+    ? [{
+        label: app.Language,
+        copies: entries.find((entry) => entry.kind.id === kind.data)?.copies ?? [],
+      }]
+    : entries.map((entry) => ({ label: entry.kind.label, copies: entry.copies ?? [] }));
+  const totalCopies = grouped.reduce((count, group) => count + group.copies.length, 0);
 
   return (
     <Dialog open onOpenChange={(next) => !next && onClose()}>
@@ -762,7 +810,7 @@ function RuntimeDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="mt-4 space-y-2">
+        <div className="mt-4 max-h-[50vh] space-y-2 overflow-y-auto pr-1">
           {catalog.isPending ? (
             <p className="text-sm text-muted-foreground">Reading the machine…</p>
           ) : catalog.isError ? (
@@ -788,31 +836,38 @@ function RuntimeDialog({
                   </span>
                 </span>
               </label>
-              {copies.length === 0 ? (
+              {totalCopies === 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  No other {app.Language || "runtime"} copy is installed on this machine.
+                  No {app.Language || "runtime"} copy is installed on this machine.
                 </p>
               ) : (
-                copies.map((copy) => (
-                  <label key={copy.id} className="flex items-start gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name="runtime"
-                      className="mt-1 size-4 accent-primary"
-                      aria-label={copy.id}
-                      checked={app.RuntimeID === copy.id}
-                      disabled={save.isPending}
-                      onChange={() => save.mutate(copy.id)}
-                    />
-                    <span className="min-w-0">
-                      <span className="block font-mono text-xs">
-                        {copy.version || "unknown version"}
-                      </span>
-                      <span className="block truncate font-mono text-xs text-muted-foreground">
-                        {copy.path}
-                      </span>
-                    </span>
-                  </label>
+                grouped.map((group) => (
+                  <div key={group.label}>
+                    {!kind.data && (
+                      <p className="mb-1 mt-2 text-xs font-medium text-muted-foreground">{group.label}</p>
+                    )}
+                    {group.copies.map((copy) => (
+                      <label key={copy.id} className="flex items-start gap-2 text-sm">
+                        <input
+                          type="radio"
+                          name="runtime"
+                          className="mt-1 size-4 accent-primary"
+                          aria-label={copy.id}
+                          checked={app.RuntimeID === copy.id}
+                          disabled={save.isPending}
+                          onChange={() => save.mutate(copy.id)}
+                        />
+                        <span className="min-w-0">
+                          <span className="block font-mono text-xs">
+                            {copy.version || "unknown version"}
+                          </span>
+                          <span className="block truncate font-mono text-xs text-muted-foreground">
+                            {copy.path}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
                 ))
               )}
             </>
@@ -828,6 +883,195 @@ function RuntimeDialog({
         <DialogFooter className="mt-5">
           <Button type="button" variant="outline" onClick={onClose}>
             Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditDialog({
+  app,
+  onClose,
+  onSaved,
+}: {
+  app: Application;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(app.Name);
+  const [directory, setDirectory] = useState(app.Directory);
+  const [language, setLanguage] = useState(app.Language);
+  const [framework, setFramework] = useState(app.Framework);
+  const [marker, setMarker] = useState(app.Marker);
+  const [startCommand, setStartCommand] = useState(app.StartCommand);
+  const [stopCommand, setStopCommand] = useState(app.StopCommand);
+
+  const save = useMutation({
+    // The engine re-validates the folder inside the project and refuses a
+    // running application, so the record never outlives the process it
+    // describes.
+    mutationFn: () =>
+      ApplicationsService.Update(app.ID, {
+        Name: name,
+        Directory: directory,
+        Language: language,
+        Framework: framework,
+        Marker: marker,
+        StartCommand: startCommand,
+        StopCommand: stopCommand,
+      }),
+    onSuccess: onSaved,
+  });
+
+  const field = "h-8 w-full rounded-lg border border-border bg-background px-2 text-sm outline-none focus-visible:border-ring";
+
+  return (
+    <Dialog open onOpenChange={(next) => !next && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit {app.Name}</DialogTitle>
+          <DialogDescription>
+            The folder is re-checked inside the project, and the start command is what the next
+            start runs. A running application has to be stopped first.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="space-y-1">
+            <span className="text-xs font-medium text-muted-foreground">Name</span>
+            <input
+              aria-label="Application name"
+              className={field}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-medium text-muted-foreground">Folder in the project</span>
+            <input
+              aria-label="Application folder"
+              className={`${field} font-mono`}
+              placeholder=". or apps/web"
+              value={directory}
+              onChange={(event) => setDirectory(event.target.value)}
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-medium text-muted-foreground">Language</span>
+            <input
+              aria-label="Language"
+              className={field}
+              placeholder="TypeScript"
+              value={language}
+              onChange={(event) => setLanguage(event.target.value)}
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-medium text-muted-foreground">Framework</span>
+            <input
+              aria-label="Framework"
+              className={field}
+              placeholder="Next.js"
+              value={framework}
+              onChange={(event) => setFramework(event.target.value)}
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-medium text-muted-foreground">Marker file</span>
+            <input
+              aria-label="Marker file"
+              className={`${field} font-mono`}
+              placeholder="package.json"
+              value={marker}
+              onChange={(event) => setMarker(event.target.value)}
+            />
+          </label>
+          <label className="space-y-1 sm:col-span-2">
+            <span className="text-xs font-medium text-muted-foreground">Start command</span>
+            <input
+              aria-label="Start command"
+              className={`${field} font-mono`}
+              placeholder="npm run dev"
+              value={startCommand}
+              onChange={(event) => setStartCommand(event.target.value)}
+            />
+          </label>
+          <label className="space-y-1 sm:col-span-2">
+            <span className="text-xs font-medium text-muted-foreground">Stop command</span>
+            <input
+              aria-label="Stop command"
+              className={`${field} font-mono`}
+              placeholder="Optional"
+              value={stopCommand}
+              onChange={(event) => setStopCommand(event.target.value)}
+            />
+          </label>
+        </div>
+
+        {save.error && (
+          <p role="alert" className="mt-3 text-sm text-destructive">
+            Could not save the changes: {String(save.error)}
+          </p>
+        )}
+
+        <DialogFooter className="mt-5">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="button" disabled={save.isPending} onClick={() => save.mutate()}>
+            {save.isPending ? "Saving…" : "Save changes"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RemoveDialog({
+  app,
+  onClose,
+  onSaved,
+}: {
+  app: Application;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const remove = useMutation({
+    // Removal takes the record out of Locafy; the engine refuses a running
+    // application, and the project's files are never touched.
+    mutationFn: () => ApplicationsService.Remove(app.ID),
+    onSuccess: onSaved,
+  });
+
+  return (
+    <Dialog open onOpenChange={(next) => !next && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Remove {app.Name}</DialogTitle>
+          <DialogDescription>
+            The record and its dependency edges go away. The folder and its files stay exactly as
+            they are.
+          </DialogDescription>
+        </DialogHeader>
+
+        {remove.error && (
+          <p role="alert" className="text-sm text-destructive">
+            Could not remove the application: {String(remove.error)}
+          </p>
+        )}
+
+        <DialogFooter className="mt-5">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={remove.isPending}
+            onClick={() => remove.mutate()}
+          >
+            {remove.isPending ? "Removing…" : "Remove"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -11,5 +11,6 @@ export type {
     CreateInput,
     Detection,
     ProjectReport,
-    ProjectUsage
+    ProjectUsage,
+    UpdateInput
 } from "./models.js";

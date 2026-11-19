@@ -41,6 +41,7 @@ vi.mock("../../bindings/locafy.dev/desktop/internal/applications/service", () =>
   Restart: vi.fn(),
   Output: vi.fn(),
   SetRuntime: vi.fn(),
+  Update: vi.fn(),
 }));
 
 vi.mock("../../bindings/locafy.dev/desktop/internal/runtimes/service", () => ({
@@ -129,6 +130,10 @@ beforeEach(() => {
   vi.mocked(ApplicationsService.SetDependencies).mockResolvedValue(undefined);
   vi.mocked(ApplicationsService.SetRuntime).mockReset();
   vi.mocked(ApplicationsService.SetRuntime).mockResolvedValue(undefined);
+  vi.mocked(ApplicationsService.Update).mockReset();
+  vi.mocked(ApplicationsService.Update).mockResolvedValue(application());
+  vi.mocked(ApplicationsService.Remove).mockReset();
+  vi.mocked(ApplicationsService.Remove).mockResolvedValue(undefined);
   vi.mocked(ApplicationsService.Start).mockReset();
   vi.mocked(ApplicationsService.Stop).mockReset();
   vi.mocked(ApplicationsService.Restart).mockReset();
@@ -436,6 +441,50 @@ describe("ApplicationsSection", () => {
         "a1",
         "php@C:\laragon\bin\php\php.exe",
       );
+    });
+    await waitFor(() => {
+      expect(ApplicationsService.List).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("saves the edited fields", async () => {
+    const user = userEvent.setup();
+    vi.mocked(ApplicationsService.List).mockResolvedValue([
+      application({ ID: "a1", Name: "API" }),
+    ]);
+
+    renderAt("/projects/p1/applications");
+
+    await user.click(await screen.findByRole("button", { name: "Edit API" }));
+    const nameInput = screen.getByLabelText("Application name");
+    await user.clear(nameInput);
+    await user.type(nameInput, "Storefront");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(ApplicationsService.Update).toHaveBeenCalledWith("a1", expect.objectContaining({
+        Name: "Storefront",
+        Directory: "apps/api",
+      }));
+    });
+    await waitFor(() => {
+      expect(ApplicationsService.List).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("removes an application after confirmation", async () => {
+    const user = userEvent.setup();
+    vi.mocked(ApplicationsService.List).mockResolvedValue([
+      application({ ID: "a1", Name: "API" }),
+    ]);
+
+    renderAt("/projects/p1/applications");
+
+    await user.click(await screen.findByRole("button", { name: "Remove API" }));
+    await user.click(await screen.findByRole("button", { name: "Remove" }));
+
+    await waitFor(() => {
+      expect(ApplicationsService.Remove).toHaveBeenCalledWith("a1");
     });
     await waitFor(() => {
       expect(ApplicationsService.List).toHaveBeenCalledTimes(2);

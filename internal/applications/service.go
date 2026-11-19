@@ -48,6 +48,12 @@ func (s *Service) Create(projectID string, input CreateInput) (Application, erro
 	return Create(s.database, projectID, input)
 }
 
+// Update rewrites the fields an operator edits by hand, refusing a change to
+// an application that is starting, running or stopping.
+func (s *Service) Update(id string, input UpdateInput) (Application, error) {
+	return Update(s.database, id, input)
+}
+
 // Remove stops an application if it is running, then takes it out of Locafy
 // without touching its files.
 func (s *Service) Remove(id string) error {
