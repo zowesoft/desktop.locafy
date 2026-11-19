@@ -230,6 +230,11 @@ func probeOnce(path string, name string) string {
 	if name == "php" {
 		args = []string{"-v"}
 	}
+	// Go takes the version as a subcommand, not a flag; --version prints
+	// usage, which parses to nothing or to the wrong number.
+	if name == "go" {
+		args = []string{"version"}
+	}
 	command := process.CommandFor(ctx, path, args)
 	command.Env = append(os.Environ(), "NO_COLOR=1")
 	output, _ := command.CombinedOutput()
