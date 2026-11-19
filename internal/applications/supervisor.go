@@ -249,7 +249,6 @@ func (s *Supervisor) supervise(id string, live *run, command *exec.Cmd, stdout i
 	live.exited = true
 	delete(s.runs, id)
 	s.mu.Unlock()
-	close(live.done)
 	s.dropBaseline(live.pid)
 
 	status := StatusStopped
@@ -264,6 +263,11 @@ func (s *Supervisor) supervise(id string, live *run, command *exec.Cmd, stdout i
 	}
 	s.update(id, status, exitCode, message, false)
 	s.emitState(id, status, exitCode, message)
+
+	// Waiters observe the terminal state first: a caller released before the
+	// record is written would still read "stopping" and a project restart
+	// would skip the application it just stopped.
+	close(live.done)
 }
 
 // Stop kills the application's process tree and waits for the exit.

@@ -185,7 +185,16 @@ func TestStartRefusesASecondCopyAndStopKillsTheTree(t *testing.T) {
 	if err := supervisor.Stop(app.ID); err != nil {
 		t.Fatalf("stop: %v", err)
 	}
-	stopped := waitForStatus(t, database, app.ID, StatusStopped)
+	// The first read after Stop must already be terminal: a project restart
+	// reads the record straight away and would skip an application that still
+	// says it is stopping.
+	stopped, err := Get(database, app.ID)
+	if err != nil {
+		t.Fatalf("get after stop: %v", err)
+	}
+	if stopped.Status != StatusStopped {
+		t.Fatalf("status right after stop = %q, want %q", stopped.Status, StatusStopped)
+	}
 	if stopped.Error != "" {
 		t.Fatalf("error = %q, want a requested stop to leave no failure", stopped.Error)
 	}
