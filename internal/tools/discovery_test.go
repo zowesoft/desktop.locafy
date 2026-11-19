@@ -7,8 +7,11 @@ import (
 )
 
 func locationsInclude(locations []string, want string) bool {
+	// Separators are normalised on both sides because a platform's own
+	// locations are simulated on whichever host runs the test.
+	normalize := func(path string) string { return strings.ReplaceAll(path, `\`, "/") }
 	for _, location := range locations {
-		if strings.EqualFold(filepath.ToSlash(location), filepath.ToSlash(want)) {
+		if strings.EqualFold(normalize(location), normalize(want)) {
 			return true
 		}
 	}
@@ -94,6 +97,18 @@ func TestEachPlatformSearchesItsOwnInstallLocations(t *testing.T) {
 	}
 }
 
+// absoluteFor reports whether a path is absolute on the platform whose
+// locations are checked, which is not necessarily the host running the test.
+func absoluteFor(platform string, path string) bool {
+	if platform == "windows" {
+		if strings.HasPrefix(path, `\\`) {
+			return true
+		}
+		return len(path) >= 3 && path[1] == ':' && (path[2] == '\\' || path[2] == '/')
+	}
+	return strings.HasPrefix(path, "/")
+}
+
 func TestEveryLocationIsAbsoluteWithoutInstallVariables(t *testing.T) {
 	restore := hostOS
 	t.Cleanup(func() { hostOS = restore })
@@ -109,7 +124,10 @@ func TestEveryLocationIsAbsoluteWithoutInstallVariables(t *testing.T) {
 				if index := strings.IndexAny(prefix, "*?"); index >= 0 {
 					prefix = prefix[:index]
 				}
-				if !filepath.IsAbs(prefix) && !strings.HasPrefix(prefix, "/") {
+				// Home-derived entries follow the machine running the test, so a
+				// location may be absolute for the simulated platform or for the
+				// host, but it must be absolute for one of them.
+				if !absoluteFor(platform, prefix) && !filepath.IsAbs(prefix) {
 					t.Errorf("%s %s location %q is relative", platform, tool, location)
 				}
 			}

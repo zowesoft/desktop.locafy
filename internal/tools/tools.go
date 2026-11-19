@@ -172,7 +172,13 @@ func usableCopy(name string, path string) bool {
 	if name != "python" {
 		return true
 	}
-	return pythonBinary.MatchString(filepath.Base(path))
+	// The location tables name Windows executables even when the platform is
+	// simulated, so the base is taken after either separator.
+	base := path
+	if index := strings.LastIndexAny(base, `/\`); index >= 0 {
+		base = base[index+1:]
+	}
+	return pythonBinary.MatchString(base)
 }
 
 // toolVersion runs the tool's own version flag with a short timeout. A tool
