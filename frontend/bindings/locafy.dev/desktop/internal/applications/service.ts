@@ -96,6 +96,13 @@ export function SetDependencies(id: string, dependsOn: string[] | null): $Cancel
 }
 
 /**
+ * SetRuntime pins or clears the runtime copy an application starts with.
+ */
+export function SetRuntime(id: string, runtimeID: string): $CancellablePromise<void> {
+    return $Call.ByID(3508268674, id, runtimeID);
+}
+
+/**
  * Start runs an application's stored command in its stored folder.
  */
 export function Start(id: string): $CancellablePromise<$models.Application> {

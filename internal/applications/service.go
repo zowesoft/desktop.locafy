@@ -62,6 +62,11 @@ func (s *Service) SetDependencies(id string, dependsOn []string) error {
 	return SetDependencies(s.database, id, dependsOn)
 }
 
+// SetRuntime pins or clears the runtime copy an application starts with.
+func (s *Service) SetRuntime(id string, runtimeID string) error {
+	return SetRuntime(s.database, id, runtimeID)
+}
+
 // Start runs an application's stored command in its stored folder.
 func (s *Service) Start(id string) (Application, error) {
 	return s.supervisor.Start(id)

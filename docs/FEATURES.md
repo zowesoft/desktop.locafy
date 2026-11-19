@@ -21,7 +21,7 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 | DESK-SCAF-001 | Framework recipe catalogue and tool probe | desktop.locafy | 3 | IN_PROGRESS | DESK-APP-001 |
 | DESK-SCAF-002 | Scaffold runner and job history | desktop.locafy | 3 | IN_PROGRESS | DESK-SCAF-001 |
 | DESK-SCAF-003 | New application from a framework | desktop.locafy | 3 | IN_PROGRESS | DESK-APP-001, DESK-SCAF-002 |
-| DESK-RUN-001 | Runtime detection and assignment | desktop.locafy | 4 | NOT_STARTED | DESK-APP-002 |
+| DESK-RUN-001 | Runtime detection and assignment | desktop.locafy | 4 | IN_REVIEW | DESK-APP-002 |
 | DESK-DL-001 | Downloads view for install jobs | desktop.locafy | 4 | NOT_STARTED | DESK-RUN-001 |
 | DESK-SVC-001 | Service catalogue and lifecycle | desktop.locafy | 5 | NOT_STARTED | DESK-APP-002 |
 | DESK-NET-001 | Local domains and reverse proxy | desktop.locafy | 6 | NOT_STARTED | DESK-APP-002, DESK-SVC-001 |
@@ -214,12 +214,12 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 - **Description:** Detect installed runtimes (PHP, Node.js, Python, Go, Java, Ruby, .NET — final list decided in implementation planning); display versions/locations; per-application selection; install additional versions where feasible; compatibility validation.
 - **Dependencies:** DESK-APP-002
 - **Acceptance criteria:** Applications use explicitly selected runtime versions; missing versions produce clear errors; existing system runtimes are never silently overwritten; Locafy-managed installs are distinguishable from system installs (PRD sections 9.2, 20, Phase 4).
-- **Status:** NOT_STARTED
+- **Status:** IN_REVIEW
 - **Assigned agent:** —
-- **Files/modules:** —
-- **Tests:** Runtime detection tests per platform; assignment/validation tests
-- **Blockers:** Initial runtime list and per-OS installation strategy undecided (PRD section 23)
-- **Evidence:** —
+- **Files/modules:** `internal/runtimes` (registry, catalog, resolve), `internal/tools` (shared discovery: candidates, version probing, per-platform install locations; moved out of `internal/scaffold`), `internal/applications/runtime.go` + `runtime_test.go` (assignment setter), `internal/applications/supervisor.go` (PATH-ahead resolution + gone-runtime refusal), `internal/db/migrations/0010_application_runtime.sql`, `internal/scaffold/fixes.go`, `frontend/src/lib/runtimes-query.ts`, `frontend/src/screens/runtimes.tsx`, runtime picker in `frontend/src/screens/applications.tsx`
+- **Tests:** `internal/tools/discovery_test.go`, `internal/runtimes/registry_test.go`, `internal/applications/runtime_test.go` (persist, refuse unknown kind, refuse gone path), `runtime_start_test.go` (resolution order proven by which stub answers; gone runtime fails the start with an explanation), `frontend/src/screens/runtimes.test.tsx`, runtime-dialog test in `applications.test.tsx` (156 frontend tests, all Go packages green)
+- **Blockers:** Live run on this machine pending review (the assigned copy demonstrably beats the machine PATH in tests; a live UI pass still owes an in-app check); managed installs and the install location card are deliberately deferred to DESK-DL-001; per-application assignment is stored but compatibility validation (minimum versions) stays out per ADR-0018
+- **Evidence:** ADR-0018; unit tests prove resolution order (MACHINE-DEFAULT without assignment, ASSIGNED-RUNTIME with) and the gone-runtime refusal (`not installed any more`)
 
 ### DESK-DL-001 — Downloads view for install jobs
 

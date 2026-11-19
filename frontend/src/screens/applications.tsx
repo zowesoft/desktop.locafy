@@ -4,6 +4,7 @@ import { useOutletContext } from "react-router-dom";
 import { Events } from "@wailsio/runtime";
 
 import * as ApplicationsService from "../../bindings/locafy.dev/desktop/internal/applications/service";
+import * as RuntimesService from "../../bindings/locafy.dev/desktop/internal/runtimes/service";
 import type {
   Application,
   CreateInput,
@@ -15,6 +16,7 @@ import { ScaffoldHistoryDialog } from "@/components/scaffold-history";
 import { notificationsKey } from "@/components/top-bar-status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useRuntimeCatalog } from "@/lib/runtimes-query";
 import {
   Dialog,
   DialogContent,
@@ -104,6 +106,7 @@ export function ApplicationsSection() {
   const [scaffolding, setScaffolding] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [editingDependencies, setEditingDependencies] = useState<Application | null>(null);
+  const [editingRuntime, setEditingRuntime] = useState<Application | null>(null);
   // Output arrives as events and stays here while the screen is open; the
   // supervisor keeps only the live process's buffer.
   const [output, setOutput] = useState<Record<string, string[]>>({});
@@ -283,6 +286,14 @@ export function ApplicationsSection() {
                       <span className="text-muted-foreground">Nothing</span>
                     )}
                   </dd>
+                  <dt className="text-muted-foreground">Runtime</dt>
+                  <dd>
+                    {app.RuntimeID ? (
+                      <span className="break-all font-mono">{app.RuntimeID.split("@")[1]}</span>
+                    ) : (
+                      <span className="text-muted-foreground">Machine default</span>
+                    )}
+                  </dd>
                 </dl>
 
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -323,6 +334,14 @@ export function ApplicationsSection() {
                     onClick={() => setEditingDependencies(app)}
                   >
                     Dependencies
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label={`Choose the runtime of ${app.Name}`}
+                    onClick={() => setEditingRuntime(app)}
+                  >
+                    Runtime
                   </Button>
                 </div>
 
@@ -388,6 +407,17 @@ export function ApplicationsSection() {
           onClose={() => setEditingDependencies(null)}
           onSaved={() => {
             setEditingDependencies(null);
+            refresh();
+          }}
+        />
+      )}
+
+      {editingRuntime && (
+        <RuntimeDialog
+          app={editingRuntime}
+          onClose={() => setEditingRuntime(null)}
+          onSaved={() => {
+            setEditingRuntime(null);
             refresh();
           }}
         />
@@ -683,6 +713,121 @@ function DependenciesDialog({
           </Button>
           <Button type="button" disabled={save.isPending} onClick={() => save.mutate()}>
             {save.isPending ? "Saving…" : "Save dependencies"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RuntimeDialog({
+  app,
+  onClose,
+  onSaved,
+}: {
+  app: Application;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const catalog = useRuntimeCatalog();
+
+  // The application's language names a runtime kind; the mapping lives in the
+  // engine so the picker and the start agree on it.
+  const kind = useQuery({
+    queryKey: ["runtimes", "kind", app.Language],
+    queryFn: () => RuntimesService.KindFor(app.Language),
+    enabled: app.Language !== "",
+  });
+
+  const save = useMutation({
+    // The service refuses an id whose file is gone, so a stale list cannot
+    // store an assignment the next start would fail on.
+    mutationFn: (runtimeID: string) => ApplicationsService.SetRuntime(app.ID, runtimeID),
+    onSuccess: onSaved,
+  });
+
+  const entries = catalog.data ?? [];
+  const copies = kind.data
+    ? (entries.find((entry) => entry.kind.id === kind.data)?.copies ?? [])
+    : [];
+
+  return (
+    <Dialog open onOpenChange={(next) => !next && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Which {app.Language || "runtime"} runs {app.Name}</DialogTitle>
+          <DialogDescription>
+            The chosen copy's folder is placed ahead of the machine's PATH when {app.Name} starts.
+            Leave it on the machine default to keep the PATH order.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="mt-4 space-y-2">
+          {catalog.isPending ? (
+            <p className="text-sm text-muted-foreground">Reading the machine…</p>
+          ) : catalog.isError ? (
+            <p role="alert" className="text-sm text-destructive">
+              Could not read the runtimes: {String(catalog.error)}
+            </p>
+          ) : (
+            <>
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="runtime"
+                  className="mt-1 size-4 accent-primary"
+                  aria-label="Machine default"
+                  checked={app.RuntimeID === ""}
+                  disabled={save.isPending}
+                  onChange={() => save.mutate("")}
+                />
+                <span>
+                  <span className="block">Machine default</span>
+                  <span className="block text-xs text-muted-foreground">
+                    Whichever copy PATH finds first
+                  </span>
+                </span>
+              </label>
+              {copies.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No other {app.Language || "runtime"} copy is installed on this machine.
+                </p>
+              ) : (
+                copies.map((copy) => (
+                  <label key={copy.id} className="flex items-start gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="runtime"
+                      className="mt-1 size-4 accent-primary"
+                      aria-label={copy.id}
+                      checked={app.RuntimeID === copy.id}
+                      disabled={save.isPending}
+                      onChange={() => save.mutate(copy.id)}
+                    />
+                    <span className="min-w-0">
+                      <span className="block font-mono text-xs">
+                        {copy.version || "unknown version"}
+                      </span>
+                      <span className="block truncate font-mono text-xs text-muted-foreground">
+                        {copy.path}
+                      </span>
+                    </span>
+                  </label>
+                ))
+              )}
+            </>
+          )}
+
+          {save.error && (
+            <p role="alert" className="text-sm text-destructive">
+              Could not save the runtime: {String(save.error)}
+            </p>
+          )}
+        </div>
+
+        <DialogFooter className="mt-5">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Close
           </Button>
         </DialogFooter>
       </DialogContent>

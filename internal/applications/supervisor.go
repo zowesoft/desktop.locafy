@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -17,6 +18,7 @@ import (
 
 	"locafy.dev/desktop/internal/process"
 	"locafy.dev/desktop/internal/projects"
+	"locafy.dev/desktop/internal/runtimes"
 )
 
 // Process states the applications table already allows besides "stopped".
@@ -143,6 +145,19 @@ func (s *Supervisor) Start(id string) (Application, error) {
 		return app, s.fail(app.ID, ErrDirectoryNotDir)
 	}
 
+	// An assigned runtime must still be on the machine: the start resolves
+	// its directory ahead of the machine PATH and refuses when it is gone.
+	env := os.Environ()
+	runtimeDir := ""
+	if strings.TrimSpace(app.RuntimeID) != "" {
+		copy, err := runtimes.Resolve(app.RuntimeID)
+		if err != nil {
+			return app, s.fail(app.ID, fmt.Errorf("the assigned runtime is not available: %w", err))
+		}
+		runtimeDir = filepath.Dir(copy.Path)
+		env = prependPath(env, runtimeDir)
+	}
+
 	// The last port this application used is the only port Locafy can talk
 	// about before a new process binds one.
 	if conflict := s.portConflict(app); conflict != "" {
@@ -153,15 +168,16 @@ func (s *Supervisor) Start(id string) (Application, error) {
 	if err != nil {
 		return app, s.fail(app.ID, fmt.Errorf("%w: %s", ErrInvalidStartCommand, app.StartCommand))
 	}
-	bin, err := resolveExecutable(argv[0], directory)
+	bin, err := resolveExecutableIn(argv[0], directory, runtimeDir)
 	if err != nil {
 		return app, s.fail(app.ID, err)
 	}
 
 	command := process.CommandFor(context.Background(), bin, argv[1:])
 	command.Dir = directory
-	// A development server should see the same environment as a terminal.
-	command.Env = os.Environ()
+	// A development server should see the same environment as a terminal,
+	// with an assigned runtime's directory ahead of the machine PATH.
+	command.Env = env
 	command.Stdin = nil
 
 	stdout, err := command.StdoutPipe()
@@ -642,4 +658,65 @@ func resolveExecutable(name string, directory string) (string, error) {
 		return "", fmt.Errorf("%w on PATH: %s", ErrExecutableNotFound, name)
 	}
 	return path, nil
+}
+
+// resolveExecutableIn resolves a bare program name in the assigned runtime's
+// directory before the machine PATH, so `php artisan serve` runs the php the
+// application pinned. A name that names a path is untouched.
+func resolveExecutableIn(name string, directory string, runtimeDir string) (string, error) {
+	if runtimeDir != "" && !strings.ContainsAny(name, `/\`) {
+		if path := findInDir(runtimeDir, name); path != "" {
+			return path, nil
+		}
+	}
+	return resolveExecutable(name, directory)
+}
+
+// findInDir names the executable a directory holds for a bare program name,
+// honouring Windows PATHEXT the way LookPath does.
+func findInDir(dir string, name string) string {
+	if runtime.GOOS == "windows" {
+		extensions := pathExtensions()
+		if filepath.Ext(name) != "" {
+			extensions = []string{""}
+		}
+		for _, extension := range extensions {
+			candidate := filepath.Join(dir, name+extension)
+			if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+				return candidate
+			}
+		}
+		return ""
+	}
+	candidate := filepath.Join(dir, name)
+	if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+		return candidate
+	}
+	return ""
+}
+
+// pathExtensions lists the executable extensions a Windows PATH search
+// honours, from PATHEXT or the system default.
+func pathExtensions() []string {
+	pathExt := os.Getenv("PATHEXT")
+	if strings.TrimSpace(pathExt) == "" {
+		return []string{".com", ".exe", ".bat", ".cmd"}
+	}
+	return strings.Split(strings.ToLower(pathExt), ";")
+}
+
+// prependPath puts a directory ahead of the PATH in env, so an assigned
+// runtime resolves before the machine default for children too.
+func prependPath(env []string, dir string) []string {
+	for index, entry := range env {
+		if len(entry) > 5 && strings.EqualFold(entry[:5], "PATH=") {
+			env[index] = "PATH=" + dir + string(os.PathListSeparator) + entry[5:]
+			return env
+		}
+		if len(entry) == 4 && strings.EqualFold(entry, "PATH") {
+			env[index] = "PATH=" + dir
+			return env
+		}
+	}
+	return append(env, "PATH="+dir)
 }

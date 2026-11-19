@@ -37,6 +37,12 @@ export interface Application {
     "Health": string;
     "HealthDetail": string;
     "HealthCheckedAt": string;
+
+    /**
+     * RuntimeID pins the runtime copy the start resolves first, as kind@path
+     * from the registry. Empty keeps the machine's PATH order.
+     */
+    "RuntimeID": string;
     "Source": string;
 
     /**

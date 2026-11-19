@@ -4,7 +4,13 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"locafy.dev/desktop/internal/tools"
 )
+
+// hostOS overrides the platform fixes are suggested for, so tests can cover
+// the install commands of every distribution; empty asks the tools package.
+var hostOS string
 
 // ToolFix tells the operator how to satisfy a requirement that is missing or
 // too old, so a blocked scaffold has an obvious next step.
@@ -87,7 +93,11 @@ func fixFor(tool string, label string, minVersion string, installed string) *Too
 	// Version-specific package identifiers follow the minimum the recipe
 	// states, so the suggested install satisfies the requirement.
 	version := requirementSeries(minVersion)
-	switch hostOS {
+	platform := hostOS
+	if platform == "" {
+		platform = tools.HostOS()
+	}
+	switch platform {
 	case "windows":
 		switch tool {
 		case "python":

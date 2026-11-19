@@ -1,26 +1,16 @@
 package scaffold
 
 import (
-	"context"
-	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
-	"sync"
-	"time"
 
-	"locafy.dev/desktop/internal/process"
+	"locafy.dev/desktop/internal/tools"
 )
 
 // ToolCandidate is one installed copy of a tool, so an operator with several
 // PHP or Node versions can pick the one the scaffold should use.
-type ToolCandidate struct {
-	Path    string
-	Version string
-	Source  string
-}
+type ToolCandidate = tools.Candidate
 
 // ToolStatus reports one tool a recipe needs, with every installed version
 // found and the one that would be used.
@@ -47,16 +37,6 @@ type Preflight struct {
 	Installer bool
 	Notes     []string
 }
-
-var versionPattern = regexp.MustCompile(`(\d+)\.(\d+)(?:\.(\d+))?`)
-
-// Versions are cached for the life of the process: probing a dozen candidate
-// executables must not repeat on every preflight, and a tool does not change
-// while Locafy is running.
-var (
-	versionCache   = map[string]string{}
-	versionCacheMu sync.RWMutex
-)
 
 // Probe finds the tools a recipe references. options are the resolved recipe
 // choices, which decide a conditional requirement; tools maps a tool to the
@@ -227,168 +207,18 @@ func candidateRank(candidate *ToolCandidate) int {
 }
 
 // findToolFor is the discovery seam: tests replace it with a fixed set of
-// candidates instead of probing the machine.
-var findToolFor = findTool
+// candidates instead of probing the machine. Discovery itself lives in the
+// tools package, which several consumers share.
+var findToolFor = tools.Find
+
+// FindCandidates returns every installed copy of a tool the registry names,
+// newest first, with the version each copy's own flag reports and where it was
+// found. It is the discovery entry point for consumers outside the scaffold
+// runner, such as the runtime registry.
+func FindCandidates(name string) []ToolCandidate {
+	return findToolFor(name)
+}
 
 // pyLauncherPythons asks the Windows Python launcher which interpreters are
 // registered. It lists Store installs and installers that never touched PATH,
 // which a directory glob cannot see.
-func pyLauncherPythons() []string {
-	if hostOS != "windows" {
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	command := process.CommandFor(ctx, "py", []string{"-0p"})
-	command.Env = append(os.Environ(), "NO_COLOR=1")
-	output, err := command.CombinedOutput()
-	if err != nil {
-		return nil
-	}
-	return parsePyLauncher(string(output))
-}
-
-// parsePyLauncher reads the interpreter paths from `py -0p`, whose lines end
-// with the executable they name.
-func parsePyLauncher(output string) []string {
-	var paths []string
-	for _, line := range strings.Split(output, "\n") {
-		line = strings.TrimRight(line, "\r")
-		index := strings.LastIndex(line, ":\\")
-		if index < 1 {
-			continue
-		}
-		// Paths may contain spaces (Program Files), so the executable suffix is
-		// what separates an entry from the header line.
-		path := strings.TrimSpace(line[index-1:])
-		if !strings.HasSuffix(strings.ToLower(path), ".exe") {
-			continue
-		}
-		paths = append(paths, path)
-	}
-	return paths
-}
-
-// searchNames are the executable names to ask PATH about. Unix names its
-// interpreter python3, so a recipe that asks for python must still find a
-// machine whose only copy is python3.
-func searchNames(name string) []string {
-	if name == "python" && hostOS != "windows" {
-		return []string{"python", "python3"}
-	}
-	return []string{name}
-}
-
-// pythonBinary is the executable a Python location must name. A version glob
-// also matches companions such as python3.12-config, which are not interpreters.
-var pythonBinary = regexp.MustCompile(`(?i)^python(\d+(\.\d+)*)?(\.exe)?$`)
-
-func usableCopy(name string, path string) bool {
-	if name != "python" {
-		return true
-	}
-	return pythonBinary.MatchString(filepath.Base(path))
-}
-
-func findTool(name string) []ToolCandidate {
-	var candidates []ToolCandidate
-	seen := map[string]bool{}
-	add := func(path string, source string) {
-		path = strings.TrimSpace(path)
-		if path == "" || !usableCopy(name, path) {
-			return
-		}
-		info, err := os.Stat(path)
-		if err != nil || info.IsDir() {
-			return
-		}
-		// Homebrew and the system link several names at one binary, so a copy
-		// reached twice must not appear twice in the picker.
-		key := filepath.Clean(path)
-		if resolved, err := filepath.EvalSymlinks(path); err == nil {
-			key = filepath.Clean(resolved)
-		}
-		if seen[strings.ToLower(key)] {
-			return
-		}
-		seen[strings.ToLower(key)] = true
-		candidates = append(candidates, ToolCandidate{Path: path, Source: source})
-	}
-
-	for _, search := range searchNames(name) {
-		if path, err := exec.LookPath(search); err == nil {
-			add(path, "PATH")
-		}
-	}
-
-	// "python" on PATH is one copy among many; the launcher knows the rest.
-	if name == "python" {
-		for _, path := range pyLauncherPythons() {
-			add(path, "installed")
-		}
-	}
-
-	for _, path := range knownLocations(name) {
-		matches, err := filepath.Glob(path)
-		if err != nil {
-			continue
-		}
-		for _, match := range matches {
-			add(match, "installed")
-		}
-	}
-
-	// Ask every candidate at once: on Windows each first launch can wait on an
-	// antivirus scan, and the probe should not serialise a dozen of those.
-	var wait sync.WaitGroup
-	for index := range candidates {
-		wait.Add(1)
-		go func(candidate *ToolCandidate) {
-			defer wait.Done()
-			candidate.Version = toolVersion(candidate.Path, name)
-		}(&candidates[index])
-	}
-	wait.Wait()
-
-	sort.SliceStable(candidates, func(i, j int) bool {
-		return compareVersions(candidates[i].Version, candidates[j].Version) > 0
-	})
-	return candidates
-}
-
-// toolVersion runs the tool's own version flag with a short timeout. A tool
-// that answers with something unparseable is kept, with an empty version.
-func toolVersion(path string, name string) string {
-	versionCacheMu.RLock()
-	cached, ok := versionCache[path]
-	versionCacheMu.RUnlock()
-	if ok {
-		return cached
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-
-	args := []string{"--version"}
-	if name == "php" {
-		args = []string{"-v"}
-	}
-	command := process.CommandFor(ctx, path, args)
-	command.Env = append(os.Environ(), "NO_COLOR=1")
-	output, _ := command.CombinedOutput()
-	version := parseVersion(string(output))
-
-	// A tool that answered with something unparseable is still a tool; cache
-	// the empty answer so a slow executable is not launched again.
-	versionCacheMu.Lock()
-	versionCache[path] = version
-	versionCacheMu.Unlock()
-	return version
-}
-
-func parseVersion(output string) string {
-	if match := versionPattern.FindString(strings.ReplaceAll(output, "\x1b", "")); match != "" {
-		return match
-	}
-	return ""
-}

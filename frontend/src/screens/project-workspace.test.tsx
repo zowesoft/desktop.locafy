@@ -65,6 +65,7 @@ const application = (overrides: Partial<Application> = {}): Application => ({
   Health: "",
   HealthDetail: "",
   HealthCheckedAt: "",
+  RuntimeID: "",
   Source: "detected",
   ScaffoldRecipe: "laravel",
   ScaffoldOptions: "{}",

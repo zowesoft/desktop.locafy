@@ -16,6 +16,7 @@ import (
 	"locafy.dev/desktop/internal/db"
 	"locafy.dev/desktop/internal/process"
 	"locafy.dev/desktop/internal/projects"
+	"locafy.dev/desktop/internal/tools"
 )
 
 // Service exposes the recipe catalogue and scaffold runs over the binding
@@ -302,7 +303,7 @@ func (s *Service) Discard(jobID string) error {
 // elevates.
 func (s *Service) InstallLaravelInstaller() (string, error) {
 	composer := ""
-	if candidates := findTool("composer"); len(candidates) > 0 {
+	if candidates := tools.Find("composer"); len(candidates) > 0 {
 		composer = candidates[0].Path
 	}
 	if composer == "" {

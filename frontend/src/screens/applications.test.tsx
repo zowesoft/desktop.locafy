@@ -6,6 +6,7 @@ import { act } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as ApplicationsService from "../../bindings/locafy.dev/desktop/internal/applications/service";
+import * as RuntimesService from "../../bindings/locafy.dev/desktop/internal/runtimes/service";
 import type {
   Application,
   Detection,
@@ -39,6 +40,12 @@ vi.mock("../../bindings/locafy.dev/desktop/internal/applications/service", () =>
   Stop: vi.fn(),
   Restart: vi.fn(),
   Output: vi.fn(),
+  SetRuntime: vi.fn(),
+}));
+
+vi.mock("../../bindings/locafy.dev/desktop/internal/runtimes/service", () => ({
+  Catalog: vi.fn(),
+  KindFor: vi.fn(),
 }));
 
 const project: Project = {
@@ -77,6 +84,7 @@ const application = (overrides: Partial<Application> = {}): Application => ({
   ScaffoldOptions: "",
   CreatedAt: "2026-11-14T09:00:00Z",
   UpdatedAt: "2026-11-14T09:00:00Z",
+  RuntimeID: "",
   DependsOn: [],
   ...overrides,
 });
@@ -119,6 +127,8 @@ beforeEach(() => {
   vi.mocked(ApplicationsService.Create).mockReset();
   vi.mocked(ApplicationsService.SetDependencies).mockReset();
   vi.mocked(ApplicationsService.SetDependencies).mockResolvedValue(undefined);
+  vi.mocked(ApplicationsService.SetRuntime).mockReset();
+  vi.mocked(ApplicationsService.SetRuntime).mockResolvedValue(undefined);
   vi.mocked(ApplicationsService.Start).mockReset();
   vi.mocked(ApplicationsService.Stop).mockReset();
   vi.mocked(ApplicationsService.Restart).mockReset();
@@ -393,5 +403,42 @@ describe("ApplicationsSection", () => {
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "Save dependencies" })).not.toBeInTheDocument(),
     );
+  });
+
+  it("saves the chosen runtime copy", async () => {
+    const user = userEvent.setup();
+    vi.mocked(RuntimesService.Catalog).mockResolvedValue([
+      {
+        kind: { id: "php", label: "PHP", bin: "php" },
+        copies: [
+          {
+            id: "php@C:\laragon\bin\php\php.exe",
+            kind: "php",
+            version: "8.3.7",
+            path: "C:\laragon\bin\php\php.exe",
+            source: "installed",
+          },
+        ],
+      },
+    ]);
+    vi.mocked(RuntimesService.KindFor).mockResolvedValue("php");
+    vi.mocked(ApplicationsService.List).mockResolvedValue([
+      application({ ID: "a1", Name: "API", Language: "PHP" }),
+    ]);
+
+    renderAt("/projects/p1/applications");
+
+    await user.click(await screen.findByRole("button", { name: "Choose the runtime of API" }));
+    await user.click(await screen.findByLabelText("php@C:\laragon\bin\php\php.exe"));
+
+    await waitFor(() => {
+      expect(ApplicationsService.SetRuntime).toHaveBeenCalledWith(
+        "a1",
+        "php@C:\laragon\bin\php\php.exe",
+      );
+    });
+    await waitFor(() => {
+      expect(ApplicationsService.List).toHaveBeenCalledTimes(2);
+    });
   });
 });
