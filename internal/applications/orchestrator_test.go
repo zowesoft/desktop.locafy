@@ -112,6 +112,10 @@ func TestProjectStartFollowsTheDependencyOrder(t *testing.T) {
 func TestProjectStartSkipsDependentsOfAFailedApplication(t *testing.T) {
 	database := openDatabase(t)
 	fastReady(t)
+	// The crash must still be classified from the record when the runner is
+	// loaded, so this test observes a start as long as production does.
+	minSettle = 2 * time.Second
+	settleWait = 3 * time.Second
 	project := newProject(t, database)
 
 	broken := quoteCommand(script(t, t.TempDir(), "broken", 3, false))
