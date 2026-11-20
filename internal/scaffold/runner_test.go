@@ -29,6 +29,32 @@ func stub(t *testing.T, dir string, marker string) string {
 	return path
 }
 
+// cancelStub runs a child that keeps the step's output pipe open, so a cancel
+// that stops only the top process would leave the job waiting forever. Both
+// processes give up after ten minutes so a failed test leaks nothing for long.
+func cancelStub(t *testing.T, dir string) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		path := filepath.Join(dir, "cancel.cmd")
+		content := "@echo off\r\n" +
+			"start /b \"\" powershell -NoProfile -Command \"for($i=0;$i -lt 600;$i++){ 'child-tick'; Start-Sleep -Seconds 1 }\"\r\n" +
+			"ping -n 610 127.0.0.1 >nul\r\n"
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	path := filepath.Join(dir, "cancel.sh")
+	content := "#!/bin/sh\n" +
+		"i=0\n" +
+		"while [ $i -lt 600 ]; do echo child-tick; sleep 1; i=$((i+1)); done &\n" +
+		"wait\n"
+	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func TestRunnerStreamsOutputAndSucceeds(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "app")
@@ -113,6 +139,61 @@ func TestRunnerReportsMissingFilesAndFailure(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 	waitForStatus(t, manager, broken.ID, JobFailed)
+}
+
+func TestCancelStopsTheStepAndItsChildren(t *testing.T) {
+	dir := t.TempDir()
+	bin := cancelStub(t, dir)
+
+	manager := NewManager(nil, "", nil)
+	job, err := manager.Start(RunSpec{
+		RecipeID: "stub",
+		Target:   filepath.Join(dir, "app"),
+		Steps:    []Step{{Bin: bin, Cwd: "parent", Display: "stub"}},
+		Verify:   []string{"marker.txt"},
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	// Cancel only once the spawned child is writing, so the cancel lands on a
+	// live tree rather than before the child exists.
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		current, lines, err := manager.Get(job.ID)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if strings.Contains(strings.Join(lines, "\n"), "child-tick") {
+			break
+		}
+		if current.Status == JobFailed {
+			t.Fatalf("job failed before the child started: %s", current.Error)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the stub's child never wrote output; state %s", current.Status)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	if err := manager.Cancel(job.ID); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	waitForStatus(t, manager, job.ID, JobCancelled)
+
+	// The pipes closed along with the child, so no output can arrive afterwards.
+	_, before, err := manager.Get(job.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	time.Sleep(1500 * time.Millisecond)
+	_, after, err := manager.Get(job.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if len(after) != len(before) {
+		t.Errorf("output kept arriving after the cancel: %v", after[len(before):])
+	}
 }
 
 func TestDiscardOnlyRemovesAFoldersOwnScaffold(t *testing.T) {

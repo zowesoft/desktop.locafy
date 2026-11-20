@@ -181,6 +181,18 @@ func (m *Manager) runStep(ctx context.Context, id string, target string, step St
 	)
 	command.Stdin = nil
 
+	// Cancelling must stop the whole tree: an installer's helpers inherit the
+	// output pipes, and the runner waits for those pipes to close, so killing
+	// only the top process would leave the job waiting for output that never
+	// ends. This replaces the default cancel, which kills one process.
+	command.Cancel = func() error {
+		if command.Process == nil {
+			return nil
+		}
+		process.KillTree(command.Process.Pid)
+		return nil
+	}
+
 	m.line(id, "$ "+step.Display, logFile)
 
 	stdout, err := command.StdoutPipe()
