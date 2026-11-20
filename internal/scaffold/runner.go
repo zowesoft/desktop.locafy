@@ -349,11 +349,14 @@ func (m *Manager) persistLocked(job Job) {
 	if m.db == nil {
 		return
 	}
+	// The project link is written once — at insert for an application scaffold,
+	// or by the project registration after a project-mode run succeeds — so a
+	// later status write carrying an empty id must not erase it.
 	_, err := m.db.Exec(`INSERT INTO scaffold_jobs
 			(id, project_id, recipe_id, directory, target_path, status, error, log_path, commands)
 		VALUES (?, NULLIF(?, ''), ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
-			project_id = NULLIF(excluded.project_id, ''),
+			project_id = COALESCE(NULLIF(excluded.project_id, ''), project_id),
 			status = excluded.status,
 			error = excluded.error,
 			log_path = excluded.log_path,
