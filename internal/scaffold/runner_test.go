@@ -29,15 +29,29 @@ func stub(t *testing.T, dir string, marker string) string {
 	return path
 }
 
-// cancelStub runs a child that keeps the step's output pipe open, so a cancel
-// that stops only the top process would leave the job waiting forever. Both
-// processes give up after ten minutes so a failed test leaks nothing for long.
+// cancelStub runs a child that outlives the top process, so a cancel that
+// stops only the top process would leave the job waiting on output that never
+// ends. The child records a heartbeat file: the test uses it to know the child
+// started, and that it is gone afterwards. Both processes give up after five
+// minutes so a failed test leaks nothing for long.
 func cancelStub(t *testing.T, dir string) string {
 	t.Helper()
 	if runtime.GOOS == "windows" {
+		tick := filepath.Join(dir, "tick.cmd")
+		tickContent := "@echo off\r\n" +
+			"setlocal enabledelayedexpansion\r\n" +
+			"set /a n=0\r\n" +
+			":loop\r\n" +
+			"echo t>>child.alive\r\n" +
+			"ping -n 2 127.0.0.1 >nul\r\n" +
+			"set /a n+=1\r\n" +
+			"if !n! lss 300 goto loop\r\n"
+		if err := os.WriteFile(tick, []byte(tickContent), 0o644); err != nil {
+			t.Fatal(err)
+		}
 		path := filepath.Join(dir, "cancel.cmd")
 		content := "@echo off\r\n" +
-			"start /b \"\" powershell -NoProfile -Command \"for($i=0;$i -lt 600;$i++){ 'child-tick'; Start-Sleep -Seconds 1 }\"\r\n" +
+			"start /b \"\" \"" + tick + "\"\r\n" +
 			"ping -n 610 127.0.0.1 >nul\r\n"
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 			t.Fatal(err)
@@ -46,8 +60,7 @@ func cancelStub(t *testing.T, dir string) string {
 	}
 	path := filepath.Join(dir, "cancel.sh")
 	content := "#!/bin/sh\n" +
-		"i=0\n" +
-		"while [ $i -lt 600 ]; do echo child-tick; sleep 1; i=$((i+1)); done &\n" +
+		"( i=0; while [ $i -lt 300 ]; do echo t >> child.alive; sleep 1; i=$((i+1)); done ) &\n" +
 		"wait\n"
 	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
 		t.Fatal(err)
@@ -144,6 +157,7 @@ func TestRunnerReportsMissingFilesAndFailure(t *testing.T) {
 func TestCancelStopsTheStepAndItsChildren(t *testing.T) {
 	dir := t.TempDir()
 	bin := cancelStub(t, dir)
+	heartbeat := filepath.Join(dir, "child.alive")
 
 	manager := NewManager(nil, "", nil)
 	job, err := manager.Start(RunSpec{
@@ -160,18 +174,18 @@ func TestCancelStopsTheStepAndItsChildren(t *testing.T) {
 	// live tree rather than before the child exists.
 	deadline := time.Now().Add(20 * time.Second)
 	for {
-		current, lines, err := manager.Get(job.ID)
+		if _, err := os.Stat(heartbeat); err == nil {
+			break
+		}
+		current, _, err := manager.Get(job.ID)
 		if err != nil {
 			t.Fatalf("Get: %v", err)
-		}
-		if strings.Contains(strings.Join(lines, "\n"), "child-tick") {
-			break
 		}
 		if current.Status == JobFailed {
 			t.Fatalf("job failed before the child started: %s", current.Error)
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("the stub's child never wrote output; state %s", current.Status)
+			t.Fatalf("the stub's child never started; state %s", current.Status)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -181,19 +195,23 @@ func TestCancelStopsTheStepAndItsChildren(t *testing.T) {
 	}
 	waitForStatus(t, manager, job.ID, JobCancelled)
 
-	// The pipes closed along with the child, so no output can arrive afterwards.
-	_, before, err := manager.Get(job.ID)
+	// The child appends a heartbeat every second: if the cancel left it alive,
+	// the file keeps growing.
+	time.Sleep(time.Second)
+	size := heartbeatSize(t, heartbeat)
+	time.Sleep(2500 * time.Millisecond)
+	if grown := heartbeatSize(t, heartbeat) - size; grown > 0 {
+		t.Errorf("the child survived the cancel: heartbeat grew by %d bytes", grown)
+	}
+}
+
+func heartbeatSize(t *testing.T, path string) int64 {
+	t.Helper()
+	info, err := os.Stat(path)
 	if err != nil {
-		t.Fatalf("Get: %v", err)
+		t.Fatalf("stat heartbeat: %v", err)
 	}
-	time.Sleep(1500 * time.Millisecond)
-	_, after, err := manager.Get(job.ID)
-	if err != nil {
-		t.Fatalf("Get: %v", err)
-	}
-	if len(after) != len(before) {
-		t.Errorf("output kept arriving after the cancel: %v", after[len(before):])
-	}
+	return info.Size()
 }
 
 func TestDiscardOnlyRemovesAFoldersOwnScaffold(t *testing.T) {
