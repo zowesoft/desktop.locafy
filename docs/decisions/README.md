@@ -25,7 +25,7 @@ Architecture decision records (ADRs) for this repository.
 | [ADR-0017](ADR-0017-project-resource-usage.md) | Project usage is the CPU and memory of the process trees Locafy started, sampled on the runtime loop and normalized to the machine scale | Accepted |
 | [ADR-0018](ADR-0018-runtime-registry-and-assignment.md) | The runtime registry is data with a shared tools discovery; an application can pin a copy, resolved ahead of PATH at start | Accepted |
 | [ADR-0019](ADR-0019-install-jobs-and-managed-runtimes.md) | Installs are portable archives unpacked into a runtimes directory Locafy owns; jobs are rows with progress, outcome and retry; managed copies surface through the registry | Accepted |
-| [ADR-0020](ADR-0020-service-packaging-native.md) | Services run as native engine processes Locafy supervises; no container runtime, and only engines with a verified native build per platform enter the catalogue | Accepted |
+| [ADR-0020](ADR-0020-service-packaging-native.md) | Services run as native engine processes Locafy supervises; containers only as a recorded per-engine exception; only engines with a verified native build per platform enter the catalogue | Proposed |
 | — | Desktop stack selections made in the PRD (Wails v3, Go, React/TS, SQLite) are recorded there and considered approved baseline. | — |
 
 ## Decisions pending (do not guess — PRD section 23)
@@ -33,6 +33,7 @@ Architecture decision records (ADRs) for this repository.
 | Decision | Resolve in |
 |---|---|
 | Initial runtime list and supported versions (PRD section 9.1) | Phase 4 |
+| Redis on Windows (native fork, container exception, WSL2, or omit) | Phase 5 |
 | Object storage engine | Phase 5 |
 | Cloud credential and device-identity storage (joint with `api.locafy` auth design) | Phase 8 |
 | Reverse proxy (Caddy candidate) validation | Phase 6 |
