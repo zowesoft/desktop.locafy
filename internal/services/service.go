@@ -16,6 +16,13 @@ type Service struct {
 	supervisor *Supervisor
 }
 
+// SupervisorOf returns the supervisor a services service drives. Project
+// orchestration uses it so a project start and a manual start share one set of
+// records and processes.
+func SupervisorOf(service *Service) *Supervisor {
+	return service.supervisor
+}
+
 // NewService returns a services service backed by database.
 func NewService(database *sql.DB) *Service {
 	root, _ := DataRoot()

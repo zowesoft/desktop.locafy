@@ -25,7 +25,7 @@ import type { RouteObject } from "react-router-dom";
 import * as ApplicationsService from "../../bindings/locafy.dev/desktop/internal/applications/service";
 import type { Project } from "../../bindings/locafy.dev/desktop/internal/projects/models";
 import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/projects/service";
-import * as ServicesService from "../../bindings/locafy.dev/desktop/internal/services/service";
+import { useProjectServices } from "@/components/project-services";
 import { LifecycleBadge } from "@/components/lifecycle-badge";
 import { PlannedTag } from "@/components/app-shell";
 import { lifecycleKey, lifecyclesKey, useProjectLifecycle, useProjectUsage } from "@/lib/lifecycle-query";
@@ -340,10 +340,7 @@ export function ProjectOverview() {
   const lifecyclePending =
     startProject.isPending || stopProject.isPending || restartProject.isPending;
   const lifecycleError = startProject.error ?? stopProject.error ?? restartProject.error;
-  const services = useQuery({
-    queryKey: ["services", project.ID],
-    queryFn: async () => (await ServicesService.List(project.ID)) ?? [],
-  });
+  const services = useProjectServices(project.ID);
   const health = useMachineStatus();
   const usage = useProjectUsage(project.ID);
   const activity = useQuery({

@@ -9,6 +9,7 @@ import (
 
 	"locafy.dev/desktop/internal/activity"
 	"locafy.dev/desktop/internal/projects"
+	"locafy.dev/desktop/internal/services"
 )
 
 // Derived project states, computed from the component statuses rather than
@@ -54,9 +55,9 @@ type ProjectReport struct {
 	Stopped        []string `json:"stopped"`
 }
 
-// startProject starts the project's runnable applications in dependency
-// order. It is the body behind both StartProject and the start half of
-// RestartProject.
+// startProject brings the project's services up first, then its runnable
+// applications in dependency order. It is the body behind both StartProject and
+// the start half of RestartProject.
 func (s *Supervisor) startProject(projectID string) (*ProjectReport, error) {
 	if _, err := projects.Get(s.database, projectID); err != nil {
 		return nil, err
@@ -67,6 +68,9 @@ func (s *Supervisor) startProject(projectID string) (*ProjectReport, error) {
 	}
 
 	report := &ProjectReport{ProjectID: projectID}
+	// Services are the project's foundations: every application sees a running
+	// database before its own command is executed.
+	s.startServices(projectID, report)
 	for _, app := range startOrder(apps) {
 		current, err := Get(s.database, app.ID)
 		if err != nil {
@@ -104,7 +108,7 @@ func (s *Supervisor) startProject(projectID string) (*ProjectReport, error) {
 }
 
 // stopProject stops the project's running applications in reverse dependency
-// order.
+// order, then its services.
 func (s *Supervisor) stopProject(projectID string) (*ProjectReport, error) {
 	if _, err := projects.Get(s.database, projectID); err != nil {
 		return nil, err
@@ -132,6 +136,7 @@ func (s *Supervisor) stopProject(projectID string) (*ProjectReport, error) {
 		}
 		report.Stopped = append(report.Stopped, current.Name)
 	}
+	s.stopServices(projectID, report)
 	return report, nil
 }
 
@@ -438,8 +443,9 @@ func failureReason(app Application) string {
 	return "the application did not start"
 }
 
-// ProjectState derives the project's state from its applications: one word per
-// component set, with "partial" where the honest answer is some up, some not.
+// ProjectState derives the project's state from its services and applications:
+// one word per component set, with "partial" where the honest answer is some up,
+// some not.
 func (s *Supervisor) ProjectState(projectID string) (string, error) {
 	if _, err := projects.Get(s.database, projectID); err != nil {
 		return "", err
@@ -448,7 +454,11 @@ func (s *Supervisor) ProjectState(projectID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return deriveProjectState(apps), nil
+	instances, err := services.List(s.database, projectID)
+	if err != nil {
+		return "", err
+	}
+	return deriveProjectState(apps, instances), nil
 }
 
 // ProjectStates derives a word for every project that owns applications, for
@@ -474,14 +484,48 @@ func (s *Supervisor) ProjectStates() (map[string]string, error) {
 		return nil, fmt.Errorf("list application states: %w", err)
 	}
 
+	instances, err := s.serviceStates()
+	if err != nil {
+		return nil, err
+	}
+
 	states := make(map[string]string, len(grouped))
 	for projectID, apps := range grouped {
-		states[projectID] = deriveProjectState(apps)
+		states[projectID] = deriveProjectState(apps, instances[projectID])
+	}
+	// A project can own services without applications; it still needs a word.
+	for projectID, list := range instances {
+		if _, seen := states[projectID]; !seen {
+			states[projectID] = deriveProjectState(nil, list)
+		}
 	}
 	return states, nil
 }
 
-func deriveProjectState(apps []Application) string {
+// serviceStates groups every live service by project, reading only what the
+// derived state needs.
+func (s *Supervisor) serviceStates() (map[string][]services.Instance, error) {
+	rows, err := s.database.Query(`SELECT project_id, status FROM services WHERE deleted_at IS NULL`)
+	if err != nil {
+		return nil, fmt.Errorf("list service states: %w", err)
+	}
+	defer rows.Close()
+
+	grouped := map[string][]services.Instance{}
+	for rows.Next() {
+		var projectID, status string
+		if err := rows.Scan(&projectID, &status); err != nil {
+			return nil, fmt.Errorf("scan service state: %w", err)
+		}
+		grouped[projectID] = append(grouped[projectID], services.Instance{Status: status})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list service states: %w", err)
+	}
+	return grouped, nil
+}
+
+func deriveProjectState(apps []Application, instances []services.Instance) string {
 	runnable := 0
 	starting, stopping, running, errored := 0, 0, 0, 0
 	for _, app := range apps {
@@ -497,6 +541,19 @@ func deriveProjectState(apps []Application) string {
 		case StatusRunning:
 			running++
 		case StatusError:
+			errored++
+		}
+	}
+	for _, instance := range instances {
+		runnable++
+		switch instance.Status {
+		case services.StatusStarting:
+			starting++
+		case services.StatusStopping:
+			stopping++
+		case services.StatusRunning:
+			running++
+		case services.StatusError:
 			errored++
 		}
 	}

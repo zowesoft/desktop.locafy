@@ -92,8 +92,8 @@ func run() error {
 	var window *application.WebviewWindow
 
 	statusService := status.NewService(database, startedAt)
-	appsService := applications.NewService(database)
 	servicesService := services.NewService(database)
+	appsService := applications.NewService(database, services.SupervisorOf(servicesService))
 	scaffoldService := scaffold.NewService(database)
 	runtimesService := runtimes.NewService()
 	downloadsService := downloads.NewService(downloads.NewManager(

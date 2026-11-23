@@ -234,6 +234,31 @@ function ServiceRow({
   );
 }
 
+/**
+ * A project's services, kept current by the supervisor's events. Any surface
+ * that shows service state uses this, so a project start updates all of them.
+ */
+export function useProjectServices(projectID: string) {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const refresh = () => {
+      void queryClient.invalidateQueries({ queryKey: servicesKey(projectID) });
+    };
+    const offState = Events.On("service:state", refresh);
+    const offHealth = Events.On("service:health", refresh);
+    return () => {
+      offState();
+      offHealth();
+    };
+  }, [queryClient, projectID]);
+
+  return useQuery({
+    queryKey: servicesKey(projectID),
+    queryFn: async () => (await ServicesService.List(projectID)) ?? [],
+  });
+}
+
 /** The project's backing services: attach, start, stop, restart and remove. */
 export function ProjectServices({ projectID }: { projectID: string }) {
   const queryClient = useQueryClient();
@@ -243,28 +268,13 @@ export function ProjectServices({ projectID }: { projectID: string }) {
   const [actionError, setActionError] = useState("");
   const [pendingRemoval, setPendingRemoval] = useState<Instance | null>(null);
 
-  const services = useQuery({
-    queryKey: servicesKey(projectID),
-    queryFn: async () => (await ServicesService.List(projectID)) ?? [],
-  });
+  const services = useProjectServices(projectID);
   const catalogue = useQuery({
     queryKey: serviceCatalogueKey,
     queryFn: async () => (await ServicesService.Catalogue()) ?? [],
   });
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: servicesKey(projectID) });
-
-  // State and health changes are pushed by the supervisor; the list refetches
-  // rather than polling.
-  useEffect(() => {
-    const offState = Events.On("service:state", () => void refresh());
-    const offHealth = Events.On("service:health", () => void refresh());
-    return () => {
-      offState();
-      offHealth();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queryClient, projectID]);
 
   const create = useMutation({
     mutationFn: (template: string) =>

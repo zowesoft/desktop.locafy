@@ -17,14 +17,17 @@ type Service struct {
 	supervisor *Supervisor
 }
 
-// NewService returns an applications service backed by database.
-func NewService(database *sql.DB) *Service {
+// NewService returns an applications service backed by database. runtime is
+// the service supervisor a project start brings up before its applications; it
+// may be nil in a build that has no services wired.
+func NewService(database *sql.DB, runtime ServiceRuntime) *Service {
 	service := &Service{database: database}
 	service.supervisor = NewSupervisor(database, func(name string, data any) {
 		if app := application.Get(); app != nil {
 			app.Event.Emit(name, data)
 		}
 	})
+	service.supervisor.services = runtime
 	return service
 }
 

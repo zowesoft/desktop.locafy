@@ -11,21 +11,33 @@ export const lifecycleKey = (projectID: string) => ["applications", "lifecycle",
 export const projectUsageKey = (projectID: string) => ["applications", "usage", projectID] as const;
 
 /*
- * Process state changes arrive as application:state events; any surface that
- * displays a derived lifecycle reacts to them instead of polling.
+ * Process state changes arrive as application:state and service:state events;
+ * a project's derived lifecycle covers both, so any surface that displays it
+ * reacts to either instead of polling.
  */
 function useApplicationStateInvalidation(keys: ReadonlyArray<ReadonlyArray<unknown>>) {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    const off = Events.On("application:state", (event) => {
-      const data = event.data as { applicationId?: string };
-      if (!data.applicationId) return;
+    const invalidate = () => {
       for (const key of keys) {
         void queryClient.invalidateQueries({ queryKey: key });
       }
+    };
+    const offApplication = Events.On("application:state", (event) => {
+      const data = event.data as { applicationId?: string };
+      if (!data.applicationId) return;
+      invalidate();
     });
-    return off;
+    const offService = Events.On("service:state", (event) => {
+      const data = event.data as { ID?: string };
+      if (!data.ID) return;
+      invalidate();
+    });
+    return () => {
+      offApplication();
+      offService();
+    };
     // The keys are static for a mounted surface.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryClient]);

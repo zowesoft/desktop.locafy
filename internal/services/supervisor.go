@@ -31,6 +31,11 @@ const (
 	outputLines   = 500
 	initTimeout   = 2 * time.Minute
 	healthTimeout = 1500 * time.Millisecond
+	// A cluster that just bound its port may still be in startup recovery, so
+	// creating the project's database is retried a few times before it is
+	// reported as a failure.
+	databasePrepareAttempts = 8
+	databasePrepareBackoff  = 800 * time.Millisecond
 )
 
 // A ticker and two ceilings, as variables so a test does not wait seconds for a
@@ -340,32 +345,73 @@ func (s *Supervisor) trackHealth(id string, live *liveService, service Instance)
 
 // prepareDatabase makes sure the instance holds the database its connection
 // details point at. The engine's own tool creates it, and an existing database
-// is not an error.
+// is not an error. A cluster that has just bound its port may still be in
+// startup recovery, so a refusal of that kind is retried rather than reported.
 func (s *Supervisor) prepareDatabase(id string, service Instance) {
 	binaries, err := findPostgres()
 	if err != nil || binaries.createdb == "" {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), engineVersionTimeout)
-	defer cancel()
-	command := process.CommandFor(ctx, binaries.createdb, []string{
-		"-h", "127.0.0.1",
-		"-p", strconv.Itoa(service.Port),
-		"-U", service.UserName,
-		"-w",
-		service.DatabaseName,
-	})
-	command.Env = os.Environ()
-	output, err := command.CombinedOutput()
-	if err == nil || strings.Contains(string(output), "already exists") {
-		return
+
+	var output string
+	var lastErr error
+	for attempt := 0; attempt < databasePrepareAttempts; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), engineVersionTimeout)
+		command := process.CommandFor(ctx, binaries.createdb, []string{
+			"-h", "127.0.0.1",
+			"-p", strconv.Itoa(service.Port),
+			"-U", service.UserName,
+			"-w",
+			service.DatabaseName,
+		})
+		command.Env = os.Environ()
+		result, err := command.CombinedOutput()
+		cancel()
+		output = string(result)
+		lastErr = err
+		if err == nil || strings.Contains(output, "already exists") {
+			s.clearPrepareError(id)
+			return
+		}
+		// A refusal with no output is as transient as "starting up": the tool
+		// may have been busy or the connection dropped mid-handshake.
+		if !stillStarting(output) && lastLines(output, 1) != "" {
+			break
+		}
+		time.Sleep(databasePrepareBackoff)
 	}
-	message := fmt.Sprintf("The database %s could not be created: %s", service.DatabaseName, lastLines(string(output), 2))
+
+	detail := lastLines(output, 2)
+	if detail == "" && lastErr != nil {
+		detail = lastErr.Error()
+	}
+	message := fmt.Sprintf("The database %s could not be created: %s", service.DatabaseName, detail)
 	if s.database != nil {
 		_, _ = s.database.Exec(`UPDATE services SET error = ? WHERE id = ? AND status = ?`,
 			message, id, StatusRunning)
 	}
 	s.emitState(id)
+}
+
+// stillStarting reports whether the engine refused work because the cluster has
+// not finished coming up yet, which is worth retrying.
+func stillStarting(output string) bool {
+	for _, phrase := range []string{"starting up", "not yet accepting connections", "the database system is"} {
+		if strings.Contains(output, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+// clearPrepareError removes a preparation failure once the database exists, so a
+// retry that succeeded does not leave a stale warning on the record.
+func (s *Supervisor) clearPrepareError(id string) {
+	if s.database == nil {
+		return
+	}
+	_, _ = s.database.Exec(`UPDATE services SET error = ''
+		WHERE id = ? AND status = ? AND error LIKE 'The database % could not be created%'`, id, StatusRunning)
 }
 
 // initialiseData runs the engine's initialiser once, when the data directory

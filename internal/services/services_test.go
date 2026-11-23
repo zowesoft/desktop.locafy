@@ -492,3 +492,61 @@ func TestRemoveStopsARunningServiceFirst(t *testing.T) {
 		t.Fatalf("stop after remove: err = %v, want the process stopped by the removal", err)
 	}
 }
+
+// A cluster that has just bound its port can still refuse queries while it is
+// in startup recovery; the database creation must retry instead of reporting a
+// failure that is really "not yet".
+func TestDatabasePreparationRetriesWhileTheClusterStarts(t *testing.T) {
+	database, projectID, root := setup(t)
+	binaries, err := findPostgres()
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	flag := filepath.Join(filepath.Dir(binaries.createdb), "first-attempt.txt")
+	success := filepath.Join(filepath.Dir(binaries.createdb), "database-created.txt")
+	if err := os.Remove(success); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("clear marker: %v", err)
+	}
+	if runtime.GOOS == "windows" {
+		writeScript(t, binaries.createdb,
+			"@echo off\r\n"+
+				"if exist \""+flag+"\" (\r\n"+
+				"  echo created>> \""+success+"\"\r\n"+
+				"  exit /b 0\r\n"+
+				")\r\n"+
+				"type nul> \""+flag+"\"\r\n"+
+				"echo the database system is starting up 1>&2\r\n"+
+				"exit /b 1\r\n")
+	} else {
+		writeScript(t, binaries.createdb,
+			"#!/bin/sh\n"+
+				"if [ -f \""+flag+"\" ]; then echo created >> \""+success+"\"; exit 0; fi\n"+
+				"touch \""+flag+"\"\n"+
+				"echo 'the database system is starting up' >&2\n"+
+				"exit 1\n")
+	}
+
+	instance := create(t, database, root, projectID, "")
+	supervisor := NewSupervisor(database, nil)
+	t.Cleanup(supervisor.StopAll)
+	if _, err := supervisor.Start(instance.ID); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, err := os.Stat(success); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the database was never created on a retry")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	settled := waitFor(t, database, instance.ID, func(service Instance) bool {
+		return service.Health == HealthHealthy
+	}, "waiting for a healthy service")
+	if settled.Error != "" {
+		t.Fatalf("error = %q, want the startup refusal retried instead of recorded", settled.Error)
+	}
+}

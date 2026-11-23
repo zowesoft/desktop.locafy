@@ -90,6 +90,9 @@ type Supervisor struct {
 	// cpuBaseline holds each tree's last CPU sample for the usage delta, keyed
 	// by the tree's root pid.
 	cpuBaseline map[int]cpuTimes
+	// services runs the backing services a project start brings up first. It
+	// is nil when the project has none wired, as in most tests.
+	services ServiceRuntime
 }
 
 // NewSupervisor returns a supervisor for applications stored in database. emit
