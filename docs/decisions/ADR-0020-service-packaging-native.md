@@ -18,7 +18,9 @@ part that would need reworking.
 The engine table was corrected on 2026-11-23. It previously read as though every
 engine had been checked against its published downloads; in fact only
 PostgreSQL had been. Each row now says what was actually checked, and the
-wording that presented an assumption as a check is gone.
+wording that presented an assumption as a check is gone. The Redis-on-Windows
+section now carries the licence and practical cost of each option and a
+recommendation, so the operator can settle it in one decision rather than four.
 
 ## Context
 
@@ -86,7 +88,7 @@ Locafy on any platform. Each row below is therefore a lead, not a verified path.
 | Engine | What was checked | Native on Windows | Native on macOS | Native on Linux | Container | Recommendation |
 |---|---|---|---|---|---|---|
 | **PostgreSQL 17** | **Verified live** on Windows: discovered, initialised and run by the delivered slice | The installed PostgreSQL 17 at `C:\Program Files\PostgreSQL\17\bin` (the EDB installer's layout): `initdb`, `postgres`, `pg_ctl`, `createdb` in one `bin` — **verified live** | Not checked here; Homebrew and the EDB installer are the documented routes | Not checked here; Oracle packages and distro packages are the documented routes | Official `postgres` image | **Native now.** Satisfies the admission rule, needs one initialiser (`initdb`), runs from a plain argv. Delivered. |
-| **Redis 8.x** | Published downloads and install docs, 2026-11-23 | **No official native build.** Redis documents Windows as Docker-only and names Memurai its Windows partner: a free Developer Edition, development and testing only, restart required every 10 days, 50% of system memory, production prohibited; Enterprise is paid. Microsoft's archived 3.2.100 port is the only other native history | Homebrew `redis` — Redis documents Homebrew as the supported macOS route; source builds work | `packages.redis.io` APT/RPM, Snap, distro packages, source | Official `redis` image | **Blocked on Windows.** Not merely "no build": the only vendor-blessed native option is development-only with a forced 10-day restart, which Locafy cannot ship or hide. Needs the operator decision below. |
+| **Redis 8.x** | Published downloads and install docs, 2026-11-23 | **No official native build.** Redis documents Windows as Docker-only and names Memurai its Windows partner. Community forks build it anyway — `redis-windows` and `zkteco-home` both track 8.10.3, `tporadowski` ships a native 5.0.14.1 with an 8.10 port in progress — none with vendor support | Homebrew `redis` — Redis documents Homebrew as the supported macOS route; source builds work | `packages.redis.io` APT/RPM, Snap, distro packages, source | Official `redis` image | **Blocked on Windows.** Not merely "no build": the only vendor-blessed native option is development-only with a forced 10-day restart, which Locafy cannot ship or hide. Needs the operator decision below. |
 | **MySQL 8.4 LTS / 9.7 LTS** | Published download page for 8.4.13 LTS (also 26.10 Innovation), 2026-11-23 | MSI installer and ZIP archive | Official `.dmg`/pkg installer and `.tar.gz` | Generic `.tar.gz`, Oracle RPM/DEB repositories, distro packages | Official `mysql` image | **Native, next after PostgreSQL.** A vendor build exists on all three platforms; the cost is its own initialiser (`mysqld --initialize-insecure`), port handling and default-auth choice. |
 | **MariaDB 13.0** | Published download page and the 13.0.2 file listing, 2026-11-23 | MSI package (`winx64-packages`) | **No official package.** MariaDB's own documentation states there is no `.pkg` installer for macOS and sends users to Homebrew; its 13.0.2 file listing has no macOS directory | Repositories (DEB/RPM), systemd binary tarball | Official `mariadb` image | **Does not satisfy the rule as published.** Windows and Linux are vendor builds; macOS is a third-party Homebrew build that MariaDB merely points at. Either the operator accepts that macOS route, or the relational slot is MySQL only. |
 | **Mail capture (Mailpit)** | Release assets and install documentation, 2026-11-23 | Single static `.zip` (amd64, arm64) | Single static `.tar.gz` (amd64, arm64), also Homebrew `mailpit` | Single static `.tar.gz` (386, amd64, arm, arm64) | Official multi-arch images (`axllent/mailpit`) | **Native — cheapest of the set.** One binary, no install step, no data directory to initialise unless persistence (`--database`) is turned on; two ports, 1025 SMTP and 8025 UI. |
@@ -164,23 +166,37 @@ catalogue grows one verified engine at a time.
 
 ## Decision this needs from the operator (Redis on Windows)
 
-The recommendation is to keep Redis out of the catalogue until one of these is
-chosen, in this order of preference:
+Redis Ltd. publishes no Windows build, and its documentation sends Windows users
+to Docker or to Memurai. Nothing below is implemented, and nothing below was run
+by Locafy. Options as they stand on 2026-11-23:
 
-1. **Memurai or another maintained native Windows build**, if its licence
-   permits what Locafy would do with it. Memurai's free Developer Edition is
-   development-only, limited to 50% of system memory, and shuts itself down
-   every 10 days until restarted — a property a development tool cannot paper
-   over — while the unrestricted Enterprise Edition is paid and not
-   redistributable. So this option needs the operator to accept a dev-only
-   dependency with a forced restart, or a commercial licence.
-2. **A documented container exception for Windows only**, with macOS and Linux
-   staying native. This is the first case that would exercise the exception
-   clause above, and it makes Docker a requirement for Redis on Windows only.
-3. **WSL2-hosted Redis**, which is a container in spirit and an extra
-   dependency in practice.
-4. **Drop Redis from the initial catalogue.** Caches are the least essential
-   service; the first release could ship without one.
+| Option | Licence | What it costs Locafy |
+|---|---|---|
+| **Memurai** (Windows only) | Proprietary (Janea Systems). The Developer Edition is free, needs no account, and is licensed for development and testing only: 10 days of maximum uptime before it shuts down until restarted, 50% of system memory, 10 client addresses. The Enterprise Edition is paid. The EULA forbids distributing the software, making extra copies, or working around technical limitations. | No bundling and no auto-restart: the operator installs Memurai, Locafy discovers it as it discovers PostgreSQL, and can only report the shutdown. It exists on one platform, so macOS and Linux still use real Redis from Homebrew and distro packages and every test and doc splits three ways. Closest fit to the existing model, and the one dependency that will stop working after ten days of continuous use. |
+| **An unofficial native port** | Community builds of Redis source under Redis's own licence (RSALv2 / SSPLv1 / AGPLv3 since 8.0): `redis-windows/redis-windows` 8.10.3 (October 2026), `zkteco-home/redis-windows` 8.10.3 (November 2026), `tporadowski/redis` native 5.0.14.1 with an 8.10 port in progress. | Free, and cheap to wire: one more discovery path. Expensive to stand behind: no vendor supports the Windows build, no one commits to a security fix on it, and anything Locafy redistributed would carry AGPL or RSAL obligations. This is the option that most quietly turns a supported catalogue into a gamble. |
+| **A Windows-only container exception** | Docker Desktop is free for personal use, education, non-commercial open source, and businesses under 250 employees **and** under $10M revenue; otherwise Pro, Team or Business from about $9 per user per month; government entities always pay. Docker Engine is Apache-2.0, and Podman (Apache-2.0) is a free alternative that runs a WSL2 machine. | A second control plane beside the supervisor: image, host port, volume, daemon state, pull failures. A cold image cache breaks the offline first run the rest of the design protects. It also moves a licence decision onto the operator, invisible to Locafy. |
+| **WSL2-hosted Redis** | Free; WSL is a Windows optional feature. | Enabling it needs administrator rights, the Virtual Machine Platform feature, a reboot and firmware virtualization (SLAT) before the first service starts. The server then lives in a Linux VM: Locafy holds `wsl.exe`, not the Redis process, so the supervised tree kill reaches the client rather than the server, and `wsl --terminate` would kill everything else in that distro. Health over forwarded localhost works; ownership does not. |
+| **Omit Redis from the first release** | — | No cache engine in v1. One less engine to discover, initialise and document, and one story per platform. |
+
+**Recommendation: omit Redis from the first release.** Each alternative buys a
+cache at a price the design has otherwise refused to pay — a dependency that
+expires after ten days, a binary nobody supports, a paid container runtime, or a
+VM Locafy only half owns. The loss is one engine, not one capability: a project
+without a cache still runs, and the application that truly needs Redis is the
+case a container exception exists for — chosen by the operator, per project,
+rather than imposed on every Windows user through the catalogue.
+
+If a cache must ship in v1 anyway, the least-bad route is **Memurai discovered
+and never bundled**: report its ten-day shutdown in the Services tab as an engine
+fact with a documented restart step, never restart it automatically, and accept
+that the Windows engine differs from the other two.
+
+If the operator would rather have a cache that is native on all three platforms,
+**Garnet** (Microsoft Research, MIT-licensed, RESP-compatible, .NET) is a better
+engine candidate than any Windows port of Redis and would enter the catalogue as
+its own engine under the same admission rule. It is not Redis, and it needs the
+.NET runtime or a self-contained build — a separate decision, not a packaging
+exception.
 
 ## First slice — PostgreSQL instance attached to a project (delivered)
 
