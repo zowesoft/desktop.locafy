@@ -45,6 +45,9 @@ one tick reads the sockets, records a changed port, then probes the current one:
   restarts on another port.
 - Only a changed result is written and emitted (`application:health`). A stable
   application writes nothing on each tick.
+- A reading is written only while the record still reads `starting` or
+  `running`, so a stop's clearing wins over a probe that was in flight when the
+  process was killed. Migration `0012` clears readings left by earlier builds.
 - Process exit, stop and a refused start clear health: a stopped record must not
   keep a stale "healthy".
 - A failed port scan skips the port part but still checks the last known port;

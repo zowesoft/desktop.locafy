@@ -137,6 +137,44 @@ func TestRuntimeScanLeavesAnExitedProcessAlone(t *testing.T) {
 	}
 }
 
+func TestHealthFromAnInFlightProbeIsDroppedAfterAStop(t *testing.T) {
+	database := openDatabase(t)
+	app, supervisor, _ := runningApplicationWithPort(t, database, 4200)
+
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	fakeHealth(t, func(port int) error {
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		<-release
+		return errors.New("connection refused")
+	})
+
+	select {
+	case <-entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the health probe never ran")
+	}
+
+	if err := supervisor.Stop(app.ID); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	waitForStatus(t, database, app.ID, StatusStopped)
+	close(release)
+
+	// Give the released probe time to try, and fail, to write its reading.
+	time.Sleep(300 * time.Millisecond)
+	stopped, err := Get(database, app.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if stopped.Health != "" || stopped.HealthDetail != "" {
+		t.Fatalf("health = %q (%q), want a stopped record to stay cleared", stopped.Health, stopped.HealthDetail)
+	}
+}
+
 func TestHealthStaysUnknownWithoutAPort(t *testing.T) {
 	database := openDatabase(t)
 	app, _ := applicationWithCommand(t, database, "npm run dev")

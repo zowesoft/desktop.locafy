@@ -500,7 +500,9 @@ func (s *Supervisor) recordHealth(id string, live *run) {
 		return
 	}
 
-	s.updateHealth(id, health, detail)
+	if !s.updateHealth(id, health, detail) {
+		return
+	}
 	if s.emit != nil {
 		s.emit(EventHealth, map[string]any{
 			"applicationId": id,
@@ -518,14 +520,22 @@ func (s *Supervisor) updatePort(id string, port int) {
 	_, _ = s.database.Exec(`UPDATE applications SET port = ? WHERE id = ?`, port, id)
 }
 
-func (s *Supervisor) updateHealth(id string, health string, detail string) {
+// updateHealth records a reading only while the record is still live. A probe
+// that was in flight when the process ended must not leave a health reading on
+// a stopped record; the status filter makes the stop's clearing the last word.
+func (s *Supervisor) updateHealth(id string, health string, detail string) bool {
 	if s.database == nil {
-		return
+		return false
 	}
-	_, _ = s.database.Exec(`UPDATE applications
+	result, err := s.database.Exec(`UPDATE applications
 		SET health = ?, health_detail = ?,
 			health_checked_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-		WHERE id = ?`, health, detail, id)
+		WHERE id = ? AND status IN (?, ?)`, health, detail, id, StatusStarting, StatusRunning)
+	if err != nil {
+		return false
+	}
+	affected, err := result.RowsAffected()
+	return err == nil && affected > 0
 }
 
 func (s *Supervisor) appendLine(id string, live *run, line string) {
