@@ -15,6 +15,11 @@ it. Nothing in the delivered PostgreSQL slice changes if the rule is approved;
 if it is rejected in favour of container-backed instances, that slice is the
 part that would need reworking.
 
+The engine table was corrected on 2026-11-23. It previously read as though every
+engine had been checked against its published downloads; in fact only
+PostgreSQL had been. Each row now says what was actually checked, and the
+wording that presented an assumption as a check is gone.
+
 ## Context
 
 ADR-0008 settled what a service instance *is* — one data directory, one set of
@@ -67,17 +72,25 @@ maintained native build exists for one of the three platforms.**
 
 ### Engine-by-engine comparison
 
-Native availability was checked against each project's published downloads, and
-PostgreSQL's path on Windows was exercised live in the slice described below.
+**What was checked, and what was not.** Only PostgreSQL has been exercised:
+the delivered slice installed nothing itself, but it discovered, initialised and
+ran the installed PostgreSQL 17 on Windows, and every binary it used came from
+one `bin`. Everything else below was read off the vendors' current download
+pages and release assets on 2026-11-23 — a published build is evidence that a
+build exists, not that Locafy can find it, initialise it and supervise it. None
+of Redis, MySQL, MariaDB, Mailpit or MinIO has a discovery path, an initialiser
+or a first-run procedure in this repository, and none has been started by
+Locafy on any platform. Each row below is therefore a lead, not a verified path.
 "Container" means the engine's official image under Docker or Podman.
 
-| Engine | Native on Windows | Native on macOS | Native on Linux | Container | Recommendation |
-|---|---|---|---|---|---|
-| **PostgreSQL 17** | Official installer (EDB) — **verified live** (`initdb`, `postgres`, `pg_ctl`, `createdb` from one `bin`) | Official installer / Homebrew | Official packages / distro packages | Official `postgres` image | **Native now.** It satisfies the admission rule, needs one initialiser (`initdb`), and runs from a plain argv. Delivered. |
-| **Redis** | **No maintained build.** The last Microsoft port is 3.2, unmaintained; Memurai is a commercial fork | Homebrew `redis` | Distro packages, official source | Official `redis` image | **Blocked on Windows.** Native on macOS and Linux, so the catalogue entry cannot meet the admission rule without a Windows answer (see the decision this needs). |
-| **MySQL 8 / MariaDB 11** | Official installer / ZIP archive | Homebrew, official DMG | Official archives, distro packages | Official `mysql` and `mariadb` images | **Native, next after PostgreSQL.** Satisfies the rule; costs its own initialiser (`mysqld --initialize-insecure` or `mariadb-install-db`) and a port. |
-| **Mail capture (Mailpit)** | Single static binary | Single static binary (also Homebrew) | Single static binary | Community image | **Native — cheapest of the set.** Go binary, no install step, no data directory to initialise; two ports (SMTP and UI). |
-| **Object storage** | MinIO is a single binary, but AGPL-3.0 licensing and its distribution/packaging changes need validation before Locafy bundles or launches it; Garage and SeaweedFS are alternatives | Same | Same | MinIO image | **Deferred.** The engine is still undecided (PRD section 23); a native decision here would be premature. |
+| Engine | What was checked | Native on Windows | Native on macOS | Native on Linux | Container | Recommendation |
+|---|---|---|---|---|---|---|
+| **PostgreSQL 17** | **Verified live** on Windows: discovered, initialised and run by the delivered slice | The installed PostgreSQL 17 at `C:\Program Files\PostgreSQL\17\bin` (the EDB installer's layout): `initdb`, `postgres`, `pg_ctl`, `createdb` in one `bin` — **verified live** | Not checked here; Homebrew and the EDB installer are the documented routes | Not checked here; Oracle packages and distro packages are the documented routes | Official `postgres` image | **Native now.** Satisfies the admission rule, needs one initialiser (`initdb`), runs from a plain argv. Delivered. |
+| **Redis 8.x** | Published downloads and install docs, 2026-11-23 | **No official native build.** Redis documents Windows as Docker-only and names Memurai its Windows partner: a free Developer Edition, development and testing only, restart required every 10 days, 50% of system memory, production prohibited; Enterprise is paid. Microsoft's archived 3.2.100 port is the only other native history | Homebrew `redis` — Redis documents Homebrew as the supported macOS route; source builds work | `packages.redis.io` APT/RPM, Snap, distro packages, source | Official `redis` image | **Blocked on Windows.** Not merely "no build": the only vendor-blessed native option is development-only with a forced 10-day restart, which Locafy cannot ship or hide. Needs the operator decision below. |
+| **MySQL 8.4 LTS / 9.7 LTS** | Published download page for 8.4.13 LTS (also 26.10 Innovation), 2026-11-23 | MSI installer and ZIP archive | Official `.dmg`/pkg installer and `.tar.gz` | Generic `.tar.gz`, Oracle RPM/DEB repositories, distro packages | Official `mysql` image | **Native, next after PostgreSQL.** A vendor build exists on all three platforms; the cost is its own initialiser (`mysqld --initialize-insecure`), port handling and default-auth choice. |
+| **MariaDB 13.0** | Published download page and the 13.0.2 file listing, 2026-11-23 | MSI package (`winx64-packages`) | **No official package.** MariaDB's own documentation states there is no `.pkg` installer for macOS and sends users to Homebrew; its 13.0.2 file listing has no macOS directory | Repositories (DEB/RPM), systemd binary tarball | Official `mariadb` image | **Does not satisfy the rule as published.** Windows and Linux are vendor builds; macOS is a third-party Homebrew build that MariaDB merely points at. Either the operator accepts that macOS route, or the relational slot is MySQL only. |
+| **Mail capture (Mailpit)** | Release assets and install documentation, 2026-11-23 | Single static `.zip` (amd64, arm64) | Single static `.tar.gz` (amd64, arm64), also Homebrew `mailpit` | Single static `.tar.gz` (386, amd64, arm, arm64) | Official multi-arch images (`axllent/mailpit`) | **Native — cheapest of the set.** One binary, no install step, no data directory to initialise unless persistence (`--database`) is turned on; two ports, 1025 SMTP and 8025 UI. |
+| **Object storage (MinIO)** | Download pages, release state and licence, 2026-11-23 | Community edition is **source-only**: the README says it no longer ships pre-compiled binaries, the repository is archived, and the last published `windows-amd64` binary is `RELEASE.2025-09-07`. AIStor publishes a paid binary | Same for community; AIStor publishes a `darwin-arm64` binary and a Homebrew tap, both behind a licence key | Frozen community binaries; AIStor RPM/DEB/binary behind a licence key | Community images were withdrawn (Docker Hub in September 2026, anonymous quay pulls refused); AIStor images need a licence | **Fails the rule.** There is no maintained community build on any platform, and the maintained build (AIStor) is commercial and licensed. Building the archived source ourselves is not a project this catalogue should take on. Garage and SeaweedFS are the alternatives to evaluate (PRD section 23). |
 
 Engines that look attractive but fail the admission rule stay out until they
 do not: that is the deliberate cost of a cross-platform promise.
@@ -130,7 +143,9 @@ catalogue grows one verified engine at a time.
 - **Engine availability becomes Locafy's responsibility.** Each engine needs a
   native build per platform, a discovery path, and a verified first-run
   procedure. Redis is the first casualty: absent from the catalogue until its
-  Windows answer is decided.
+  Windows answer is decided. MariaDB is the second if the macOS route is judged
+  to be Homebrew rather than a MariaDB build, and object storage is not a native
+  candidate at all while the community MinIO edition publishes nothing.
 - **Initialisation is per engine.** PostgreSQL needs `initdb`; MySQL needs
   `mysqld --initialize`; each is code and tests of its own. This is the real
   cost, and it is not hidden behind a generic installer.
@@ -153,7 +168,12 @@ The recommendation is to keep Redis out of the catalogue until one of these is
 chosen, in this order of preference:
 
 1. **Memurai or another maintained native Windows build**, if its licence
-   permits redistribution or a documented free install.
+   permits what Locafy would do with it. Memurai's free Developer Edition is
+   development-only, limited to 50% of system memory, and shuts itself down
+   every 10 days until restarted — a property a development tool cannot paper
+   over — while the unrestricted Enterprise Edition is paid and not
+   redistributable. So this option needs the operator to accept a dev-only
+   dependency with a forced restart, or a commercial licence.
 2. **A documented container exception for Windows only**, with macOS and Linux
    staying native. This is the first case that would exercise the exception
    clause above, and it makes Docker a requirement for Redis on Windows only.
@@ -200,8 +220,9 @@ evidence is in `docs/FEATURES.md`.
 
 ## Not decided here
 
-- Which engine follows PostgreSQL — MySQL/MariaDB and Mailpit are the
-  recommended next two, and each needs its own initialiser work.
+- Which engine follows PostgreSQL — MySQL and Mailpit are the recommended next
+  two, and each needs its own initialiser work. MariaDB waits on the macOS
+  ruling above.
 - The object storage engine (MinIO remains a candidate only).
 - Shared versus isolated tenancy defaults for services that support tenancy
   (ADR-0008); the delivered slice is isolated-only.
