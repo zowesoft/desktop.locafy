@@ -205,6 +205,50 @@ func TestCancelStopsTheStepAndItsChildren(t *testing.T) {
 	}
 }
 
+// The production ceiling is twenty minutes; the test compresses the same
+// context deadline so a hung installer is proven to end the job and its process.
+func TestTheCeilingStopsAStepThatNeverFinishes(t *testing.T) {
+	dir := t.TempDir()
+	bin := hangingStub(t, dir)
+
+	manager := NewManager(nil, "", nil)
+	manager.timeout = 700 * time.Millisecond
+	job, err := manager.Start(RunSpec{
+		RecipeID: "slow",
+		Target:   filepath.Join(dir, "app"),
+		Steps:    []Step{{Bin: bin, Cwd: "parent", Display: "slow"}},
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	waitForStatus(t, manager, job.ID, JobFailed)
+	ended, _, err := manager.Get(job.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !strings.Contains(ended.Error, "deadline") && !strings.Contains(ended.Error, "killed") {
+		t.Fatalf("error = %q, want the ceiling named", ended.Error)
+	}
+}
+
+func hangingStub(t *testing.T, dir string) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		path := filepath.Join(dir, "hang.cmd")
+		content := "@echo off\r\nping -n 30 127.0.0.1 >nul\r\n"
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	path := filepath.Join(dir, "hang.sh")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nsleep 30\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func heartbeatSize(t *testing.T, path string) int64 {
 	t.Helper()
 	info, err := os.Stat(path)
