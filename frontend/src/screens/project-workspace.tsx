@@ -25,6 +25,7 @@ import type { RouteObject } from "react-router-dom";
 import * as ApplicationsService from "../../bindings/locafy.dev/desktop/internal/applications/service";
 import type { Project } from "../../bindings/locafy.dev/desktop/internal/projects/models";
 import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/projects/service";
+import * as ServicesService from "../../bindings/locafy.dev/desktop/internal/services/service";
 import { LifecycleBadge } from "@/components/lifecycle-badge";
 import { PlannedTag } from "@/components/app-shell";
 import { lifecycleKey, lifecyclesKey, useProjectLifecycle, useProjectUsage } from "@/lib/lifecycle-query";
@@ -306,8 +307,8 @@ function HealthChip({
 
 /*
  * The project's command centre: what the project is, what it owns, and the
- * machine state behind it. Applications are the only records that exist today,
- * so services, domains and tunnels are shown as planned rather than invented.
+ * machine state behind it. Domains and tunnels have no records yet, so they are
+ * shown as planned rather than invented.
  */
 export function ProjectOverview() {
   const project = useOutletContext<Project>();
@@ -339,6 +340,10 @@ export function ProjectOverview() {
   const lifecyclePending =
     startProject.isPending || stopProject.isPending || restartProject.isPending;
   const lifecycleError = startProject.error ?? stopProject.error ?? restartProject.error;
+  const services = useQuery({
+    queryKey: ["services", project.ID],
+    queryFn: async () => (await ServicesService.List(project.ID)) ?? [],
+  });
   const health = useMachineStatus();
   const usage = useProjectUsage(project.ID);
   const activity = useQuery({
@@ -350,6 +355,8 @@ export function ProjectOverview() {
 
   const apps = applications.data ?? [];
   const withStart = apps.filter((app) => app.StartCommand.trim() !== "").length;
+  const serviceList = services.data ?? [];
+  const runningServices = serviceList.filter((service) => service.Status === "running").length;
   const machine = health.data;
   const diskPercent = machine?.Disk.Percent ?? 0;
   const entries = activity.data ?? [];
@@ -456,10 +463,14 @@ export function ProjectOverview() {
         <StatTile
           icon={Server}
           tone="bg-muted text-muted-foreground"
-          value="0"
+          value={String(serviceList.length)}
           label="Services"
-          detail="Planned for a later phase"
-          planned
+          detail={
+            serviceList.length === 0
+              ? "None attached"
+              : `${runningServices} running`
+          }
+          detailMuted={serviceList.length === 0}
         />
         <StatTile
           icon={Globe}
@@ -504,8 +515,12 @@ export function ProjectOverview() {
                 <HealthChip
                   icon={Server}
                   label="Services"
-                  value="Planned for a later phase"
-                  tone="muted"
+                  value={
+                    serviceList.length === 0
+                      ? "None attached"
+                      : `${serviceList.length} attached, ${runningServices} running`
+                  }
+                  tone={runningServices > 0 ? "ok" : "muted"}
                 />
                 <HealthChip
                   icon={ActivityIcon}

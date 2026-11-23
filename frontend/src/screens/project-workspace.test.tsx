@@ -8,6 +8,7 @@ import * as ApplicationsService from "../../bindings/locafy.dev/desktop/internal
 import type { Application } from "../../bindings/locafy.dev/desktop/internal/applications/models";
 import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/projects/service";
 import type { Project } from "../../bindings/locafy.dev/desktop/internal/projects/models";
+import * as ServicesService from "../../bindings/locafy.dev/desktop/internal/services/service";
 import * as StatusService from "../../bindings/locafy.dev/desktop/internal/status/service";
 import type { Health } from "../../bindings/locafy.dev/desktop/internal/status/models";
 import { projectWorkspaceRoute } from "./project-workspace";
@@ -31,6 +32,16 @@ vi.mock("../../bindings/locafy.dev/desktop/internal/applications/service", () =>
 
 vi.mock("../../bindings/locafy.dev/desktop/internal/status/service", () => ({
   Health: vi.fn(),
+}));
+
+vi.mock("../../bindings/locafy.dev/desktop/internal/services/service", () => ({
+  List: vi.fn(),
+  Catalogue: vi.fn(),
+  Create: vi.fn(),
+  Start: vi.fn(),
+  Stop: vi.fn(),
+  Restart: vi.fn(),
+  Remove: vi.fn(),
 }));
 
 const project = (overrides: Partial<Project> = {}): Project => ({
@@ -140,6 +151,10 @@ beforeEach(() => {
   vi.mocked(ApplicationsService.RestartProject).mockResolvedValue({
     projectID: "p1", started: [], alreadyRunning: [], skipped: [], failed: [], stopped: [],
   });
+  vi.mocked(ServicesService.List).mockReset();
+  vi.mocked(ServicesService.List).mockResolvedValue([]);
+  vi.mocked(ServicesService.Catalogue).mockReset();
+  vi.mocked(ServicesService.Catalogue).mockResolvedValue([]);
   vi.mocked(StatusService.Health).mockReset();
   vi.mocked(StatusService.Health).mockResolvedValue(health());
   vi.mocked(ProjectsService.OverrideStatus).mockReset();
@@ -199,13 +214,14 @@ describe("ProjectWorkspace", () => {
     expect(screen.getByText("Machine disk")).toBeInTheDocument();
   });
 
-  it("marks services, domains and tunnels as planned instead of inventing them", async () => {
+  it("counts recorded services and keeps domains and tunnels planned", async () => {
     renderAt("/projects/p1");
 
     expect(await screen.findByRole("group", { name: "Services: 0" })).toBeInTheDocument();
+    expect(screen.getAllByText("None attached").length).toBeGreaterThan(0);
     expect(screen.getByRole("group", { name: "Domains: 0" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Tunnels: 0" })).toBeInTheDocument();
-    expect(screen.getAllByText("Planned for a later phase").length).toBeGreaterThanOrEqual(3);
+    expect(screen.getAllByText("Planned for a later phase").length).toBeGreaterThanOrEqual(2);
   });
 
   it("opens the project folder on request", async () => {

@@ -24,6 +24,7 @@ import (
 	"locafy.dev/desktop/internal/projects"
 	"locafy.dev/desktop/internal/runtimes"
 	"locafy.dev/desktop/internal/scaffold"
+	"locafy.dev/desktop/internal/services"
 	"locafy.dev/desktop/internal/settings"
 	"locafy.dev/desktop/internal/status"
 	"locafy.dev/desktop/internal/tools"
@@ -92,6 +93,7 @@ func run() error {
 
 	statusService := status.NewService(database, startedAt)
 	appsService := applications.NewService(database)
+	servicesService := services.NewService(database)
 	scaffoldService := scaffold.NewService(database)
 	runtimesService := runtimes.NewService()
 	downloadsService := downloads.NewService(downloads.NewManager(
@@ -112,6 +114,7 @@ func run() error {
 			application.NewService(statusService),
 			application.NewService(projects.NewService(database)),
 			application.NewService(appsService),
+			application.NewService(servicesService),
 			application.NewService(scaffoldService),
 			application.NewService(runtimesService),
 			application.NewService(downloadsService),
@@ -139,6 +142,7 @@ func run() error {
 
 	// A server started from Locafy must not outlive it.
 	app.OnShutdown(appsService.StopAll)
+	app.OnShutdown(servicesService.StopAll)
 
 	startPosition, startX, startY := windowStartPosition()
 

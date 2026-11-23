@@ -29,6 +29,11 @@ vi.mock("../bindings/locafy.dev/desktop/internal/projects/service", () => ({
   List: vi.fn(),
 }));
 
+vi.mock("../bindings/locafy.dev/desktop/internal/services/service", () => ({
+  List: vi.fn().mockResolvedValue([]),
+  Catalogue: vi.fn().mockResolvedValue([]),
+}));
+
 function renderAt(path: string) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
