@@ -86,6 +86,8 @@ beforeEach(() => {
   vi.mocked(ServicesService.Stop).mockResolvedValue();
   vi.mocked(ServicesService.Restart).mockReset();
   vi.mocked(ServicesService.Restart).mockResolvedValue(service());
+  vi.mocked(ServicesService.Output).mockReset();
+  vi.mocked(ServicesService.Output).mockResolvedValue([]);
   vi.mocked(ServicesService.Remove).mockReset();
   vi.mocked(ServicesService.Remove).mockResolvedValue({
     Name: "PostgreSQL",
@@ -112,7 +114,7 @@ describe("ProjectServices", () => {
     renderServices();
 
     await user.click(
-      await screen.findByRole("button", { name: "Show connection details for PostgreSQL" }),
+      await screen.findByRole("button", { name: "Show details for PostgreSQL" }),
     );
 
     expect(
@@ -124,6 +126,83 @@ describe("ProjectServices", () => {
     expect(
       screen.getByText("C:\\Users\\me\\AppData\\Roaming\\Locafy\\services\\s1\\data"),
     ).toBeInTheDocument();
+  });
+
+  it("shows what a running service has written", async () => {
+    const user = userEvent.setup();
+    vi.mocked(ServicesService.List).mockResolvedValue([service()]);
+    vi.mocked(ServicesService.Output).mockResolvedValue([
+      "2026-11-23 10:00:00.000 GMT [4242] LOG:  starting PostgreSQL 17.6",
+      "2026-11-23 10:00:00.100 GMT [4242] LOG:  database system is ready to accept connections",
+    ]);
+
+    renderServices();
+
+    await user.click(await screen.findByRole("button", { name: "Show details for PostgreSQL" }));
+
+    expect(await screen.findByLabelText("Output for PostgreSQL")).toHaveTextContent(
+      "database system is ready to accept connections",
+    );
+    expect(ServicesService.Output).toHaveBeenCalledWith("s1");
+  });
+
+  it("keeps a failed start's own words after the process is gone", async () => {
+    const user = userEvent.setup();
+    vi.mocked(ServicesService.List).mockResolvedValue([
+      service({
+        Status: "error",
+        Health: "",
+        Error: "PostgreSQL exited with code 1: FATAL: could not create shared memory segment",
+      }),
+    ]);
+    vi.mocked(ServicesService.Output).mockResolvedValue([
+      "2026-11-23 10:00:00.000 GMT [4242] FATAL: could not create shared memory segment",
+    ]);
+
+    renderServices();
+
+    await user.click(await screen.findByRole("button", { name: "Show details for PostgreSQL" }));
+
+    expect(await screen.findByLabelText("Output for PostgreSQL")).toHaveTextContent(
+      "could not create shared memory segment",
+    );
+    expect(screen.getByText("last run")).toBeInTheDocument();
+  });
+
+  it("says when there is no output to show", async () => {
+    const user = userEvent.setup();
+    vi.mocked(ServicesService.List).mockResolvedValue([service()]);
+
+    renderServices();
+
+    await user.click(await screen.findByRole("button", { name: "Show details for PostgreSQL" }));
+
+    expect(
+      await screen.findByText("The process has not written anything yet."),
+    ).toBeInTheDocument();
+  });
+
+  it("refreshes the output on demand", async () => {
+    const user = userEvent.setup();
+    vi.mocked(ServicesService.List).mockResolvedValue([service({ Status: "stopped", Health: "" })]);
+    vi.mocked(ServicesService.Output).mockResolvedValue(["the first run said this"]);
+
+    renderServices();
+
+    await user.click(await screen.findByRole("button", { name: "Show details for PostgreSQL" }));
+    expect(await screen.findByLabelText("Output for PostgreSQL")).toHaveTextContent(
+      "the first run said this",
+    );
+
+    vi.mocked(ServicesService.Output).mockResolvedValue([
+      "the first run said this",
+      "then it said this",
+    ]);
+    await user.click(screen.getByRole("button", { name: "Refresh output for PostgreSQL" }));
+
+    expect(await screen.findByLabelText("Output for PostgreSQL")).toHaveTextContent(
+      "then it said this",
+    );
   });
 
   it("attaches a service from the catalogue under the name the operator gives", async () => {

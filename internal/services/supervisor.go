@@ -72,15 +72,20 @@ type Supervisor struct {
 
 	mu   sync.Mutex
 	runs map[string]*liveService
+	// lastOutput keeps what a process said before it exited, so a failed start
+	// can be read in the interface after the process is gone. Cleared when the
+	// next run starts.
+	lastOutput map[string][]string
 }
 
 // NewSupervisor returns a supervisor for the services in database. emit may be
 // nil in tests.
 func NewSupervisor(database *sql.DB, emit func(string, any)) *Supervisor {
 	supervisor := &Supervisor{
-		database: database,
-		emit:     emit,
-		runs:     map[string]*liveService{},
+		database:   database,
+		emit:       emit,
+		runs:       map[string]*liveService{},
+		lastOutput: map[string][]string{},
 	}
 	supervisor.reconcile()
 	return supervisor
@@ -163,6 +168,9 @@ func (s *Supervisor) Start(id string) (Instance, error) {
 	}
 	live.pid = command.Process.Pid
 	pid := live.pid
+	// A new run starts with an empty transcript, so the panel never shows the
+	// previous process's last words as if they belonged to this one.
+	delete(s.lastOutput, id)
 	s.setStatus(id, StatusRunning, "", &pid)
 	s.mu.Unlock()
 
@@ -215,6 +223,7 @@ func (s *Supervisor) supervise(id string, live *liveService, command *exec.Cmd, 
 	stopped := live.stopped
 	live.exited = true
 	output := append([]string(nil), live.lines...)
+	s.lastOutput[id] = output
 	delete(s.runs, id)
 	s.mu.Unlock()
 
@@ -303,15 +312,15 @@ func (s *Supervisor) StopAll() {
 	}
 }
 
-// Output returns the recent output of a live instance, oldest first.
+// Output returns the recent output of an instance, oldest first: the live
+// process's lines while it runs, and what the last run said once it has exited.
 func (s *Supervisor) Output(id string) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	live, ok := s.runs[id]
-	if !ok {
-		return nil
+	if live, ok := s.runs[id]; ok {
+		return append([]string(nil), live.lines...)
 	}
-	return append([]string(nil), live.lines...)
+	return append([]string(nil), s.lastOutput[id]...)
 }
 
 // trackHealth probes the port while the instance runs and records what it

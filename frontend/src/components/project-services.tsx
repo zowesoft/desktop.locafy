@@ -44,6 +44,8 @@ import { cn } from "@/lib/utils";
 
 export const servicesKey = (projectID: string) => ["services", projectID] as const;
 export const serviceCatalogueKey = ["services", "catalogue"] as const;
+/** A service's recent output: live while it runs, the last run's words after it stops. */
+export const serviceOutputKey = (serviceID: string) => ["service-output", serviceID] as const;
 
 /** One connection detail with a copy action, since these get pasted a lot. */
 function CopyField({ label, value }: { label: string; value: string }) {
@@ -120,6 +122,16 @@ function ServiceRow({
   const [expanded, setExpanded] = useState(false);
   const running = service.Status === "running" || service.Status === "starting";
 
+  // Read only while the row is open, so a project full of services does not
+  // poll transcripts nobody is looking at.
+  const output = useQuery({
+    queryKey: serviceOutputKey(service.ID),
+    queryFn: async () => (await ServicesService.Output(service.ID)) ?? [],
+    enabled: expanded,
+    refetchInterval: expanded && running ? 2000 : false,
+  });
+  const lines = output.data ?? [];
+
   return (
     <>
       <tr className="hover:bg-muted/30">
@@ -162,7 +174,7 @@ function ServiceRow({
               size="sm"
               variant="ghost"
               className="h-7 px-2 text-xs"
-              aria-label={`${expanded ? "Hide" : "Show"} connection details for ${service.Name}`}
+              aria-label={`${expanded ? "Hide" : "Show"} details for ${service.Name}`}
               onClick={() => setExpanded(!expanded)}
             >
               <ChevronDown className={cn("size-3.5 transition-transform", expanded && "rotate-180")} />
@@ -227,6 +239,45 @@ function ServiceRow({
                 <p className="font-mono text-xs break-all">{service.DataDirectory}</p>
               </div>
             </div>
+
+            <div className="mt-3 space-y-1.5 border-t border-border pt-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Output</span>
+                  {!running && lines.length > 0 && (
+                    <span className="text-[10px] text-muted-foreground">last run</span>
+                  )}
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2 text-xs"
+                  aria-label={`Refresh output for ${service.Name}`}
+                  disabled={output.isFetching}
+                  onClick={() => void output.refetch()}
+                >
+                  <RotateCw className={cn("size-3", output.isFetching && "animate-spin")} />
+                </Button>
+              </div>
+              {output.isError ? (
+                <p className="text-xs text-destructive">
+                  The output could not be read: {(output.error as Error).message}
+                </p>
+              ) : lines.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  {running
+                    ? "The process has not written anything yet."
+                    : "The last run wrote nothing, or none has happened yet."}
+                </p>
+              ) : (
+                <pre
+                  aria-label={`Output for ${service.Name}`}
+                  className="max-h-56 overflow-auto rounded-md bg-muted/50 p-2 font-mono text-[11px] leading-relaxed text-foreground/80"
+                >
+                  {lines.join("\n")}
+                </pre>
+              )}
+            </div>
           </td>
         </tr>
       )}
@@ -244,6 +295,9 @@ export function useProjectServices(projectID: string) {
   useEffect(() => {
     const refresh = () => {
       void queryClient.invalidateQueries({ queryKey: servicesKey(projectID) });
+      // A process that has just exited has said its last words; read them again
+      // so an open output panel shows why instead of the live tail that stopped.
+      void queryClient.invalidateQueries({ queryKey: ["service-output"] });
     };
     const offState = Events.On("service:state", refresh);
     const offHealth = Events.On("service:health", refresh);

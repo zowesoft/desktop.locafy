@@ -382,8 +382,11 @@ func TestStopEndsTheProcessAndClearsHealth(t *testing.T) {
 	if err := supervisor.Stop(instance.ID); !errors.Is(err, ErrNotRunning) {
 		t.Fatalf("second stop: err = %v, want the not-running refusal", err)
 	}
-	if out := supervisor.Output(instance.ID); out != nil {
-		t.Fatalf("output = %v, want no live process", out)
+	// A stopped service keeps what its last run said, so the interface can still
+	// show it; what it must not do is keep reading a process that is gone.
+	out := strings.Join(supervisor.Output(instance.ID), "\n")
+	if !strings.Contains(out, "started") {
+		t.Fatalf("output = %q, want the last run's words kept after a stop", out)
 	}
 
 	binaries, err := findPostgres()
@@ -548,5 +551,76 @@ func TestDatabasePreparationRetriesWhileTheClusterStarts(t *testing.T) {
 	}, "waiting for a healthy service")
 	if settled.Error != "" {
 		t.Fatalf("error = %q, want the startup refusal retried instead of recorded", settled.Error)
+	}
+}
+
+// A start can fail after the engine has said why. Those last words must stay
+// readable once the process is gone, and must not leak into the next run.
+func TestOutputKeepsWhatAProcessSaidBeforeItExited(t *testing.T) {
+	database, projectID, root := setup(t)
+	binaries, err := findPostgres()
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+
+	if runtime.GOOS == "windows" {
+		writeScript(t, binaries.postgres,
+			"@echo off\r\n"+
+				"setlocal enabledelayedexpansion\r\n"+
+				"set d=\r\nset prev=\r\n"+
+				"for %%a in (%*) do (\r\n"+
+				"  if \"!prev!\"==\"-D\" set \"d=%%a\"\r\n"+
+				"  set \"prev=%%a\"\r\n"+
+				")\r\n"+
+				"echo 1234> \"!d!\\postmaster.pid\"\r\n"+
+				"echo 2026-11-23 10:00:00.000 GMT [1234] FATAL: could not create shared memory segment 1>&2\r\n"+
+				"exit /b 1\r\n")
+	} else {
+		writeScript(t, binaries.postgres,
+			"#!/bin/sh\n"+
+				"d=\"\"\nprev=\"\"\n"+
+				"for a in \"$@\"; do\n"+
+				"  if [ \"$prev\" = \"-D\" ]; then d=\"$a\"; fi\n"+
+				"  prev=\"$a\"\n"+
+				"done\n"+
+				"echo 1234 > \"$d/postmaster.pid\"\n"+
+				"echo '2026-11-23 10:00:00.000 GMT [1234] FATAL: could not create shared memory segment' >&2\n"+
+				"exit 1\n")
+	}
+
+	instance := create(t, database, root, projectID, "")
+	supervisor := NewSupervisor(database, nil)
+	t.Cleanup(supervisor.StopAll)
+	if _, err := supervisor.Start(instance.ID); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	waitFor(t, database, instance.ID, func(service Instance) bool {
+		return service.Status == StatusError
+	}, "waiting for the failed start")
+	said := strings.Join(supervisor.Output(instance.ID), "\n")
+	if !strings.Contains(said, "could not create shared memory segment") {
+		t.Fatalf("output = %q, want the process's own explanation kept after it exited", said)
+	}
+
+	if runtime.GOOS == "windows" {
+		writeScript(t, binaries.postgres, "@echo off\r\necho started\r\nexit /b 0\r\n")
+	} else {
+		writeScript(t, binaries.postgres, "#!/bin/sh\necho started\nexit 0\n")
+	}
+	if _, err := supervisor.Start(instance.ID); err != nil {
+		t.Fatalf("start again: %v", err)
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		lines := supervisor.Output(instance.ID)
+		if len(lines) == 1 && strings.Contains(lines[0], "started") {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("output after a restart = %q, want only the new run's line", lines)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
