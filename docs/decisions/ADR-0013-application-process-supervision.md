@@ -69,7 +69,13 @@ failure, empty otherwise) and `started_at`.
 - Start writes `running` only after `exec.Start` succeeded; a process that exits
   on its own moves to `stopped` (code 0) or `error` (any other outcome).
 - Stop writes `stopping`, kills the tree, and waits up to ten seconds for the
-  exit. A stop the operator asked for ends `stopped` even when the kill's exit
+  exit. The wait is decided by the process itself as well as by its exit record:
+  the pid is re-checked every fifty milliseconds, so a killed process that has
+  gone counts as stopped even when its supervisor has not yet reported the exit.
+  A child that outlives the tree can hold the output pipes open and delay that
+  report on a loaded machine, which is exactly when a stop must not claim the
+  process survived; the terminal record is written once, by whichever gets there
+  first. A stop the operator asked for ends `stopped` even when the kill's exit
   code is nonzero, because the exit is the expected result.
 - Restart is stop-then-start through the same paths; it never launches a second
   copy of a process that did not stop.

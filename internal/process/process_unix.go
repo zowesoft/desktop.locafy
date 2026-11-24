@@ -23,3 +23,14 @@ func CommandFor(ctx context.Context, bin string, args []string) *exec.Cmd {
 func KillTree(pid int) {
 	_ = syscall.Kill(-pid, syscall.SIGKILL)
 }
+
+// Alive reports whether the pid still names a running process. Signal 0 only
+// asks whether the process exists; EPERM means it does but belongs to someone
+// else. A pid that has been reused would read as alive, as it would on Windows.
+func Alive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	err := syscall.Kill(pid, 0)
+	return err == nil || err == syscall.EPERM
+}

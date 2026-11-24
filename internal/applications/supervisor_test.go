@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -296,5 +297,94 @@ func TestSupervisorReconcilesStaleRunningRecords(t *testing.T) {
 	}
 	if reconciled.Error != staleRunMessage {
 		t.Fatalf("error = %q, want the restart explained", reconciled.Error)
+	}
+}
+
+// deadPID starts a process, reaps it and returns its pid: a pid that names no
+// running process, which is what a late exit record leaves behind.
+func deadPID(t *testing.T) int {
+	t.Helper()
+
+	command := exec.Command("cmd.exe", "/c", "exit 0")
+	if runtime.GOOS != "windows" {
+		command = exec.Command("sh", "-c", "exit 0")
+	}
+	if err := command.Start(); err != nil {
+		t.Fatalf("start a short-lived process: %v", err)
+	}
+	pid := command.Process.Pid
+	if err := command.Wait(); err != nil {
+		t.Fatalf("reap the short-lived process: %v", err)
+	}
+	return pid
+}
+
+func TestStopDecidesFromTheProcessExitRatherThanItsRecord(t *testing.T) {
+	database := openDatabase(t)
+	app, _ := applicationWithCommand(t, database, quoteCommand(script(t, t.TempDir(), "live", 0, true)))
+
+	supervisor := NewSupervisor(database, nil)
+	t.Cleanup(supervisor.StopAll)
+
+	previousStop := stopTimeout
+	stopTimeout = 5 * time.Second
+	t.Cleanup(func() { stopTimeout = previousStop })
+
+	// The process is already gone; only the exit record is outstanding, which is
+	// the state a loaded machine leaves while a child holds the output pipes.
+	live := &run{done: make(chan struct{}), pid: deadPID(t), name: app.Name}
+	supervisor.mu.Lock()
+	supervisor.runs[app.ID] = live
+	supervisor.mu.Unlock()
+
+	start := time.Now()
+	if err := supervisor.Stop(app.ID); err != nil {
+		t.Fatalf("stop: %v, want a process that has exited treated as stopped", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("stop took %s, want it decided from the process rather than the timeout", elapsed)
+	}
+	select {
+	case <-live.done:
+	default:
+		t.Fatal("stop released nobody: the run's waiters are still blocked")
+	}
+	if stopped, err := Get(database, app.ID); err != nil || stopped.Status != StatusStopped {
+		t.Fatalf("application = %+v (%v), want stopped", stopped, err)
+	}
+	if _, running := supervisor.runs[app.ID]; running {
+		t.Fatal("the run is still registered after a stop that saw the process leave")
+	}
+}
+
+func TestStopStillFailsWhenTheProcessIsAliveAtTheDeadline(t *testing.T) {
+	database := openDatabase(t)
+	app, _ := applicationWithCommand(t, database, quoteCommand(script(t, t.TempDir(), "live", 0, true)))
+
+	supervisor := NewSupervisor(database, nil)
+
+	previousStop, previousAlive := stopTimeout, processAlive
+	stopTimeout = 250 * time.Millisecond
+	processAlive = func(int) bool { return true }
+	t.Cleanup(func() {
+		stopTimeout, processAlive = previousStop, previousAlive
+		supervisor.mu.Lock()
+		delete(supervisor.runs, app.ID)
+		supervisor.mu.Unlock()
+	})
+
+	live := &run{done: make(chan struct{}), pid: 424242, name: app.Name}
+	supervisor.mu.Lock()
+	supervisor.runs[app.ID] = live
+	supervisor.mu.Unlock()
+
+	err := supervisor.Stop(app.ID)
+	if err == nil || !strings.Contains(err.Error(), "did not stop") {
+		t.Fatalf("stop = %v, want a refusal while the process is still there", err)
+	}
+	select {
+	case <-live.done:
+		t.Fatal("a process that never stopped released its waiters")
+	default:
 	}
 }

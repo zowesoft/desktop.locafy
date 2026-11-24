@@ -41,8 +41,16 @@ const (
 // view that opens late. Durable logs belong to DESK-DEVX-001.
 const outputLines = 500
 
-// stopTimeout is how long Stop waits for a killed tree to report its exit.
-const stopTimeout = 10 * time.Second
+// stopTimeout is how long Stop waits for a killed tree to report its exit. It is
+// a variable so a test can shorten the wait.
+var stopTimeout = 10 * time.Second
+
+// stopPoll is how often Stop asks whether the process itself has gone, rather
+// than trusting only its supervisor's exit record.
+const stopPoll = 50 * time.Millisecond
+
+// processAlive is the platform's liveness check, overridable in tests.
+var processAlive = process.Alive
 
 // runtimeScanInterval is how often a running application's ports and health
 // are re-read. Servers bind shortly after they start and may open sockets
@@ -73,6 +81,7 @@ type run struct {
 	usage        Usage
 	stopped      bool
 	exited       bool
+	finalised    bool
 }
 
 // Supervisor runs saved applications one process at a time and records what
@@ -249,10 +258,7 @@ func (s *Supervisor) supervise(id string, live *run, command *exec.Cmd, stdout i
 
 	s.mu.Lock()
 	stopped := live.stopped
-	live.exited = true
-	delete(s.runs, id)
 	s.mu.Unlock()
-	s.dropBaseline(live.pid)
 
 	status := StatusStopped
 	message := ""
@@ -264,13 +270,33 @@ func (s *Supervisor) supervise(id string, live *run, command *exec.Cmd, stdout i
 		// A kill's exit code is not a failure the operator needs to read back.
 		exitCode = nil
 	}
-	s.update(id, status, exitCode, message, false)
-	s.emitState(id, status, exitCode, message)
+	s.finish(id, live, status, exitCode, message)
+}
+
+// finish records a process's terminal state exactly once and releases whoever
+// is waiting. Usually the supervising goroutine gets here first; a Stop that saw
+// the process itself disappear can get here earlier, and the later caller must
+// not write the record twice or close a channel twice.
+func (s *Supervisor) finish(id string, live *run, status string, exitCode *int, message string) bool {
+	s.mu.Lock()
+	if live.finalised {
+		s.mu.Unlock()
+		return false
+	}
+	live.finalised = true
+	live.exited = true
+	delete(s.runs, id)
+	s.mu.Unlock()
+
+	s.dropBaseline(live.pid)
 
 	// Waiters observe the terminal state first: a caller released before the
 	// record is written would still read "stopping" and a project restart
 	// would skip the application it just stopped.
+	s.update(id, status, exitCode, message, false)
+	s.emitState(id, status, exitCode, message)
 	close(live.done)
+	return true
 }
 
 // Stop kills the application's process tree and waits for the exit.
@@ -291,11 +317,24 @@ func (s *Supervisor) Stop(id string) error {
 	if pid > 0 {
 		process.KillTree(pid)
 	}
-	select {
-	case <-live.done:
-		return nil
-	case <-time.After(stopTimeout):
-		return fmt.Errorf("application process %d did not stop", pid)
+	deadline := time.Now().Add(stopTimeout)
+	for {
+		select {
+		case <-live.done:
+			return nil
+		case <-time.After(stopPoll):
+		}
+		// The kill worked but its exit record has not arrived: a child that
+		// outlived the tree can hold the output pipes open, and a loaded machine
+		// can delay the supervisor. The process's own state is the fact that
+		// decides, not the timeout alone.
+		if pid > 0 && !processAlive(pid) {
+			s.finish(id, live, StatusStopped, nil, "")
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("application process %d did not stop", pid)
+		}
 	}
 }
 
