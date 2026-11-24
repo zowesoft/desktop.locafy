@@ -225,7 +225,10 @@ evidence is in `docs/FEATURES.md`.
    port. Once the port first answers, the project's database is created with
    the engine's own tool, so the connection details are usable immediately.
 4. **Stop and restart.** Stop asks the engine to shut down gracefully
-   (`pg_ctl stop -m fast`), then falls back to the supervised tree kill.
+   (`pg_ctl stop -m fast`), then falls back to the supervised tree kill. As with
+   application supervision (ADR-0013), the stop is decided from the process's
+   own exit rather than only from the record, so a child still holding the
+   output pipes cannot make a killed engine read as a failed stop.
    Restarting the service instance is stop then start, keeping the same
    directory and port. A project restart is a different action and leaves
    running services alone (ADR-0016).

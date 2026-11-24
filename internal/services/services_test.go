@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -396,6 +397,98 @@ func TestStopEndsTheProcessAndClearsHealth(t *testing.T) {
 	stopMarker := filepath.Join(filepath.Dir(binaries.pgctl), "stop-invoked.txt")
 	if _, err := os.Stat(stopMarker); err != nil {
 		t.Fatalf("graceful stop marker: %v", err)
+	}
+}
+
+// deadPID reaps a short-lived process and answers its pid, so a test can hold a
+// process that is certainly gone.
+func deadPID(t *testing.T) int {
+	t.Helper()
+
+	command := exec.Command("cmd.exe", "/c", "exit 0")
+	if runtime.GOOS != "windows" {
+		command = exec.Command("sh", "-c", "exit 0")
+	}
+	if err := command.Start(); err != nil {
+		t.Fatalf("start a short-lived process: %v", err)
+	}
+	pid := command.Process.Pid
+	if err := command.Wait(); err != nil {
+		t.Fatalf("reap the short-lived process: %v", err)
+	}
+	return pid
+}
+
+func TestStopDecidesFromTheServiceExitRatherThanItsRecord(t *testing.T) {
+	database, projectID, root := setup(t)
+	instance := create(t, database, root, projectID, "")
+	supervisor := NewSupervisor(database, nil)
+
+	live := &liveService{done: make(chan struct{}), pid: deadPID(t), stopped: true, lines: []string{"shutting down"}}
+	supervisor.mu.Lock()
+	supervisor.runs[instance.ID] = live
+	supervisor.mu.Unlock()
+
+	started := time.Now()
+	if err := supervisor.Stop(instance.ID); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("stop took %s, want a decision from the exit rather than the %s timeout", elapsed, stopTimeout)
+	}
+	select {
+	case <-live.done:
+	default:
+		t.Fatal("stop returned without releasing the run's waiters")
+	}
+
+	stopped, err := Get(database, instance.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if stopped.Status != StatusStopped || stopped.Error != "" {
+		t.Fatalf("service = %q/%q, want a clean stop", stopped.Status, stopped.Error)
+	}
+	supervisor.mu.Lock()
+	_, running := supervisor.runs[instance.ID]
+	supervisor.mu.Unlock()
+	if running {
+		t.Fatal("the run is still registered after a stop")
+	}
+	if out := strings.Join(supervisor.Output(instance.ID), "\n"); !strings.Contains(out, "shutting down") {
+		t.Fatalf("output = %q, want the last run's words kept", out)
+	}
+}
+
+func TestStopStillFailsWhenTheServiceProcessIsAliveAtTheDeadline(t *testing.T) {
+	database, projectID, root := setup(t)
+	instance := create(t, database, root, projectID, "")
+	supervisor := NewSupervisor(database, nil)
+
+	previousAlive, previousStop, previousKill := processAlive, stopTimeout, killTimeout
+	processAlive = func(int) bool { return true }
+	stopTimeout = 250 * time.Millisecond
+	killTimeout = 250 * time.Millisecond
+	t.Cleanup(func() {
+		processAlive, stopTimeout, killTimeout = previousAlive, previousStop, previousKill
+		supervisor.mu.Lock()
+		delete(supervisor.runs, instance.ID)
+		supervisor.mu.Unlock()
+	})
+
+	live := &liveService{done: make(chan struct{}), pid: 424242, stopped: true}
+	supervisor.mu.Lock()
+	supervisor.runs[instance.ID] = live
+	supervisor.mu.Unlock()
+
+	err := supervisor.Stop(instance.ID)
+	if err == nil || !strings.Contains(err.Error(), "did not stop") {
+		t.Fatalf("stop = %v, want a refusal while the process is still there", err)
+	}
+	select {
+	case <-live.done:
+		t.Fatal("a process that never stopped released its waiters")
+	default:
 	}
 }
 

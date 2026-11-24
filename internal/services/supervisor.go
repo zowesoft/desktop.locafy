@@ -49,6 +49,14 @@ var (
 // healthProbe is a seam: tests answer without opening a socket.
 var healthProbe = probePort
 
+// processAlive is a seam: tests answer without a live process. A stop is
+// decided from the process itself, not only from the record, so a slow exit
+// does not read as a failed stop.
+var processAlive = process.Alive
+
+// stopPoll is how often Stop re-checks the process while it waits.
+const stopPoll = 50 * time.Millisecond
+
 var staleRunMessage = "Locafy was closed while this service was running; start it again to bring it back."
 
 // liveService is one supervised process and the output it has produced.
@@ -61,6 +69,9 @@ type liveService struct {
 	// prepared records that the project's database has been offered to the
 	// cluster once this process reached the port.
 	prepared bool
+	// finalised records that the end of this run has been written once, by the
+	// supervisor or by Stop, whichever noticed first.
+	finalised bool
 }
 
 // Supervisor starts and stops service instances and records what happened. It
@@ -221,10 +232,7 @@ func (s *Supervisor) supervise(id string, live *liveService, command *exec.Cmd, 
 
 	s.mu.Lock()
 	stopped := live.stopped
-	live.exited = true
 	output := append([]string(nil), live.lines...)
-	s.lastOutput[id] = output
-	delete(s.runs, id)
 	s.mu.Unlock()
 
 	status := StatusStopped
@@ -235,9 +243,29 @@ func (s *Supervisor) supervise(id string, live *liveService, command *exec.Cmd, 
 		status = StatusError
 		message = describeExit(waitErr, exitCode, output)
 	}
+	s.finish(id, live, status, message)
+}
+
+// finish records the end of a run once. Both the supervising goroutine and Stop
+// can get here, and the record may lag the process when a child holds the output
+// pipes open, so the first caller writes it and the second is a no-op.
+func (s *Supervisor) finish(id string, live *liveService, status, message string) bool {
+	s.mu.Lock()
+	if live.finalised {
+		s.mu.Unlock()
+		return false
+	}
+	live.finalised = true
+	live.exited = true
+	output := append([]string(nil), live.lines...)
+	s.lastOutput[id] = output
+	delete(s.runs, id)
+	s.mu.Unlock()
+
 	s.setStatus(id, status, message, nil)
 	s.emitState(id)
 	close(live.done)
+	return true
 }
 
 // Stop asks the engine to shut down gracefully, then kills the tree if it does
@@ -260,19 +288,32 @@ func (s *Supervisor) Stop(id string) error {
 		requestShutdown(service)
 	}
 
-	select {
-	case <-live.done:
-		return nil
-	case <-time.After(stopTimeout):
-		if pid > 0 {
-			process.KillTree(pid)
+	deadline := time.Now().Add(stopTimeout)
+	killed := false
+	for {
+		select {
+		case <-live.done:
+			return nil
+		case <-time.After(stopPoll):
 		}
-	}
-	select {
-	case <-live.done:
-		return nil
-	case <-time.After(killTimeout):
-		return fmt.Errorf("service process %d did not stop", pid)
+		// The exit record is written only after the output readers see EOF, so a
+		// child still holding the pipes can delay it past the timeout. Ask the
+		// process itself rather than treating that lag as a failed stop.
+		if pid > 0 && !processAlive(pid) {
+			s.finish(id, live, StatusStopped, "")
+			return nil
+		}
+		if !killed && time.Now().After(deadline) {
+			if pid > 0 {
+				process.KillTree(pid)
+			}
+			killed = true
+			deadline = time.Now().Add(killTimeout)
+			continue
+		}
+		if killed && time.Now().After(deadline) {
+			return fmt.Errorf("service process %d did not stop", pid)
+		}
 	}
 }
 

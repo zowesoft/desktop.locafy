@@ -48,14 +48,14 @@ const (
 const maxPortCandidates = 100
 
 var (
-	ErrUnknownEngine    = errors.New("that service engine is not in the catalogue")
+	ErrUnknownEngine     = errors.New("that service engine is not in the catalogue")
 	ErrEngineUnavailable = errors.New("that service engine is not installed on this machine")
-	ErrNameRequired     = errors.New("a service needs a name")
-	ErrNotFound         = errors.New("service not found")
-	ErrServiceBusy      = errors.New("the service is running")
-	ErrPortInUse        = errors.New("the service's port is already in use")
-	ErrAlreadyRunning   = errors.New("this service is already running")
-	ErrNotRunning       = errors.New("this service is not running")
+	ErrNameRequired      = errors.New("a service needs a name")
+	ErrNotFound          = errors.New("service not found")
+	ErrServiceBusy       = errors.New("the service is running")
+	ErrPortInUse         = errors.New("the service's port is already in use")
+	ErrAlreadyRunning    = errors.New("this service is already running")
+	ErrNotRunning        = errors.New("this service is not running")
 )
 
 // Connection is what an application needs to reach the instance. Authentication
@@ -74,25 +74,25 @@ type Connection struct {
 // Instance is one configured server: an engine, a data directory and an
 // allocated port, owned by a project.
 type Instance struct {
-	ID           string
-	ProjectID    string
-	Name         string
-	Engine       string
-	Version      string
-	Port         int
-	DataDirectory string
-	DatabaseName string
-	UserName     string
-	Status       string
-	Error        string
-	StartedAt    string
-	Health       string
-	HealthDetail string
+	ID              string
+	ProjectID       string
+	Name            string
+	Engine          string
+	Version         string
+	Port            int
+	DataDirectory   string
+	DatabaseName    string
+	UserName        string
+	Status          string
+	Error           string
+	StartedAt       string
+	Health          string
+	HealthDetail    string
 	HealthCheckedAt string
-	PID          *int
-	CreatedAt    string
-	UpdatedAt    string
-	Connection   Connection
+	PID             *int
+	CreatedAt       string
+	UpdatedAt       string
+	Connection      Connection
 }
 
 // Template describes an engine the catalogue offers. Available reports whether
