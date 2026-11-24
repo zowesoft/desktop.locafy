@@ -2,6 +2,13 @@
 
 Architecture decision records (ADRs) for this repository.
 
+A verification audit on 2026-11-24 reread the accepted records for checks that
+were presented as done when nothing had been run. ADR-0001, 0002, 0003, 0005,
+0006, 0011 and 0013 now say what was actually executed and where a claim is
+reasoning rather than a measurement; ADR-0020's engine table carries the same
+distinction. When a record's evidence ages, prefer a dated note over a silent
+rewrite.
+
 ## Recorded decisions
 
 | ADR | Decision | Status |

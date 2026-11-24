@@ -21,6 +21,6 @@ Use `modernc.org/sqlite` behind `database/sql` as the SQLite driver. No CGO anyw
 
 - Builds for all supported platforms need only a Go toolchain; CI images stay simple.
 - Cross-compilation for release packaging remains plain `go build`.
-- The pure-Go driver is measurably slower than mattn's in some workloads; for Locafy's state (configuration, metadata, logs index) this is immaterial — local throughput is bounded by the OS, not the driver.
+- The pure-Go driver is slower than mattn's in some published benchmarks (not measured here); for Locafy's state (configuration, metadata, logs index) this is immaterial — local throughput is bounded by the OS, not the driver.
 - The dependency is large (it embeds translated SQLite source); acceptable in exchange for the toolchain simplicity.
 - Feature parity caveat: some compile-time SQLite options differ from the C build; none used by Locafy are affected. Revisit only if a specific SQLite extension is ever required (record as a new decision then).

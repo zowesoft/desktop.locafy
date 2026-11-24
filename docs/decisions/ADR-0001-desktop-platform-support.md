@@ -10,7 +10,7 @@ The PRD initially allowed selecting a single first supported operating system (w
 
 ## Decision
 
-Locafy desktop supports Windows, macOS, and Linux from the first release. Every build targets all three platforms. Platform-specific behavior is implemented and tested per platform as each feature is built, and CI builds and tests on all three platforms.
+Locafy desktop supports Windows, macOS, and Linux from the first release. Every build targets all three platforms. Platform-specific behavior is implemented and tested per platform as each feature is built. CI is configured to build and test on all three platforms (`.github/workflows/ci.yml`, matrix `windows-latest`, `macos-latest`, `ubuntu-latest`); whether those jobs are green is read on the CI service, not from this repository, so this record claims configuration rather than a passing run.
 
 ## Consequences
 

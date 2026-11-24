@@ -27,7 +27,8 @@ that is the volume Locafy fills.
 - **Per-platform syscalls behind build tags.** Avoids a dependency, but means
   three implementations and three sets of tests, and only the Windows path
   would be exercised in current development. gopsutil's platform handling is
-  upstream-tested on all three.
+  tested upstream on all three per its own CI — not measured here, where the
+  Windows path is the only one that has run.
 - **`golang.org/x/sys` directly on Windows only.** Would leave macOS and Linux
   without monitoring, which contradicts the cross-platform commitment in
   ADR-0001.

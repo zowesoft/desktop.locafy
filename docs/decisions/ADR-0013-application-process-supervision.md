@@ -35,7 +35,13 @@ Process creation and tree killing move to `internal/process`:
   Windows, `kill(-pid, SIGKILL)` on Unix.
 
 The scaffold runner and the application supervisor both call these; nothing
-else spawns a process. No shell is ever involved: the stored start command is
+else spawns a process.
+
+Windows is the only platform this has been exercised on: the `.bat` shim, the
+hidden console and `taskkill /T /F` were run live. The Unix branch — the process
+group and `kill(-pid, SIGKILL)` — compiles and is covered by the process tests,
+and it is what the macOS and Linux CI jobs execute, but no macOS or Linux machine
+was used here, so this record does not claim either was seen working. No shell is ever involved: the stored start command is
 split into an argv by a quote-aware tokenizer, and the first token is resolved
 to an executable (directly when it names a path, otherwise through `PATH` and
 Windows `PATHEXT`).

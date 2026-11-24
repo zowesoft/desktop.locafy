@@ -109,10 +109,12 @@ actions, so they are never confirmed, rebuilt or logged as commands.
 
 ## Consequences
 
-- The advertised framework list is small and verified: five official
-  scaffolders, each smoke-tested on Windows before its card is shown as ready.
-  Recipes without a live check carry that limitation in the tracker rather than
-  in the UI.
+- The advertised framework list is small and backed by live runs: all five
+  official scaffolders were run on the Windows machine that built them, and
+  `docs/FEATURES.md` records each run. "A card is shown as ready only after a
+  live check" is a review rule, not a runtime gate — nothing in the code refuses
+  a card because a recipe was never run — so a new recipe must be marked with
+  that limitation in the tracker until someone runs it.
 - A recipe that changes its flags fails visibly: the tool's own output is in the
   log, verification markers catch a half-finished install, and nothing is
   registered.

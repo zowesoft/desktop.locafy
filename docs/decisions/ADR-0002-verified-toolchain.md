@@ -8,6 +8,8 @@
 
 The PRD requires that Wails v3, Go, and supporting toolchain versions be verified against official sources before any version is hardcoded into implementation scripts or documentation (PRD section 6.1, section 23). Verification was performed against the official Wails v3 installation documentation (v3.wails.io/quick-start/installation/, last updated 2026-11-13) and confirmed by running `wails3 doctor` on a Windows 11 machine.
 
+**Re-checked on 2026-11-24:** `wails3 version` → v3.0.0, `go version` → go1.27.1 windows/amd64, `node --version` → v22.14.0, `npm --version` → 11.19.0, and `wails3 doctor` reports Windows 11 Pro (build 22000) with WebView2 157.0.4341.60. The Go, Node and npm pins still match what is recorded; the WebView2 runtime has moved past the build this record first named, which is expected of an Evergreen runtime. Only Windows was re-checked — macOS and Linux were not run, here or in the first pass.
+
 ## Decision
 
 The desktop repository targets the following verified toolchain:
@@ -18,7 +20,9 @@ The desktop repository targets the following verified toolchain:
 | Go | 1.27.1 (minimum 1.26 per Wails docs) | `go version`, `wails3 doctor` |
 | Node.js | 22.14.0 (LTS) | `node --version` |
 | npm | 11.19.0 | `npm --version` |
-| WebView2 Runtime (Windows) | 157.0.4341.46 | `wails3 doctor` |
+| WebView2 Runtime (Windows) | 157.0.4341.46 recorded; 157.0.4341.60 on 2026-11-24 | `wails3 doctor` — Evergreen, so the build number moves with Microsoft's updater |
+
+Everything in the Verified by column was run on the Windows 11 machine that built the first slice; nothing in the table was measured on macOS or Linux. The macOS and Linux requirements below come from the Wails documentation, not from a run here.
 
 Supporting facts verified from the docs:
 

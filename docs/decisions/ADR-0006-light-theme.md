@@ -27,7 +27,8 @@ Support both themes as first-class palettes.
   the stored theme before the bundle loads.
 - Tokens that carry meaning adjust per theme. In light, `--success` and
   `--muted-foreground` are darkened until status and secondary text clear a
-  4.5:1 contrast ratio on the tints they actually sit on, not only on white.
+  4.5:1 contrast ratio on the tints they actually sit on, not only on white —
+  measured on 2026-11-24 from the token values, with the ratios in Consequences.
 
 ## Windows caption bar
 
@@ -47,8 +48,13 @@ justifies today.
   their status colours, since a colour that reads well on one palette may not
   on the other.
 - Component styles must use semantic tokens. A literal colour that looks right
-  in dark is a defect in light, which is how the two contrast failures in the
-  light palette were found.
+  in dark is a defect in light. The two tokens this record adjusts were measured
+  on 2026-11-24 from `frontend/src/index.css`: `--success` `#0B6B33` reads
+  6.02:1 on `--background`, 6.63:1 on a card and 5.71:1 on a 10% success tint,
+  and `--muted-foreground` `#5C596B` reads 6.16:1, 6.78:1 and 5.83:1 on the same
+  surfaces — every pair above 4.5:1. What the two earlier failures were is not
+  recorded anywhere, so the ratios above are the check that stands rather than
+  a recollection of finding them.
 - The toggle lives in the top bar and is labelled with its action. The system
   preference is not followed: the product default is dark until the user
   chooses otherwise.
