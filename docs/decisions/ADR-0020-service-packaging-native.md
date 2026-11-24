@@ -226,7 +226,9 @@ evidence is in `docs/FEATURES.md`.
    the engine's own tool, so the connection details are usable immediately.
 4. **Stop and restart.** Stop asks the engine to shut down gracefully
    (`pg_ctl stop -m fast`), then falls back to the supervised tree kill.
-   Restart is stop then start, keeping the same directory and port.
+   Restarting the service instance is stop then start, keeping the same
+   directory and port. A project restart is a different action and leaves
+   running services alone (ADR-0016).
 5. **Health.** A TCP connection attempt on the allocated port, on the runtime
    loop, reported as answering or not answering with the port named. A stopped
    instance clears the reading rather than showing a stale one.

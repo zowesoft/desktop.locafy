@@ -240,7 +240,7 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 ### DESK-SVC-001 — Service catalogue and lifecycle
 
 - **Repository:** desktop.locafy
-- **Description:** Service catalogue and project attachment (priority: PostgreSQL → Redis → Mail capture → MySQL/MariaDB → S3-compatible storage); configuration, persistent data directories, start/stop/restart, health checks, logs, connection details; safe removal with data-retention warnings.
+- **Description:** Service catalogue and project attachment (priority per ADR-0020: PostgreSQL, delivered, then MySQL and Mail capture; Redis is recommended for omission from the first release, MariaDB waits on its macOS route, and MinIO is ruled out, leaving object storage undecided); configuration, persistent data directories, start/stop/restart, health checks, logs, connection details; safe removal with data-retention warnings.
 - **Dependencies:** DESK-APP-002
 - **Acceptance criteria:** A project can run an application with its required managed services; service data persists per documented behavior; service failures reported independently; removing a service configuration does not silently delete data; per-project isolation (PRD sections 10.4, 20, Phase 5).
 - **Status:** IN_PROGRESS

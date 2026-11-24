@@ -45,9 +45,9 @@ internal/
   db/         SQLite open/migrate (embedded migrations)
   settings/   application settings
   projects/   project model, import, lifecycle orchestration
-  apps/       application workloads, process lifecycle
+  applications/  workloads, process lifecycle, ports, health, project orchestration
   runtimes/   runtime detection/selection per platform
-  services/   managed infrastructure (PostgreSQL, Redis, ...)
+  services/   native service engines and their instances (PostgreSQL today)
   network/    local domains, reverse proxy, certificates
   env/        environment configuration and secrets
   logs/       log collection and retrieval
@@ -73,4 +73,6 @@ Planned areas appear as their features are built; packages are added when a feat
 ## Status
 
 - Phase 0: architecture defined (this document); toolchain verified (ADR-0002); platform policy decided (ADR-0001).
-- Phase 1 in progress: application bootstrap and SQLite persistence.
+- Built on Windows: the SQLite control plane, projects, applications with supervision, ports and health, project lifecycle orchestration, native service instances (PostgreSQL delivered; packaging settled by ADR-0020), framework scaffolds, the runtime registry, managed installs and the activity feed.
+- macOS and Linux compile and pass their tests, and CI is configured for all three platforms; neither has had a manual run.
+- Still planned: local domains and the reverse proxy, environment configuration, tunnels and analytics.

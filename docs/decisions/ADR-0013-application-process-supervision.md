@@ -77,8 +77,10 @@ failure, empty otherwise) and `started_at`.
   process survived; the terminal record is written once, by whichever gets there
   first. A stop the operator asked for ends `stopped` even when the kill's exit
   code is nonzero, because the exit is the expected result.
-- Restart is stop-then-start through the same paths; it never launches a second
-  copy of a process that did not stop.
+- An application's restart is stop-then-start through the same paths; it never
+  launches a second copy of a process that did not stop. This is the single
+  application's control: a project restart is different, and cycles the
+  applications while leaving services running (ADR-0016).
 - One application failing does not touch another record: every transition is a
   single-row update keyed by the application id.
 

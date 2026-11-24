@@ -83,7 +83,7 @@ Every metric and log states its scope.
 
 Installed service engines are machine-level (ADR-0008). They are managed
 alongside runtimes rather than inside a project, and service instances appear in
-the project's Services tab. The exact screen is settled with DESK-RUN-001.
+the project's Services tab, which DESK-SVC-001 delivered; attaching an instance and starting it happen there, and engine installs arrive through the Downloads view (ADR-0019).
 
 ### Project switcher
 

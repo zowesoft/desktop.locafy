@@ -192,8 +192,13 @@ These stay open and must not be guessed (PRD section 23):
   workable for engines that take a data directory and a port on the command
   line, but per-platform availability must be verified engine by engine before
   a choice is made. Known concerns include Redis on Windows, Erlang for
-  RabbitMQ, and MinIO licensing.
-- **Object storage engine.** MinIO remains a candidate only.
+  RabbitMQ, and MinIO licensing. ADR-0020 answers this for the delivered slice:
+  native processes are the default, containers only as a recorded per-engine
+  exception, and each engine's published builds were checked before it entered
+  the catalogue. The check stays per engine as new ones arrive.
+- **Object storage engine.** MinIO is out under ADR-0020's admission rule — its
+  community edition is archived and publishes no binaries or images — and
+  Garage and SeaweedFS are the candidates to evaluate.
 - **Engine acquisition and download jobs.** Handled with runtime installation in
   Phase 4 and surfaced in the downloads view.
 
