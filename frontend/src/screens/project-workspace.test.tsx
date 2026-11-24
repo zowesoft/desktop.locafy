@@ -353,6 +353,18 @@ describe("ProjectWorkspace", () => {
     expect(ApplicationsService.RestartProject).toHaveBeenCalledWith("p1");
   });
 
+  it("says on the restart control that services keep running", async () => {
+    renderAt("/projects/p1");
+
+    const restart = await screen.findByRole("button", {
+      name: "Restart applications, leaving services running",
+    });
+    expect(restart).toHaveAttribute(
+      "title",
+      "Restart cycles the applications only. Services stay as they are, so a running database is not restarted.",
+    );
+  });
+
   it("shows the derived lifecycle state instead of the stored word", async () => {
     vi.mocked(ApplicationsService.Lifecycle).mockResolvedValue("partial");
 

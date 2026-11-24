@@ -400,7 +400,14 @@ export function ProjectOverview() {
                 <Button size="sm" variant="outline" disabled={lifecyclePending} onClick={() => stopProject.mutate()}>
                   <Square /> {stopProject.isPending ? "Stopping…" : "Stop project"}
                 </Button>
-                <Button size="sm" variant="outline" disabled={lifecyclePending} onClick={() => restartProject.mutate()}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={lifecyclePending}
+                  aria-label="Restart applications, leaving services running"
+                  title="Restart cycles the applications only. Services stay as they are, so a running database is not restarted."
+                  onClick={() => restartProject.mutate()}
+                >
                   <RotateCw /> {restartProject.isPending ? "Restarting…" : "Restart"}
                 </Button>
                 <span className="flex items-center gap-1 text-[0.7rem] uppercase tracking-wide text-muted-foreground">
