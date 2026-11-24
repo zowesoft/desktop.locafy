@@ -274,3 +274,108 @@ func TestProjectStatesCoverAProjectWithOnlyServices(t *testing.T) {
 		t.Fatalf("state = %q, want running for a project with only services", states[project.ID])
 	}
 }
+
+func TestProjectRestartCyclesTheApplicationsAndLeavesTheServiceRunning(t *testing.T) {
+	database := openDatabase(t)
+	fastReady(t)
+	project := newProject(t, database)
+
+	instance := projectService(t, database, project, "PostgreSQL", 5506)
+	live := quoteCommand(script(t, t.TempDir(), "live", 0, true))
+	projectApplication(t, database, project, "api", live)
+
+	order := &sequence{}
+	fake := newFakeServices(database, order)
+	supervisor := NewSupervisor(database, nil)
+	supervisor.services = fake
+	t.Cleanup(supervisor.StopAll)
+
+	if _, err := supervisor.StartProject(project.ID); err != nil {
+		t.Fatalf("start project: %v", err)
+	}
+	before, err := services.Get(database, instance.ID)
+	if err != nil {
+		t.Fatalf("read service: %v", err)
+	}
+
+	report, err := supervisor.RestartProject(project.ID)
+	if err != nil {
+		t.Fatalf("restart project: %v", err)
+	}
+
+	if len(fake.started) != 1 {
+		t.Fatalf("service starts = %v, want the restart to leave the engine alone", fake.started)
+	}
+	if len(fake.stopped) != 0 {
+		t.Fatalf("service stops = %v, want a restart to keep the database up", fake.stopped)
+	}
+	after, err := services.Get(database, instance.ID)
+	if err != nil {
+		t.Fatalf("read service: %v", err)
+	}
+	if after.Status != services.StatusRunning || after.StartedAt != before.StartedAt {
+		t.Fatalf("service = %+v, want it running and untouched", after)
+	}
+
+	if got := strings.Join(report.Stopped, ","); got != "api" {
+		t.Fatalf("stopped = %q, want the application cycled", got)
+	}
+	if got := strings.Join(report.Started, ","); got != "api" {
+		t.Fatalf("started = %q, want the application started again", got)
+	}
+	if got := strings.Join(report.KeptRunning, ","); got != "PostgreSQL" {
+		t.Fatalf("kept running = %q, want the service named as untouched", got)
+	}
+
+	entries, err := recentProjectActivity(database, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) == 0 || entries[0].Action != "Project restarted" {
+		t.Fatalf("activity = %+v, want a restart entry", entries)
+	}
+	detail := entries[0].Detail
+	if !strings.Contains(detail, "stopped api") || !strings.Contains(detail, "started api") {
+		t.Fatalf("activity detail = %q, want the application reported both ways", detail)
+	}
+	if !strings.Contains(detail, "kept PostgreSQL running") {
+		t.Fatalf("activity detail = %q, want the database said to be kept running", detail)
+	}
+}
+
+func TestProjectRestartLeavesAStoppedServiceStopped(t *testing.T) {
+	database := openDatabase(t)
+	fastReady(t)
+	project := newProject(t, database)
+
+	instance := projectService(t, database, project, "PostgreSQL", 5507)
+	live := quoteCommand(script(t, t.TempDir(), "live", 0, true))
+	projectApplication(t, database, project, "api", live)
+
+	fake := newFakeServices(database, &sequence{})
+	supervisor := NewSupervisor(database, nil)
+	supervisor.services = fake
+	t.Cleanup(supervisor.StopAll)
+
+	report, err := supervisor.RestartProject(project.ID)
+	if err != nil {
+		t.Fatalf("restart project: %v", err)
+	}
+	if len(fake.started) != 0 {
+		t.Fatalf("service starts = %v, want a restart to leave a stopped service stopped", fake.started)
+	}
+	if got := strings.Join(report.LeftStopped, ","); got != "PostgreSQL" {
+		t.Fatalf("left stopped = %q, want the service named as untouched", got)
+	}
+	if stopped, err := services.Get(database, instance.ID); err != nil || stopped.Status != services.StatusStopped {
+		t.Fatalf("service = %+v (%v), want it still stopped", stopped, err)
+	}
+
+	entries, err := recentProjectActivity(database, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) == 0 || !strings.Contains(entries[0].Detail, "left PostgreSQL stopped") {
+		t.Fatalf("activity = %+v, want the stopped database named", entries)
+	}
+}

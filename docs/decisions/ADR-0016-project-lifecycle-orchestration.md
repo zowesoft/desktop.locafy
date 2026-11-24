@@ -4,6 +4,7 @@
 - **Date:** 2026-11-18
 - **Depends on:** ADR-0010 (applications and dependency graph), ADR-0013 (application process supervision), ADR-0014 (application ports), ADR-0015 (application health checks)
 - **Affects:** DESK-PROJ-002, DESK-APP-002, DESK-SVC-001
+- **Revised:** 2026-11-23 — restart cycles the applications and leaves services running (see Stop and restart)
 
 ## Context
 
@@ -54,9 +55,19 @@ dependents simply wait for the next start.
 ### Stop and restart
 
 Stop walks the reverse topological order, so a dependent's process ends before
-the infrastructure it talked to. Restart is stop then start through the same
-paths. Only processes Locafy started are ever touched (ADR-0013); a foreign
-listener on a project port is reported, never killed.
+the infrastructure it talked to, and only then are the project's services stopped
+(DESK-SVC-001). Only processes Locafy started are ever touched (ADR-0013); a
+foreign listener on a project port is reported, never killed.
+
+Restart is **not** stop then start. It cycles the applications only: each one is
+stopped in reverse order and started again in dependency order, while the
+services are left exactly as they are. A running database keeps running — a
+restart is the operator reloading code they just changed, not a reason to
+bounce the engine holding their data — and a service the operator stopped stays
+stopped, because bringing services up is what Start is for and a restart must
+not quietly overturn a deliberate stop. If a service was down, the applications
+start as they would from Start, and the run's activity entry says the service
+was left stopped, so the gap is stated rather than hidden.
 
 One project action at a time: a second start or a stop while an orchestration
 is running is refused until it finishes. Manual single-application actions stay
@@ -71,6 +82,9 @@ The result is per-application, never a single word hiding the details:
   refresh), or `failed` (the supervisor's own record error);
 - a `Project started` / `Project stopped` / `Project restarted` activity entry
   summarises the run at project scope, so it reaches the notifications bell;
+  a restart's entry names the services it did not touch (`kept PostgreSQL
+  running`, `left PostgreSQL stopped`) rather than listing them as started or
+  stopped;
 - the derived project state is computed from component statuses:
   `starting`/`stopping` while transient states exist, `running` when every
   runnable application runs, `partial` when some run and others do not,
@@ -84,9 +98,10 @@ until a consumer needs it stored.
 
 ### Deliberately deferred
 
-- Services are not in the graph yet (DESK-SVC-001). When they exist they take
-  the position before applications in the PRD section 7.3 order; the
-  orchestrator's step list is where they will slot in.
+- Services now take the position before applications in a project start and the
+  position after them in a stop (DESK-SVC-001). What is still deferred is an
+  application declaring which service it needs: the ordering is project-wide,
+  not per-dependency.
 - A project-level health summary beyond the derived state (for example a
   readiness percentage) waits for the analytics work.
 - Runtime checking (PRD section 7.3 step 2) arrives with DESK-RUN-001; the

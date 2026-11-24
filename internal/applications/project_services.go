@@ -66,6 +66,39 @@ func (s *Supervisor) startServices(projectID string, report *ProjectReport) {
 	}
 }
 
+// noteServiceDisposition records what a restart does to each service: nothing.
+// A running service is named as kept running and a stopped one as left stopped,
+// so the activity entry says what happened to the database instead of leaving
+// the operator to guess. Transient states are omitted: a service already
+// starting or stopping is not a restart's business in either direction.
+func (s *Supervisor) noteServiceDisposition(projectID string, report *ProjectReport) {
+	if s.services == nil {
+		return
+	}
+	instances, err := services.List(s.database, projectID)
+	if err != nil {
+		report.Failed = append(report.Failed, fmt.Sprintf("services: %s", err))
+		return
+	}
+	sort.SliceStable(instances, func(left, right int) bool {
+		return strings.ToLower(instances[left].Name) < strings.ToLower(instances[right].Name)
+	})
+
+	for _, instance := range instances {
+		current, err := services.Get(s.database, instance.ID)
+		if err != nil {
+			report.Failed = append(report.Failed, fmt.Sprintf("%s: %s", instance.Name, err))
+			continue
+		}
+		switch current.Status {
+		case services.StatusRunning:
+			report.KeptRunning = append(report.KeptRunning, current.Name)
+		case services.StatusStopped:
+			report.LeftStopped = append(report.LeftStopped, current.Name)
+		}
+	}
+}
+
 // waitForService blocks until the instance answers on its port, fails, or the
 // ceiling passes. A started instance that never answers is left running for the
 // operator to inspect rather than killed behind their back.

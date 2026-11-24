@@ -102,6 +102,14 @@ export interface ProjectReport {
     "skipped": string[] | null;
     "failed": string[] | null;
     "stopped": string[] | null;
+
+    /**
+     * KeptRunning and LeftStopped exist for a restart, which leaves the
+     * project's services exactly as they are. Naming them keeps the activity
+     * entry from being silent about the database it did not touch.
+     */
+    "keptRunning": string[] | null;
+    "leftStopped": string[] | null;
 }
 
 /**

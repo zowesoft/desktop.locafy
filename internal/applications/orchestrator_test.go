@@ -282,7 +282,7 @@ func TestProjectStopRunsInTheReverseOrder(t *testing.T) {
 	}
 }
 
-func TestProjectRestartStopsEverythingAndStartsItAgain(t *testing.T) {
+func TestProjectRestartStopsAndStartsTheApplications(t *testing.T) {
 	database := openDatabase(t)
 	fastReady(t)
 	project := newProject(t, database)

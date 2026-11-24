@@ -53,17 +53,17 @@ type ProjectReport struct {
 	Skipped        []string `json:"skipped"`
 	Failed         []string `json:"failed"`
 	Stopped        []string `json:"stopped"`
+	// KeptRunning and LeftStopped exist for a restart, which leaves the
+	// project's services exactly as they are. Naming them keeps the activity
+	// entry from being silent about the database it did not touch.
+	KeptRunning []string `json:"keptRunning"`
+	LeftStopped []string `json:"leftStopped"`
 }
 
 // startProject brings the project's services up first, then its runnable
-// applications in dependency order. It is the body behind both StartProject and
-// the start half of RestartProject.
+// applications in dependency order. It is the body behind StartProject.
 func (s *Supervisor) startProject(projectID string) (*ProjectReport, error) {
 	if _, err := projects.Get(s.database, projectID); err != nil {
-		return nil, err
-	}
-	apps, err := List(s.database, projectID)
-	if err != nil {
 		return nil, err
 	}
 
@@ -71,10 +71,24 @@ func (s *Supervisor) startProject(projectID string) (*ProjectReport, error) {
 	// Services are the project's foundations: every application sees a running
 	// database before its own command is executed.
 	s.startServices(projectID, report)
+	if err := s.startApplications(projectID, report); err != nil {
+		return nil, err
+	}
+	return report, nil
+}
+
+// startApplications runs the project's applications in dependency order and
+// reports each one into report. It is separate from startProject because a
+// restart runs it without touching services.
+func (s *Supervisor) startApplications(projectID string, report *ProjectReport) error {
+	apps, err := List(s.database, projectID)
+	if err != nil {
+		return err
+	}
 	for _, app := range startOrder(apps) {
 		current, err := Get(s.database, app.ID)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		switch current.Status {
 		case StatusRunning:
@@ -104,7 +118,7 @@ func (s *Supervisor) startProject(projectID string) (*ProjectReport, error) {
 		}
 		report.Started = append(report.Started, started.Name)
 	}
-	return report, nil
+	return nil
 }
 
 // stopProject stops the project's running applications in reverse dependency
@@ -113,16 +127,26 @@ func (s *Supervisor) stopProject(projectID string) (*ProjectReport, error) {
 	if _, err := projects.Get(s.database, projectID); err != nil {
 		return nil, err
 	}
-	apps, err := List(s.database, projectID)
-	if err != nil {
-		return nil, err
-	}
 
 	report := &ProjectReport{ProjectID: projectID}
+	if err := s.stopApplications(projectID, report); err != nil {
+		return nil, err
+	}
+	s.stopServices(projectID, report)
+	return report, nil
+}
+
+// stopApplications stops the project's running applications in reverse
+// dependency order and reports each one into report.
+func (s *Supervisor) stopApplications(projectID string, report *ProjectReport) error {
+	apps, err := List(s.database, projectID)
+	if err != nil {
+		return err
+	}
 	for _, app := range reverse(startOrder(apps)) {
 		current, err := Get(s.database, app.ID)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if current.Status != StatusRunning && current.Status != StatusStopping {
 			continue
@@ -136,8 +160,7 @@ func (s *Supervisor) stopProject(projectID string) (*ProjectReport, error) {
 		}
 		report.Stopped = append(report.Stopped, current.Name)
 	}
-	s.stopServices(projectID, report)
-	return report, nil
+	return nil
 }
 
 // StartProject starts the project's applications in dependency order and
@@ -167,25 +190,39 @@ func (s *Supervisor) StopProject(projectID string) (*ProjectReport, error) {
 	return report, err
 }
 
-// RestartProject stops the project and starts it again.
+// RestartProject cycles the project's applications and leaves its services
+// alone: a restart is a reload of the code the operator is working on, not a
+// reason to bounce a database that is holding their data.
 func (s *Supervisor) RestartProject(projectID string) (*ProjectReport, error) {
-	release, err := s.claimProject(projectID, "starting")
+	release, err := s.claimProject(projectID, "restarting")
 	if err != nil {
 		return nil, err
 	}
 	defer release()
 
-	stopped, stopErr := s.stopProject(projectID)
-	started, startErr := s.startProject(projectID)
-	err = stopErr
-	if err == nil {
-		err = startErr
+	report, err := s.restartProject(projectID)
+	s.recordRun(projectID, "Project restarted", report, err)
+	return report, err
+}
+
+// restartProject stops and starts the applications, and records what it did to
+// the services without doing anything to them: a running service keeps running,
+// and one the operator stopped stays stopped (Start is the button that brings
+// services up).
+func (s *Supervisor) restartProject(projectID string) (*ProjectReport, error) {
+	if _, err := projects.Get(s.database, projectID); err != nil {
+		return nil, err
 	}
-	s.recordRun(projectID, "Project restarted", mergeReports(stopped, started), err)
-	if stopErr != nil {
-		return nil, stopErr
+
+	report := &ProjectReport{ProjectID: projectID}
+	s.noteServiceDisposition(projectID, report)
+	if err := s.stopApplications(projectID, report); err != nil {
+		return report, err
 	}
-	return started, startErr
+	if err := s.startApplications(projectID, report); err != nil {
+		return report, err
+	}
+	return report, nil
 }
 
 // claimProject marks a project mid-orchestration, or refuses when one is
@@ -222,17 +259,25 @@ func (s *Supervisor) recordRun(projectID string, action string, report *ProjectR
 	_ = activity.Log(s.database, activity.ScopeProject, projectID, action, detail)
 }
 
-// summary words the report for an activity entry.
+// summary words the report for an activity entry. A stop is worded before a
+// start so a restart reads in the order it happened: stopped, started, and what
+// it left alone.
 func (r *ProjectReport) summary() []string {
-	words := make([]string, 0, 5)
+	words := make([]string, 0, 7)
+	if len(r.Stopped) > 0 {
+		words = append(words, fmt.Sprintf("stopped %s", joinNames(r.Stopped)))
+	}
 	if len(r.Started) > 0 {
 		words = append(words, fmt.Sprintf("started %s", joinNames(r.Started)))
 	}
 	if len(r.AlreadyRunning) > 0 {
 		words = append(words, fmt.Sprintf("already running: %s", joinNames(r.AlreadyRunning)))
 	}
-	if len(r.Stopped) > 0 {
-		words = append(words, fmt.Sprintf("stopped %s", joinNames(r.Stopped)))
+	if len(r.KeptRunning) > 0 {
+		words = append(words, fmt.Sprintf("kept %s running", joinNames(r.KeptRunning)))
+	}
+	if len(r.LeftStopped) > 0 {
+		words = append(words, fmt.Sprintf("left %s stopped", joinNames(r.LeftStopped)))
 	}
 	if len(r.Skipped) > 0 {
 		words = append(words, fmt.Sprintf("skipped %s", joinNames(r.Skipped)))
@@ -250,18 +295,6 @@ func joinNames(entries []string) string {
 		names = append(names, name)
 	}
 	return strings.Join(names, ", ")
-}
-
-func mergeReports(stop *ProjectReport, start *ProjectReport) *ProjectReport {
-	if stop == nil {
-		return start
-	}
-	if start == nil {
-		return stop
-	}
-	start.Stopped = stop.Stopped
-	start.Failed = append(start.Failed, stop.Failed...)
-	return start
 }
 
 // startOrder returns the project's runnable applications with every

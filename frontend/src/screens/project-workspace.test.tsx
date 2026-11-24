@@ -142,14 +142,17 @@ beforeEach(() => {
   vi.mocked(ApplicationsService.StartProject).mockReset();
   vi.mocked(ApplicationsService.StartProject).mockResolvedValue({
     projectID: "p1", started: [], alreadyRunning: [], skipped: [], failed: [], stopped: [],
+    keptRunning: [], leftStopped: [],
   });
   vi.mocked(ApplicationsService.StopProject).mockReset();
   vi.mocked(ApplicationsService.StopProject).mockResolvedValue({
     projectID: "p1", started: [], alreadyRunning: [], skipped: [], failed: [], stopped: [],
+    keptRunning: [], leftStopped: [],
   });
   vi.mocked(ApplicationsService.RestartProject).mockReset();
   vi.mocked(ApplicationsService.RestartProject).mockResolvedValue({
     projectID: "p1", started: [], alreadyRunning: [], skipped: [], failed: [], stopped: [],
+    keptRunning: [], leftStopped: [],
   });
   vi.mocked(ServicesService.List).mockReset();
   vi.mocked(ServicesService.List).mockResolvedValue([]);
