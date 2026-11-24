@@ -21,6 +21,10 @@ PostgreSQL had been. Each row now says what was actually checked, and the
 wording that presented an assumption as a check is gone. The Redis-on-Windows
 section now carries the licence and practical cost of each option and a
 recommendation, so the operator can settle it in one decision rather than four.
+The Mailpit and MinIO rows were re-checked on 2026-11-24 against Mailpit's
+v1.34.0 assets and MinIO's own download server and registries, which is why
+their wording differs from the first pass: MinIO's community binaries are now
+withdrawn rather than merely frozen.
 
 ## Context
 
@@ -78,8 +82,9 @@ maintained native build exists for one of the three platforms.**
 the delivered slice installed nothing itself, but it discovered, initialised and
 ran the installed PostgreSQL 17 on Windows, and every binary it used came from
 one `bin`. Everything else below was read off the vendors' current download
-pages and release assets on 2026-11-23 — a published build is evidence that a
-build exists, not that Locafy can find it, initialise it and supervise it. None
+pages, release assets and registry responses on 2026-11-23 and 2026-11-24 — a
+published build is evidence that a build exists, not that Locafy can find it,
+initialise it and supervise it. None
 of Redis, MySQL, MariaDB, Mailpit or MinIO has a discovery path, an initialiser
 or a first-run procedure in this repository, and none has been started by
 Locafy on any platform. Each row below is therefore a lead, not a verified path.
@@ -91,8 +96,8 @@ Locafy on any platform. Each row below is therefore a lead, not a verified path.
 | **Redis 8.x** | Published downloads and install docs, 2026-11-23 | **No official native build.** Redis documents Windows as Docker-only and names Memurai its Windows partner. Community forks build it anyway — `redis-windows` and `zkteco-home` both track 8.10.3, `tporadowski` ships a native 5.0.14.1 with an 8.10 port in progress — none with vendor support | Homebrew `redis` — Redis documents Homebrew as the supported macOS route; source builds work | `packages.redis.io` APT/RPM, Snap, distro packages, source | Official `redis` image | **Blocked on Windows.** Not merely "no build": the only vendor-blessed native option is development-only with a forced 10-day restart, which Locafy cannot ship or hide. Needs the operator decision below. |
 | **MySQL 8.4 LTS / 9.7 LTS** | Published download page for 8.4.13 LTS (also 26.10 Innovation), 2026-11-23 | MSI installer and ZIP archive | Official `.dmg`/pkg installer and `.tar.gz` | Generic `.tar.gz`, Oracle RPM/DEB repositories, distro packages | Official `mysql` image | **Native, next after PostgreSQL.** A vendor build exists on all three platforms; the cost is its own initialiser (`mysqld --initialize-insecure`), port handling and default-auth choice. |
 | **MariaDB 13.0** | Published download page and the 13.0.2 file listing, 2026-11-23 | MSI package (`winx64-packages`) | **No official package.** MariaDB's own documentation states there is no `.pkg` installer for macOS and sends users to Homebrew; its 13.0.2 file listing has no macOS directory | Repositories (DEB/RPM), systemd binary tarball | Official `mariadb` image | **Does not satisfy the rule as published.** Windows and Linux are vendor builds; macOS is a third-party Homebrew build that MariaDB merely points at. Either the operator accepts that macOS route, or the relational slot is MySQL only. |
-| **Mail capture (Mailpit)** | Release assets and install documentation, 2026-11-23 | Single static `.zip` (amd64, arm64) | Single static `.tar.gz` (amd64, arm64), also Homebrew `mailpit` | Single static `.tar.gz` (386, amd64, arm, arm64) | Official multi-arch images (`axllent/mailpit`) | **Native — cheapest of the set.** One binary, no install step, no data directory to initialise unless persistence (`--database`) is turned on; two ports, 1025 SMTP and 8025 UI. |
-| **Object storage (MinIO)** | Download pages, release state and licence, 2026-11-23 | Community edition is **source-only**: the README says it no longer ships pre-compiled binaries, the repository is archived, and the last published `windows-amd64` binary is `RELEASE.2025-09-07`. AIStor publishes a paid binary | Same for community; AIStor publishes a `darwin-arm64` binary and a Homebrew tap, both behind a licence key | Frozen community binaries; AIStor RPM/DEB/binary behind a licence key | Community images were withdrawn (Docker Hub in September 2026, anonymous quay pulls refused); AIStor images need a licence | **Fails the rule.** There is no maintained community build on any platform, and the maintained build (AIStor) is commercial and licensed. Building the archived source ourselves is not a project this catalogue should take on. Garage and SeaweedFS are the alternatives to evaluate (PRD section 23). |
+| **Mail capture (Mailpit)** | v1.34.0 release assets and install documentation, 2026-11-24 | `mailpit-windows-amd64.zip`, `mailpit-windows-arm64.zip` | `mailpit-darwin-amd64.tar.gz`, `mailpit-darwin-arm64.tar.gz`, also Homebrew `mailpit` | `mailpit-linux-386`, `-amd64`, `-arm`, `-arm64` `.tar.gz` | Official multi-arch images (`axllent/mailpit`) | **Native — cheapest of the set.** One binary, no install step, no data directory to initialise unless persistence (`--database`) is turned on; two ports, 1025 SMTP and 8025 UI. |
+| **Object storage (MinIO)** | Download server and registry responses, repository state and licence, 2026-11-24 | Community edition is **source-only** and archived, and its binaries are gone, not merely frozen: MinIO's own download server answers **HTTP 410 Gone** for every community file, with its own text saying "These files are no longer served from this site. This applies to all community releases and to all hotfix builds". AIStor publishes a paid binary | Same for community; AIStor publishes a `darwin-arm64` binary and a Homebrew tap, both behind a licence key | Same for community; AIStor RPM/DEB/binary behind a licence key | No community images: the archived README offers only "build a Docker image from the provided Dockerfile", and a maintainer declined to publish the October 2025 security release as an image (issue 21647). Docker Hub's API answers **404** for `minio/minio` and quay.io answers **401** to anonymous requests (checked 2026-11-24). MinIO published no dated notice of the removal, so the dates come from the registries, not from MinIO. AIStor images need a licence | **Fails the rule.** There is no maintained community build on any platform — the source is archived and the binaries are withdrawn — and the maintained build (AIStor) is commercial and licensed. Building the archived source ourselves is not a project this catalogue should take on. Garage and SeaweedFS are the alternatives to evaluate (PRD section 23). |
 
 Engines that look attractive but fail the admission rule stay out until they
 do not: that is the deliberate cost of a cross-platform promise.
@@ -239,7 +244,7 @@ evidence is in `docs/FEATURES.md`.
 - Which engine follows PostgreSQL — MySQL and Mailpit are the recommended next
   two, and each needs its own initialiser work. MariaDB waits on the macOS
   ruling above.
-- The object storage engine (MinIO remains a candidate only).
+- The object storage engine. MinIO is out under the admission rule above; Garage and SeaweedFS remain candidates, unevaluated.
 - Shared versus isolated tenancy defaults for services that support tenancy
   (ADR-0008); the delivered slice is isolated-only.
 - Where engine binaries come from for the managed case (download jobs are
