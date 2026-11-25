@@ -29,6 +29,12 @@ var (
 // EventProxy announces a change of proxy state or routing table.
 const EventProxy = "network:proxy"
 
+// RevocationListPath is where the proxy serves the authority's CRL. It is served
+// on the HTTP listener by path, before hostname routing, because the client that
+// fetches it is validating a certificate for one of our hostnames and must not
+// depend on that validation having succeeded.
+const RevocationListPath = "/.well-known/locafy/ca.crl"
+
 // refreshInterval is how often the routing table is rebuilt while the proxy
 // runs, so an application that binds its port after a domain was assigned starts
 // routing without the operator doing anything.
@@ -52,20 +58,23 @@ type Proxy struct {
 	authority *Authority
 	emit      func(string, any)
 
-	mu           sync.RWMutex
-	routes       map[string]*httputil.ReverseProxy
-	targets      map[string]string
-	loaded       bool
-	hosts        []string
-	server       *http.Server
-	tlsServer    *http.Server
-	listener     net.Listener
-	tlsListener  net.Listener
-	httpAddress  string
-	httpsAddress string
-	err          string
-	stop         chan struct{}
-	certificate  atomic.Pointer[tls.Certificate]
+	mu             sync.RWMutex
+	routes         map[string]*httputil.ReverseProxy
+	targets        map[string]string
+	crl            []byte
+	crlURL         string
+	certificateURL string
+	loaded         bool
+	hosts          []string
+	server         *http.Server
+	tlsServer      *http.Server
+	listener       net.Listener
+	tlsListener    net.Listener
+	httpAddress    string
+	httpsAddress   string
+	err            string
+	stop           chan struct{}
+	certificate    atomic.Pointer[tls.Certificate]
 }
 
 // NewProxy returns a proxy that routes the domains stored in database. The
@@ -106,9 +115,19 @@ func (p *Proxy) Start(httpCandidates []string, httpsCandidates []string) (ProxyS
 		return status, err
 	}
 
+	// The revocation list lives on a fixed path of this listener, so the leaf
+	// can point at the address actually bound even when port 80 was taken.
+	crlURL := "http://" + httpAddress + RevocationListPath
+	var crl []byte
+	if p.authority != nil {
+		crl, _ = p.authority.RevocationList()
+	}
+
 	stop := make(chan struct{})
 	p.listener = listener
 	p.httpAddress = httpAddress
+	p.crlURL = crlURL
+	p.crl = crl
 	p.err = ""
 	p.server = &http.Server{
 		Handler:           http.HandlerFunc(p.serve),
@@ -180,6 +199,9 @@ func (p *Proxy) Stop() ProxyStatus {
 	p.server, p.tlsServer = nil, nil
 	p.listener, p.tlsListener = nil, nil
 	p.stop = nil
+	p.crlURL = ""
+	p.crl = nil
+	p.certificateURL = ""
 	p.routes = map[string]*httputil.ReverseProxy{}
 	p.targets = nil
 	p.loaded = false
@@ -223,15 +245,20 @@ func (p *Proxy) Reload() ProxyStatus {
 	unchanged := p.loaded && targetsEqual(p.targets, targets)
 	tlsOn := p.tlsListener != nil
 	haveCertificate := p.certificate.Load() != nil
+	crlURL := p.crlURL
+	certificateURL := p.certificateURL
 	p.mu.RUnlock()
 
 	// The certificate is reused when it already names this host set: the
 	// authority reissues only when the names differ or it is close to expiry.
-	if err == nil && tlsOn && p.authority != nil && (!unchanged || !haveCertificate) {
-		if certificate, certErr := p.authority.Leaf(hosts); certErr != nil {
+	if err == nil && tlsOn && p.authority != nil && (!unchanged || !haveCertificate || certificateURL != crlURL) {
+		if certificate, certErr := p.authority.Leaf(hosts, crlURL); certErr != nil {
 			err = fmt.Errorf("HTTPS certificate: %w", certErr)
 		} else {
 			p.certificate.Store(&certificate)
+			p.mu.Lock()
+			p.certificateURL = crlURL
+			p.mu.Unlock()
 		}
 	}
 
@@ -285,6 +312,11 @@ func (p *Proxy) CAPath() string {
 // serve routes one request by hostname. An unknown host is answered here rather
 // than proxied anywhere.
 func (p *Proxy) serve(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == RevocationListPath {
+		p.serveRevocationList(w)
+		return
+	}
+
 	host := strings.ToLower(strings.TrimSuffix(r.Host, "."))
 	if name, _, err := net.SplitHostPort(host); err == nil {
 		host = name
@@ -300,6 +332,23 @@ func (p *Proxy) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target.ServeHTTP(w, r)
+}
+
+// serveRevocationList answers the client's revocation check. A list that is not
+// loaded is a 503 rather than a 404: the certificate points here, and the client
+// needs to know it is missing rather than that it was revoked.
+func (p *Proxy) serveRevocationList(w http.ResponseWriter) {
+	p.mu.RLock()
+	crl := p.crl
+	p.mu.RUnlock()
+
+	if len(crl) == 0 {
+		http.Error(w, "no revocation list is available", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/pkix-crl")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(crl)
 }
 
 // refresh keeps the routing table and the certificate current while the proxy

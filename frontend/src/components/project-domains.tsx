@@ -155,13 +155,11 @@ export function ProjectDomains({ projectID }: { projectID: string }) {
       {trusted ? <p className="text-xs text-muted-foreground">{trusted}</p> : null}
       {proxy.data?.httpsAddress ? (
         <p className="text-xs text-muted-foreground">
-          Browsers, PowerShell and .NET accept this certificate once it is trusted. A client that
-          requires a revocation answer rejects it, because Locafy's local authority publishes no
-          CRL — <span className="font-mono">curl</span> on Windows fails until
-          {" "}
-          <span className="font-mono">--ssl-no-revoke</span> is passed, and .NET fails when
+          The certificate names a revocation list this proxy serves at{" "}
+          <span className="font-mono">/.well-known/locafy/ca.crl</span>, so clients that insist on
+          one — <span className="font-mono">curl</span> with schannel, .NET with
           <span className="font-mono"> CheckCertificateRevocationList </span>
-          is set.
+          — accept it too. If no local listener is running, they have nothing to check against.
         </p>
       ) : null}
       {trust.isError ? (

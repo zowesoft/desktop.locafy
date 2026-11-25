@@ -60,32 +60,59 @@ Removal is documented as the inverse of the same store operation, and deleting
 the certificate files is the second half. Browsers trust the leaf once the CA is
 trusted; until then the certificate warning is expected and explained.
 
-### A local authority publishes no revocation information
+### The leaf names a revocation list the proxy serves
 
-A CA that lives on this machine has no CRL distribution point and no OCSP
-responder, so a client that insists on a definitive revocation answer refuses the
-certificate. Measured on Windows against `https://api.health-smoke.test` after
-trusting the CA:
+A client that insists on a definitive revocation answer refuses a certificate
+whose chain offers none. The first release documented that; the second looked for
+a way to satisfy the client instead, and found one that does not require
+regenerating the authority.
+
+### The leaf carries a distribution point, the proxy serves the list
+
+Revocation checking does not require the *authority* to publish anything: it
+requires the certificate being validated to name a list. So the leaf issued by the
+proxy gains a CRL distribution point — `http://<the bound HTTP address>/.well-known/locafy/ca.crl`
+— and the proxy serves an empty, CA-signed CRL there. Existing installations keep
+their trusted CA: only the leaf changes, and it is reissued when the address does.
+
+Details that matter:
+
+- **The URL uses the address actually bound.** Port 80 is often taken; the proxy
+  falls back to 8080, and the leaf points at whichever listener it has, so the
+  check does not depend on a port Locafy does not own.
+- **The list is served before hostname routing.** The client fetching it is
+  validating a certificate for one of our hostnames, so the fetch must not depend
+  on that validation having succeeded. Any `Host` gets the same bytes.
+- **The list is CA-signed and dated**, renewed when it is within a day of expiry
+  (thirty-day validity), so it never becomes the reason a check fails.
+- **Reissue is tied to the address.** A new listener means a new pointer; a
+  certificate still naming the old address would fail every revocation check, so
+  the leaf is reissued when the address changes, not only when hostnames do.
+- **Nothing is revoked**, because nothing can be: the authority is disposable and
+  its key lives beside the list. A non-empty CRL is for a future where Locafy
+  manages a longer-lived authority.
+
+Measured on Windows against `https://api.health-smoke.test` after trusting the CA:
 
 | Client | Revocation | Result |
 |---|---|---|
 | PowerShell `Invoke-WebRequest` | as configured (no check) | 200 |
 | .NET `HttpClient`, defaults | off | 200 |
-| .NET `HttpClient`, `CheckCertificateRevocationList = true` | required | rejected |
-| `curl` (schannel) | check on by default | rejected until `--ssl-no-revoke` |
+| .NET `HttpClient`, `CheckCertificateRevocationList = true` | required | **200** |
+| `curl` (schannel) | check on by default | **200**, no flag |
 | Chromium | soft-fail for non-public roots | 200, no interstitial |
 
-**Decision: document it, do not publish a CRL.** A CRL distribution point has to
-be written into the certificate, so adding one now would mean reissuing the CA and
-invalidating every trust already granted; the CRL itself would have to be served
-from a fixed local origin that is reachable while the certificate is being
-validated, which for a loopback CA means depending on the very listener whose
-certificate is in question. In exchange it would fix a failure that only clients
-explicitly asking for revocation hit — the defaults of PowerShell, .NET and every
-browser already pass. The Domains tab states the limitation next to the HTTPS
-address and names the two symptoms (`curl` on Windows, .NET with
-`CheckCertificateRevocationList`), so it is discovered there rather than in a
-build script.
+Before the list existed, the two required-revocation rows were rejections; the
+Domains tab said so. The remaining limitation is different: the answer comes from
+a loopback listener, so if no listener is running there is nothing to check
+against, and a client that requires revocation fails until one is. That is stated
+where HTTPS is offered.
+
+Rejected alternatives: an OCSP responder (more moving parts than a static list,
+for the same answer), a fixed CRL port independent of the proxy (a second listener
+to collide with, and still no answer when Locafy is not running), and putting the
+distribution point on the CA (which would mean reissuing the authority and
+invalidating every trust already granted).
 
 ### Processes Locafy starts trust the CA through the environment
 
@@ -148,7 +175,7 @@ another platform trusts the CA, which stays a stated, manual step.
 
 - Automatic expiry renewal while Locafy runs without a restart.
 - Editing the hosts file or running a local DNS resolver for `.test` names.
-- Publishing a CRL or an OCSP responder for the local authority.
+- An OCSP responder, and a CRL with actual revocation entries.
 - Injecting the CA into processes Locafy did not start (a terminal, an editor's
   task runner), which is what trusting the CA in the user's store covers.
 - A user-configurable CA name and organisation (the generated one is "Locafy

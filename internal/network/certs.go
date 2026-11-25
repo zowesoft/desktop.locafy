@@ -45,6 +45,11 @@ func (a *Authority) leafKeyPath() string {
 	return filepath.Join(a.directory, "domains.key")
 }
 
+// CRLPath is the DER revocation list the proxy serves and the leaf points at.
+func (a *Authority) CRLPath() string {
+	return filepath.Join(a.directory, "ca.crl")
+}
+
 // Ensure creates the CA if it is missing and returns its certificate. A CA that
 // exists is never replaced: replacing it would silently invalidate every trust
 // the user has already granted.
@@ -95,10 +100,50 @@ func (a *Authority) Ensure() (*x509.Certificate, error) {
 	return a.loadCA()
 }
 
+// RevocationList returns the DER revocation list, renewing it when it is close
+// to expiry. It is empty on purpose: nothing has been revoked, but a client that
+// refuses to validate without an answer — Windows schannel does, `curl` with it
+// fails without --ssl-no-revoke — gets one it can check against this authority.
+func (a *Authority) RevocationList() ([]byte, error) {
+	if raw, err := os.ReadFile(a.CRLPath()); err == nil {
+		if list, err := x509.ParseRevocationList(raw); err == nil {
+			if time.Now().Before(list.NextUpdate.Add(-24 * time.Hour)) {
+				return raw, nil
+			}
+		}
+	}
+
+	authority, err := a.Ensure()
+	if err != nil {
+		return nil, err
+	}
+	key, err := a.loadCAKey()
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	template := &x509.RevocationList{
+		// The number only has to change when the contents do, so the time of
+		// issue is enough for an authority that revokes nothing.
+		Number:     big.NewInt(now.Unix()),
+		ThisUpdate: now.Add(-time.Hour),
+		NextUpdate: now.AddDate(0, 0, 30),
+	}
+	der, err := x509.CreateRevocationList(rand.Reader, template, authority, key)
+	if err != nil {
+		return nil, fmt.Errorf("create revocation list: %w", err)
+	}
+	if err := os.WriteFile(a.CRLPath(), der, 0o600); err != nil {
+		return nil, fmt.Errorf("write revocation list: %w", err)
+	}
+	return der, nil
+}
+
 // Leaf issues a certificate naming exactly the given hostnames, or reuses the
-// existing one when it already names them and is still valid. The returned
-// certificate is ready to serve TLS.
-func (a *Authority) Leaf(hostnames []string) (tls.Certificate, error) {
+// existing one when it already names them, points at the same revocation list and
+// is still valid. The returned certificate is ready to serve TLS.
+func (a *Authority) Leaf(hostnames []string, crlURL string) (tls.Certificate, error) {
 	authority, err := a.Ensure()
 	if err != nil {
 		return tls.Certificate{}, err
@@ -114,7 +159,7 @@ func (a *Authority) Leaf(hostnames []string) (tls.Certificate, error) {
 		sorted = []string{"localhost"}
 	}
 
-	if certificate, err := a.loadLeaf(authority, sorted); err == nil {
+	if certificate, err := a.loadLeaf(authority, sorted, crlURL); err == nil {
 		return certificate, nil
 	}
 
@@ -138,6 +183,9 @@ func (a *Authority) Leaf(hostnames []string) (tls.Certificate, error) {
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		DNSNames:     sorted,
+	}
+	if crlURL != "" {
+		template.CRLDistributionPoints = []string{crlURL}
 	}
 	der, err := x509.CreateCertificate(rand.Reader, template, authority, &key.PublicKey, caKey)
 	if err != nil {
@@ -212,7 +260,7 @@ func (a *Authority) loadCAKey() (*ecdsa.PrivateKey, error) {
 // loadLeaf reuses a leaf only when it still names the same hostnames and has not
 // expired, so a removed domain stops being trusted and a renewed one keeps
 // working without a manual step.
-func (a *Authority) loadLeaf(authority *x509.Certificate, hostnames []string) (tls.Certificate, error) {
+func (a *Authority) loadLeaf(authority *x509.Certificate, hostnames []string, crlURL string) (tls.Certificate, error) {
 	certPEM, err := os.ReadFile(a.leafCertPath())
 	if err != nil {
 		return tls.Certificate{}, err
@@ -234,6 +282,13 @@ func (a *Authority) loadLeaf(authority *x509.Certificate, hostnames []string) (t
 	}
 	if !slices.Equal(leaf.DNSNames, hostnames) {
 		return tls.Certificate{}, fmt.Errorf("domain certificate names a different set of hostnames")
+	}
+	wantCRL := []string(nil)
+	if crlURL != "" {
+		wantCRL = []string{crlURL}
+	}
+	if !slices.Equal(leaf.CRLDistributionPoints, wantCRL) {
+		return tls.Certificate{}, fmt.Errorf("domain certificate points at a different revocation list")
 	}
 	if err := leaf.CheckSignatureFrom(authority); err != nil {
 		return tls.Certificate{}, err

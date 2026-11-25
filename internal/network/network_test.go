@@ -379,6 +379,109 @@ func TestProxyKeepsItsCertificateAcrossUnchangedReloads(t *testing.T) {
 	}
 }
 
+func TestProxyServesTheRevocationListItsCertificatePointsAt(t *testing.T) {
+	database := openDatabase(t)
+	projectID, applicationID := projectWithApplication(t, database, "Revoked")
+	if _, err := Assign(database, projectID, applicationID, "api.revoked.test"); err != nil {
+		t.Fatalf("assign: %v", err)
+	}
+
+	authority := NewAuthority(t.TempDir())
+	proxy := NewProxy(database, authority, nil)
+	status, err := proxy.Start([]string{"127.0.0.1:0"}, []string{"127.0.0.1:0"})
+	if err != nil {
+		t.Fatalf("start proxy: %v", err)
+	}
+	t.Cleanup(func() { proxy.Stop() })
+
+	// The leaf points at the address the proxy actually bound, not at a port it
+	// would like to have.
+	wantURL := "http://" + status.HTTPAddress + RevocationListPath
+	served := proxy.certificate.Load()
+	if served == nil {
+		t.Fatal("no certificate was issued")
+	}
+	leaf, err := x509.ParseCertificate(served.Certificate[0])
+	if err != nil {
+		t.Fatalf("parse served certificate: %v", err)
+	}
+	if len(leaf.CRLDistributionPoints) != 1 || leaf.CRLDistributionPoints[0] != wantURL {
+		t.Fatalf("CRL distribution points = %v, want [%s]", leaf.CRLDistributionPoints, wantURL)
+	}
+
+	response, err := http.Get(wantURL)
+	if err != nil {
+		t.Fatalf("fetch revocation list: %v", err)
+	}
+	defer response.Body.Close()
+	raw, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read revocation list: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", response.StatusCode)
+	}
+	if got := response.Header.Get("Content-Type"); got != "application/pkix-crl" {
+		t.Errorf("content type = %q, want application/pkix-crl", got)
+	}
+
+	list, err := x509.ParseRevocationList(raw)
+	if err != nil {
+		t.Fatalf("parse revocation list: %v", err)
+	}
+	ca, err := authority.Ensure()
+	if err != nil {
+		t.Fatalf("read authority: %v", err)
+	}
+	if err := list.CheckSignatureFrom(ca); err != nil {
+		t.Fatalf("the revocation list is not signed by the authority: %v", err)
+	}
+	if time.Now().After(list.NextUpdate) {
+		t.Errorf("the revocation list expired at %s", list.NextUpdate)
+	}
+	if len(list.RevokedCertificateEntries) != 0 {
+		t.Errorf("revoked entries = %d, want none", len(list.RevokedCertificateEntries))
+	}
+}
+
+func TestProxyReissuesWhenTheRevocationListMoves(t *testing.T) {
+	database := openDatabase(t)
+	projectID, applicationID := projectWithApplication(t, database, "Moved")
+	if _, err := Assign(database, projectID, applicationID, "api.moved.test"); err != nil {
+		t.Fatalf("assign: %v", err)
+	}
+
+	authority := NewAuthority(t.TempDir())
+	proxy := NewProxy(database, authority, nil)
+	if _, err := proxy.Start([]string{"127.0.0.1:0"}, []string{"127.0.0.1:0"}); err != nil {
+		t.Fatalf("start proxy: %v", err)
+	}
+	t.Cleanup(func() { proxy.Stop() })
+
+	before := proxy.certificate.Load()
+	// A different listener means a different CRL address, and a certificate that
+	// still pointed at the old one would fail revocation checks.
+	proxy.mu.Lock()
+	proxy.crlURL = "http://127.0.0.1:1" + RevocationListPath
+	proxy.mu.Unlock()
+	proxy.Reload()
+
+	after := proxy.certificate.Load()
+	if before == nil || after == nil {
+		t.Fatal("no certificate was issued")
+	}
+	if bytes.Equal(before.Certificate[0], after.Certificate[0]) {
+		t.Error("the certificate was not reissued for the new revocation-list address")
+	}
+	leaf, err := x509.ParseCertificate(after.Certificate[0])
+	if err != nil {
+		t.Fatalf("parse served certificate: %v", err)
+	}
+	if len(leaf.CRLDistributionPoints) != 1 || leaf.CRLDistributionPoints[0] != proxy.crlURL {
+		t.Fatalf("CRL distribution points = %v, want [%s]", leaf.CRLDistributionPoints, proxy.crlURL)
+	}
+}
+
 func TestProxyReportsAnApplicationThatIsNotAnswering(t *testing.T) {
 	database := openDatabase(t)
 	projectID, applicationID := projectWithApplication(t, database, "Etugora")
