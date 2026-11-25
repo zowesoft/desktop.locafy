@@ -59,6 +59,17 @@ export function ProjectDomains({ projectID }: { projectID: string }) {
     queryFn: () => NetworkService.ProxyStatus(),
     refetchInterval: 3000,
   });
+  const trustPlan = useQuery({
+    queryKey: ["network", "trust-plan"],
+    queryFn: () => NetworkService.TrustPlan(),
+    retry: false,
+  });
+  const [trusted, setTrusted] = useState("");
+
+  const trust = useMutation({
+    mutationFn: () => NetworkService.TrustCertificate(),
+    onSuccess: (message) => setTrusted(message),
+  });
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: domainsKey(projectID) });
@@ -111,14 +122,34 @@ export function ProjectDomains({ projectID }: { projectID: string }) {
         ) : (
           <span className="text-muted-foreground">
             {running ? "Local proxy listening on" : "Local proxy is stopped;"}{" "}
-            <span className="font-mono text-foreground">{proxy.data?.address ?? "127.0.0.1:80"}</span>
+            <span className="font-mono text-foreground">
+              {proxy.data?.httpAddress ?? "127.0.0.1:80"}
+            </span>
+            {proxy.data?.httpsAddress ? (
+              <>
+                {" "}and <span className="font-mono text-foreground">{proxy.data.httpsAddress}</span>
+              </>
+            ) : null}
             {running ? ` · ${proxy.data?.routes ?? 0} routes` : ""}
           </span>
         )}
-        <Badge variant="outline" className="text-xs text-muted-foreground">
-          HTTP only
-        </Badge>
+        {proxy.data?.httpsAddress ? (
+          <Badge className="border-success/20 bg-success/10 text-xs text-success">HTTPS</Badge>
+        ) : null}
+        <Button
+          variant="outline"
+          size="sm"
+          className="ml-auto"
+          disabled={trust.isPending || !trustPlan.data}
+          onClick={() => trust.mutate()}
+        >
+          Trust Locafy's certificate
+        </Button>
       </div>
+      {trusted ? <p className="text-xs text-muted-foreground">{trusted}</p> : null}
+      {trust.isError ? (
+        <p className="text-xs text-destructive">{messageOf(trust.error)}</p>
+      ) : null}
 
       <div className="overflow-hidden rounded-lg border border-border">
         <table className="w-full text-sm">
@@ -185,8 +216,12 @@ export function ProjectDomains({ projectID }: { projectID: string }) {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        A domain routes once its application has bound a port. HTTPS is not available yet: this
-        release serves local domains over HTTP, and certificates are a separate decision.
+        A domain routes once its application has bound a port. HTTPS uses a certificate from
+        Locafy's own local authority; browsers only accept it after you trust that certificate,
+        and the button above shows exactly what trusting it runs. Locafy does not edit your hosts
+        file: add <span className="font-mono">127.0.0.1 {rows[0]?.hostname ?? "api.project.test"}</span> to
+        it, or use a wildcard <span className="font-mono">.test</span> resolver, so the name reaches
+        this machine.
       </p>
 
       <Dialog open={dialogOpen} onOpenChange={(open) => !assign.isPending && setDialogOpen(open)}>

@@ -2,21 +2,29 @@ package network
 
 import (
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
-// DefaultAddress is where the proxy listens. Port 80 is what lets
-// api.project.test work without a port suffix; a refused bind is reported as the
-// proxy's status rather than worked around.
-const DefaultAddress = "127.0.0.1:80"
+// The listener candidates, in order. Nothing privileged is assumed: 80 and 443
+// come first because they make api.project.test work without a port suffix, and
+// an unprivileged port is used when the machine refuses them. The interface
+// states the address that was actually bound, because a URL with :8080 is not
+// the same promise as one without.
+var (
+	DefaultHTTP  = []string{"127.0.0.1:80", "127.0.0.1:8080"}
+	DefaultHTTPS = []string{"127.0.0.1:443", "127.0.0.1:8443"}
+)
 
 // EventProxy announces a change of proxy state or routing table.
 const EventProxy = "network:proxy"
@@ -28,44 +36,56 @@ const refreshInterval = time.Second
 
 // ProxyStatus is the proxy's own state, independent of any project.
 type ProxyStatus struct {
-	Running bool   `json:"running"`
-	Address string `json:"address"`
-	Routes  int    `json:"routes"`
-	Error   string `json:"error"`
+	Running      bool   `json:"running"`
+	HTTPAddress  string `json:"httpAddress"`
+	HTTPSAddress string `json:"httpsAddress"`
+	Routes       int    `json:"routes"`
+	Error        string `json:"error"`
 }
 
-// Proxy is Locafy's local reverse proxy: one loopback listener, a hostname table
+// Proxy is Locafy's local reverse proxy: loopback listeners, a hostname table
 // rebuilt from the database, and an atomic swap when the table changes. There is
 // no configuration file to write or reload: the table is the configuration, and
 // it is built only from validated hostnames and live application ports.
 type Proxy struct {
-	database *sql.DB
-	emit     func(string, any)
+	database  *sql.DB
+	authority *Authority
+	emit      func(string, any)
 
-	mu       sync.RWMutex
-	routes   map[string]*httputil.ReverseProxy
-	server   *http.Server
-	listener net.Listener
-	address  string
-	err      string
-	stop     chan struct{}
+	mu           sync.RWMutex
+	routes       map[string]*httputil.ReverseProxy
+	hosts        []string
+	server       *http.Server
+	tlsServer    *http.Server
+	listener     net.Listener
+	tlsListener  net.Listener
+	httpAddress  string
+	httpsAddress string
+	err          string
+	stop         chan struct{}
+	certificate  atomic.Pointer[tls.Certificate]
 }
 
-// NewProxy returns a proxy that routes the domains stored in database.
-func NewProxy(database *sql.DB, emit func(string, any)) *Proxy {
+// NewProxy returns a proxy that routes the domains stored in database. The
+// authority issues the certificates for the TLS listener; it is created lazily
+// the first time HTTPS starts.
+func NewProxy(database *sql.DB, authority *Authority, emit func(string, any)) *Proxy {
 	return &Proxy{
-		database: database,
-		emit:     emit,
-		routes:   map[string]*httputil.ReverseProxy{},
-		address:  DefaultAddress,
+		database:     database,
+		authority:    authority,
+		emit:         emit,
+		routes:       map[string]*httputil.ReverseProxy{},
+		httpAddress:  "",
+		httpsAddress: "",
 	}
 }
 
-// Start binds the listener and begins routing. A listener that is already open
-// is left alone, so a second start is not an error.
-func (p *Proxy) Start(address string) (ProxyStatus, error) {
-	if strings.TrimSpace(address) == "" {
-		address = DefaultAddress
+// Start binds the first available HTTP address and, when httpsCandidates are
+// given, the first available HTTPS address. A listener that is already open is
+// left alone, so a second start is not an error.
+func (p *Proxy) Start(httpCandidates []string, httpsCandidates []string) (ProxyStatus, error) {
+	if len(httpCandidates) == 0 {
+		httpCandidates = DefaultHTTP
 	}
 
 	p.mu.Lock()
@@ -75,9 +95,8 @@ func (p *Proxy) Start(address string) (ProxyStatus, error) {
 		return status, nil
 	}
 
-	listener, err := net.Listen("tcp", address)
+	listener, httpAddress, err := listenFirst(httpCandidates)
 	if err != nil {
-		p.address = address
 		p.err = err.Error()
 		status := p.statusLocked()
 		p.mu.Unlock()
@@ -87,7 +106,7 @@ func (p *Proxy) Start(address string) (ProxyStatus, error) {
 
 	stop := make(chan struct{})
 	p.listener = listener
-	p.address = listener.Addr().String()
+	p.httpAddress = httpAddress
 	p.err = ""
 	p.server = &http.Server{
 		Handler:           http.HandlerFunc(p.serve),
@@ -101,38 +120,84 @@ func (p *Proxy) Start(address string) (ProxyStatus, error) {
 	go func() { _ = server.Serve(listener) }()
 	go p.refresh(stop)
 
+	if len(httpsCandidates) > 0 {
+		p.startTLS(httpsCandidates)
+	}
+
 	status = p.Reload()
 	p.announce()
 	return status, nil
 }
 
-// Stop closes the listener. Routing stops, and the last status keeps the address
-// it had so the interface can still explain what was running.
+// startTLS binds the HTTPS listener and issues the certificate it serves. A
+// failure here is reported but does not take the HTTP listener down: routing
+// over HTTP still works while the certificate problem is visible.
+func (p *Proxy) startTLS(candidates []string) {
+	if p.authority == nil {
+		return
+	}
+
+	listener, address, err := listenFirst(candidates)
+	if err != nil {
+		p.mu.Lock()
+		p.err = fmt.Sprintf("HTTPS is not listening: %v", err)
+		p.mu.Unlock()
+		return
+	}
+
+	server := &http.Server{
+		Handler:           http.HandlerFunc(p.serve),
+		ReadHeaderTimeout: 5 * time.Second,
+		TLSConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+				certificate := p.certificate.Load()
+				if certificate == nil {
+					return nil, fmt.Errorf("no domain certificate is issued yet")
+				}
+				return certificate, nil
+			},
+		},
+	}
+
+	p.mu.Lock()
+	p.tlsServer = server
+	p.tlsListener = listener
+	p.httpsAddress = address
+	p.mu.Unlock()
+
+	go func() { _ = server.ServeTLS(listener, "", "") }()
+}
+
+// Stop closes both listeners.
 func (p *Proxy) Stop() ProxyStatus {
 	p.mu.Lock()
-	server := p.server
+	httpServer, tlsServer := p.server, p.tlsServer
 	stop := p.stop
-	p.server = nil
-	p.listener = nil
+	p.server, p.tlsServer = nil, nil
+	p.listener, p.tlsListener = nil, nil
 	p.stop = nil
 	p.routes = map[string]*httputil.ReverseProxy{}
+	p.certificate.Store(nil)
 	if stop != nil {
 		close(stop)
 	}
 	status := p.statusLocked()
 	p.mu.Unlock()
 
-	if server != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = server.Shutdown(ctx)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if httpServer != nil {
+		_ = httpServer.Shutdown(ctx)
+	}
+	if tlsServer != nil {
+		_ = tlsServer.Shutdown(ctx)
 	}
 	p.announce()
 	return status
 }
 
-// Status reports the listener, the route count and the last bind or refresh
-// failure.
+// Status reports the listeners, the route count and the last failure.
 func (p *Proxy) Status() ProxyStatus {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -140,9 +205,18 @@ func (p *Proxy) Status() ProxyStatus {
 }
 
 // Reload rebuilds the routing table from the database and swaps it in one step,
-// so a request is served by either the old table or the new one.
+// so a request is served by either the old table or the new one. When the set of
+// hostnames changed, the TLS certificate is reissued for exactly that set.
 func (p *Proxy) Reload() ProxyStatus {
-	routes, err := p.buildRoutes()
+	routes, hosts, err := p.buildRoutes()
+
+	if err == nil && p.tlsListener != nil && p.authority != nil {
+		if certificate, certErr := p.authority.Leaf(hosts); certErr != nil {
+			err = fmt.Errorf("HTTPS certificate: %w", certErr)
+		} else {
+			p.certificate.Store(&certificate)
+		}
+	}
 
 	p.mu.Lock()
 	if err != nil {
@@ -150,6 +224,7 @@ func (p *Proxy) Reload() ProxyStatus {
 	} else {
 		p.err = ""
 		p.routes = routes
+		p.hosts = hosts
 	}
 	status := p.statusLocked()
 	running := p.server != nil
@@ -159,6 +234,23 @@ func (p *Proxy) Reload() ProxyStatus {
 		p.announce()
 	}
 	return status
+}
+
+// TrustCommand returns the platform command that trusts Locafy's CA, so the
+// interface can show exactly what it will run before it runs it.
+func (p *Proxy) TrustCommand() (string, []string, string, error) {
+	if p.authority == nil {
+		return "", nil, "", fmt.Errorf("no certificate authority is configured")
+	}
+	return p.authority.TrustCommand()
+}
+
+// CAPath is the certificate a user trusts once.
+func (p *Proxy) CAPath() string {
+	if p.authority == nil {
+		return ""
+	}
+	return p.authority.CAPath()
 }
 
 // serve routes one request by hostname. An unknown host is answered here rather
@@ -181,9 +273,9 @@ func (p *Proxy) serve(w http.ResponseWriter, r *http.Request) {
 	target.ServeHTTP(w, r)
 }
 
-// refresh keeps the routing table current while the proxy runs: an application
-// binds its port after its domain was assigned, and its route must appear
-// without another action.
+// refresh keeps the routing table and the certificate current while the proxy
+// runs: an application binds its port after its domain was assigned, and a
+// domain added later must be in the certificate.
 func (p *Proxy) refresh(stop <-chan struct{}) {
 	ticker := time.NewTicker(refreshInterval)
 	defer ticker.Stop()
@@ -200,9 +292,10 @@ func (p *Proxy) refresh(stop <-chan struct{}) {
 // buildRoutes reads every live domain whose application has a discovered port.
 // A domain whose application has not bound a port yet has no route: it is a
 // valid record that cannot route until the application runs.
-func (p *Proxy) buildRoutes() (map[string]*httputil.ReverseProxy, error) {
+func (p *Proxy) buildRoutes() (map[string]*httputil.ReverseProxy, []string, error) {
+	routes := make(map[string]*httputil.ReverseProxy)
 	if p.database == nil {
-		return map[string]*httputil.ReverseProxy{}, nil
+		return routes, nil, nil
 	}
 
 	rows, err := p.database.Query(`SELECT d.hostname, a.port
@@ -210,21 +303,27 @@ func (p *Proxy) buildRoutes() (map[string]*httputil.ReverseProxy, error) {
 		JOIN applications a ON a.id = d.application_id
 		WHERE d.deleted_at IS NULL AND a.deleted_at IS NULL AND a.port IS NOT NULL`)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer rows.Close()
 
-	routes := make(map[string]*httputil.ReverseProxy)
+	hosts := make([]string, 0)
 	for rows.Next() {
 		var hostname string
 		var port int
 		if err := rows.Scan(&hostname, &port); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		target := fmt.Sprintf("127.0.0.1:%d", port)
 		routes[hostname] = reverseProxy(target)
+		hosts = append(hosts, hostname)
 	}
-	return routes, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	slices.Sort(hosts)
+	slices.Compact(hosts)
+	return routes, hosts, nil
 }
 
 // reverseProxy forwards one hostname to one loopback port. ReverseProxy passes
@@ -250,10 +349,11 @@ func reverseProxy(target string) *httputil.ReverseProxy {
 
 func (p *Proxy) statusLocked() ProxyStatus {
 	return ProxyStatus{
-		Running: p.server != nil,
-		Address: p.address,
-		Routes:  len(p.routes),
-		Error:   p.err,
+		Running:      p.server != nil,
+		HTTPAddress:  p.httpAddress,
+		HTTPSAddress: p.httpsAddress,
+		Routes:       len(p.routes),
+		Error:        p.err,
 	}
 }
 
@@ -261,4 +361,18 @@ func (p *Proxy) announce() {
 	if p.emit != nil {
 		p.emit(EventProxy, p.Status())
 	}
+}
+
+// listenFirst binds the first candidate that is free, so a privileged or busy
+// port does not stop the proxy from serving.
+func listenFirst(candidates []string) (net.Listener, string, error) {
+	var failures []string
+	for _, candidate := range candidates {
+		listener, err := net.Listen("tcp", candidate)
+		if err == nil {
+			return listener, listener.Addr().String(), nil
+		}
+		failures = append(failures, fmt.Sprintf("%s: %v", candidate, err))
+	}
+	return nil, "", fmt.Errorf("no local port could be bound (%s)", strings.Join(failures, "; "))
 }

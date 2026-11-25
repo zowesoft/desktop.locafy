@@ -1,6 +1,8 @@
 package network
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"database/sql"
 	"errors"
 	"io"
@@ -8,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -141,13 +144,13 @@ func TestAssignRefusesAnApplicationFromAnotherProject(t *testing.T) {
 func testProxy(t *testing.T, database *sql.DB) (*Proxy, string) {
 	t.Helper()
 
-	proxy := NewProxy(database, nil)
-	status, err := proxy.Start("127.0.0.1:0")
+	proxy := NewProxy(database, NewAuthority(t.TempDir()), nil)
+	status, err := proxy.Start([]string{"127.0.0.1:0"}, nil)
 	if err != nil {
 		t.Fatalf("start proxy: %v", err)
 	}
 	t.Cleanup(func() { proxy.Stop() })
-	return proxy, status.Address
+	return proxy, status.HTTPAddress
 }
 
 func get(t *testing.T, address string, host string) (*http.Response, string) {
@@ -212,6 +215,100 @@ func TestProxyRoutesByHostname(t *testing.T) {
 	missing, body := get(t, address, "unknown.etugora.test")
 	if missing.StatusCode != http.StatusNotFound || !strings.Contains(body, "No running application is assigned") {
 		t.Fatalf("unknown host = %d %q, want a clear 404", missing.StatusCode, body)
+	}
+}
+
+func TestProxyFallsBackWhenTheFirstPortIsTaken(t *testing.T) {
+	database := openDatabase(t)
+
+	// Something is already on the preferred address.
+	occupied, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer occupied.Close()
+
+	proxy := NewProxy(database, NewAuthority(t.TempDir()), nil)
+	status, err := proxy.Start([]string{occupied.Addr().String(), "127.0.0.1:0"}, nil)
+	if err != nil {
+		t.Fatalf("start with a taken port: %v", err)
+	}
+	t.Cleanup(func() { proxy.Stop() })
+
+	if !status.Running || status.HTTPAddress == occupied.Addr().String() || status.HTTPAddress == "" {
+		t.Fatalf("status = %+v, want the fallback address bound and reported", status)
+	}
+}
+
+func TestProxyServesHTTPSWithItsOwnAuthority(t *testing.T) {
+	database := openDatabase(t)
+	projectID, applicationID := projectWithApplication(t, database, "Etugora")
+	if _, err := Assign(database, projectID, applicationID, "api.etugora.test"); err != nil {
+		t.Fatalf("assign: %v", err)
+	}
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "secure hello")
+	}))
+	defer upstream.Close()
+	parsed, err := url.Parse(upstream.URL)
+	if err != nil {
+		t.Fatalf("parse upstream: %v", err)
+	}
+	_, port, err := net.SplitHostPort(parsed.Host)
+	if err != nil {
+		t.Fatalf("upstream port: %v", err)
+	}
+	if _, err := database.Exec(`UPDATE applications SET port = ? WHERE id = ?`, port, applicationID); err != nil {
+		t.Fatalf("set port: %v", err)
+	}
+
+	authority := NewAuthority(t.TempDir())
+	proxy := NewProxy(database, authority, nil)
+	status, err := proxy.Start([]string{"127.0.0.1:0"}, []string{"127.0.0.1:0"})
+	if err != nil {
+		t.Fatalf("start proxy: %v", err)
+	}
+	t.Cleanup(func() { proxy.Stop() })
+	if status.HTTPSAddress == "" {
+		t.Fatalf("status = %+v, want an HTTPS address", status)
+	}
+
+	rawCA, err := os.ReadFile(authority.CAPath())
+	if err != nil {
+		t.Fatalf("read authority: %v", err)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(rawCA) {
+		t.Fatal("the authority certificate did not parse")
+	}
+
+	request, err := http.NewRequest(http.MethodGet, "https://"+status.HTTPSAddress+"/", nil)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	request.Host = "api.etugora.test"
+	// The address is a loopback IP, so the certificate does not name it: the
+	// browser reaches the same listener through the hostname, and so does this
+	// client by asking TLS to verify that name.
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{
+			RootCAs:    roots,
+			ServerName: "api.etugora.test",
+		}},
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("https request: %v", err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), "secure hello") {
+		t.Fatalf("response = %d %q, want the upstream over TLS", response.StatusCode, body)
 	}
 }
 

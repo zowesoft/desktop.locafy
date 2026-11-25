@@ -24,7 +24,18 @@ export interface Domain {
  */
 export interface ProxyStatus {
     "running": boolean;
-    "address": string;
+    "httpAddress": string;
+    "httpsAddress": string;
     "routes": number;
     "error": string;
+}
+
+/**
+ * TrustPlan is what the interface shows before it offers to trust the
+ * certificate: the exact command, and the explanation of what it changes.
+ */
+export interface TrustPlan {
+    "command": string;
+    "explanation": string;
+    "certificate": string;
 }

@@ -8,5 +8,6 @@ export {
 
 export type {
     Domain,
-    ProxyStatus
+    ProxyStatus,
+    TrustPlan
 } from "./models.js";

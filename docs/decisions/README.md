@@ -35,6 +35,7 @@ rewrite.
 | [ADR-0020](ADR-0020-service-packaging-native.md) | Services run as native engine processes Locafy supervises; containers only as a recorded per-engine exception; only engines with a verified native build per platform enter the catalogue | Proposed |
 | [ADR-0021](ADR-0021-local-domains-and-proxy.md) | Local domains are served by a proxy inside the desktop process (no Caddy binary); the hostname table is the configuration and is swapped atomically; HTTPS is a separate decision | Proposed |
 | [ADR-0022](ADR-0022-engine-api-cli-and-mcp.md) | One token-authenticated loopback JSON API over the engine; the CLI, an MCP server and the future in-app assistant are clients of it, never second writers | Proposed |
+| [ADR-0023](ADR-0023-local-https-certificates.md) | Local HTTPS from a Locafy-generated CA on loopback, with trust and hosts-file steps kept explicit and reversible; mkcert is not adopted | Proposed |
 | — | Desktop stack selections made in the PRD (Wails v3, Go, React/TS, SQLite) are recorded there and considered approved baseline. | — |
 
 ## Decisions pending (do not guess — PRD section 23)
