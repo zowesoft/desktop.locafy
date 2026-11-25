@@ -8,7 +8,7 @@ Locafy turns a developer's computer into a manageable local development environm
 
 ## Status
 
-🚧 In active development. On Windows it builds and runs with the SQLite control plane, projects, applications with process supervision, ports and health, native service instances (PostgreSQL today, under the packaging rule in ADR-0020), framework scaffolds, the runtime registry and managed installs, plus project lifecycle orchestration and the activity feed. macOS and Linux are compile-and-test only: CI is configured for all three and no manual run has been done there. Delivery follows the phased plan in the PRD (section 20); see `docs/FEATURES.md` for the feature tracker.
+🚧 In active development. On Windows it builds and runs with the SQLite control plane, projects, applications with process supervision, ports and health, native service instances (PostgreSQL today, following the packaging approach ADR-0020 proposes), framework scaffolds, the runtime registry and managed installs, plus project lifecycle orchestration and the activity feed. macOS and Linux are compile-and-test only: CI is configured for all three and no manual run has been done there. Delivery follows the phased plan in the PRD (section 20); see `docs/FEATURES.md` for the feature tracker.
 
 ## Documentation
 

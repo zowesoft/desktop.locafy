@@ -20,7 +20,7 @@ rewrite.
 | [ADR-0005](ADR-0005-machine-monitoring.md) | Machine monitoring: gopsutil sampled in the background, CGO-free | Accepted |
 | [ADR-0006](ADR-0006-light-theme.md) | Light theme alongside the dark default, and the caption-bar limitation it accepts | Accepted |
 | [ADR-0007](ADR-0007-project-manifest-and-storage.md) | Managed and linked projects, and the portable project manifest (manifest rules superseded by ADR-0012) | Superseded in part |
-| [ADR-0008](ADR-0008-service-engines-and-instances.md) | Service engines are machine-level; instances are shared by default, with isolated per-project instances as the alternative (packaging settled by ADR-0020) | Accepted |
+| [ADR-0008](ADR-0008-service-engines-and-instances.md) | Service engines are machine-level; instances are shared by default, with isolated per-project instances as the alternative (packaging proposed by ADR-0020) | Accepted |
 | [ADR-0009](ADR-0009-navigation-and-project-workspace.md) | Global-only sidebar, a projects dashboard, and a project workspace with Applications, Services and Domains as tabs | Accepted |
 | [ADR-0010](ADR-0010-applications-and-dependency-graph.md) | Applications are project-scoped records with a confirmed, advisory detection and a cycle-checked dependency graph | Accepted |
 | [ADR-0011](ADR-0011-framework-recipes-and-scaffold-jobs.md) | Framework recipes are shipped data, scaffolds run argv-only with version choice, and only successful installs are registered | Accepted |

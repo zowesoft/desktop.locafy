@@ -61,7 +61,7 @@ Planned areas appear as their features are built; packages are added when a feat
 
 **Logging** — Go `slog` structured logging to rotating files under the user data directory, with secrets masked at the logging boundary. Log scope (machine/project/app/service) is part of the record.
 
-**Process management** — managed applications and services are started and tracked by the engine (PID, lifecycle state, owner project). Only engine-started processes are ever stopped. Platform differences (signals, process groups, PTY) are isolated in per-platform files using build tags (`windows.go`, `darwin.go`, `linux.go`), selected at compile time — consistent with ADR-0001 (cross-platform from day one). CI builds and tests all three platforms.
+**Process management** — managed applications and services are started and tracked by the engine (PID, lifecycle state, owner project). Only engine-started processes are ever stopped. Platform differences (signals, process groups, PTY) are isolated in per-platform files using build tags (`windows.go`, `darwin.go`, `linux.go`), selected at compile time — consistent with ADR-0001 (cross-platform from day one). CI is configured to build and test on all three platforms; whether those jobs are green is read on the CI service, not from this document.
 
 ## Conventions
 
@@ -73,6 +73,6 @@ Planned areas appear as their features are built; packages are added when a feat
 ## Status
 
 - Phase 0: architecture defined (this document); toolchain verified (ADR-0002); platform policy decided (ADR-0001).
-- Built on Windows: the SQLite control plane, projects, applications with supervision, ports and health, project lifecycle orchestration, native service instances (PostgreSQL delivered; packaging settled by ADR-0020), framework scaffolds, the runtime registry, managed installs and the activity feed.
+- Built on Windows: the SQLite control plane, projects, applications with supervision, ports and health, project lifecycle orchestration, native service instances (PostgreSQL delivered; the native packaging rule it follows is proposed in ADR-0020, with that instance as the evidence), framework scaffolds, the runtime registry, managed installs and the activity feed.
 - macOS and Linux compile and pass their tests, and CI is configured for all three platforms; neither has had a manual run.
 - Still planned: local domains and the reverse proxy, environment configuration, tunnels and analytics.
