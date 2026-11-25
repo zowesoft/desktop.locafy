@@ -106,7 +106,13 @@ func (a *Authority) Leaf(hostnames []string) (tls.Certificate, error) {
 
 	sorted := append([]string(nil), hostnames...)
 	slices.Sort(sorted)
-	slices.Compact(sorted)
+	sorted = slices.Compact(sorted)
+
+	// With no domain assigned there is still a listener to serve: localhost is
+	// the one name that needs no hostname mapping to reach it.
+	if len(sorted) == 0 {
+		sorted = []string{"localhost"}
+	}
 
 	if certificate, err := a.loadLeaf(authority, sorted); err == nil {
 		return certificate, nil

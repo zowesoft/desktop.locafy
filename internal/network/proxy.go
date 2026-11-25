@@ -54,6 +54,8 @@ type Proxy struct {
 
 	mu           sync.RWMutex
 	routes       map[string]*httputil.ReverseProxy
+	targets      map[string]string
+	loaded       bool
 	hosts        []string
 	server       *http.Server
 	tlsServer    *http.Server
@@ -124,8 +126,9 @@ func (p *Proxy) Start(httpCandidates []string, httpsCandidates []string) (ProxyS
 		p.startTLS(httpsCandidates)
 	}
 
+	// Reload announces the first table itself; announcing again here would
+	// send the interface the same state twice.
 	status = p.Reload()
-	p.announce()
 	return status, nil
 }
 
@@ -178,6 +181,8 @@ func (p *Proxy) Stop() ProxyStatus {
 	p.listener, p.tlsListener = nil, nil
 	p.stop = nil
 	p.routes = map[string]*httputil.ReverseProxy{}
+	p.targets = nil
+	p.loaded = false
 	p.certificate.Store(nil)
 	if stop != nil {
 		close(stop)
@@ -207,10 +212,22 @@ func (p *Proxy) Status() ProxyStatus {
 // Reload rebuilds the routing table from the database and swaps it in one step,
 // so a request is served by either the old table or the new one. When the set of
 // hostnames changed, the TLS certificate is reissued for exactly that set.
+//
+// It runs once a second, so it is also quiet: an unchanged table is not swapped
+// and not announced. Rebuilding new route objects and emitting them every second
+// would make the interface re-render forever for no reason.
 func (p *Proxy) Reload() ProxyStatus {
-	routes, hosts, err := p.buildRoutes()
+	routes, hosts, targets, err := p.buildRoutes()
 
-	if err == nil && p.tlsListener != nil && p.authority != nil {
+	p.mu.RLock()
+	unchanged := p.loaded && targetsEqual(p.targets, targets)
+	tlsOn := p.tlsListener != nil
+	haveCertificate := p.certificate.Load() != nil
+	p.mu.RUnlock()
+
+	// The certificate is reused when it already names this host set: the
+	// authority reissues only when the names differ or it is close to expiry.
+	if err == nil && tlsOn && p.authority != nil && (!unchanged || !haveCertificate) {
 		if certificate, certErr := p.authority.Leaf(hosts); certErr != nil {
 			err = fmt.Errorf("HTTPS certificate: %w", certErr)
 		} else {
@@ -219,18 +236,30 @@ func (p *Proxy) Reload() ProxyStatus {
 	}
 
 	p.mu.Lock()
+	changed := false
 	if err != nil {
-		p.err = err.Error()
+		if p.err != err.Error() {
+			p.err = err.Error()
+			changed = true
+		}
 	} else {
-		p.err = ""
-		p.routes = routes
-		p.hosts = hosts
+		if p.err != "" {
+			p.err = ""
+			changed = true
+		}
+		if !unchanged {
+			p.routes = routes
+			p.targets = targets
+			p.hosts = hosts
+			p.loaded = true
+			changed = true
+		}
 	}
 	status := p.statusLocked()
 	running := p.server != nil
 	p.mu.Unlock()
 
-	if running {
+	if running && changed {
 		p.announce()
 	}
 	return status
@@ -292,10 +321,11 @@ func (p *Proxy) refresh(stop <-chan struct{}) {
 // buildRoutes reads every live domain whose application has a discovered port.
 // A domain whose application has not bound a port yet has no route: it is a
 // valid record that cannot route until the application runs.
-func (p *Proxy) buildRoutes() (map[string]*httputil.ReverseProxy, []string, error) {
+func (p *Proxy) buildRoutes() (map[string]*httputil.ReverseProxy, []string, map[string]string, error) {
 	routes := make(map[string]*httputil.ReverseProxy)
+	targets := make(map[string]string)
 	if p.database == nil {
-		return routes, nil, nil
+		return routes, nil, targets, nil
 	}
 
 	rows, err := p.database.Query(`SELECT d.hostname, a.port
@@ -303,7 +333,7 @@ func (p *Proxy) buildRoutes() (map[string]*httputil.ReverseProxy, []string, erro
 		JOIN applications a ON a.id = d.application_id
 		WHERE d.deleted_at IS NULL AND a.deleted_at IS NULL AND a.port IS NOT NULL`)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	defer rows.Close()
 
@@ -312,18 +342,33 @@ func (p *Proxy) buildRoutes() (map[string]*httputil.ReverseProxy, []string, erro
 		var hostname string
 		var port int
 		if err := rows.Scan(&hostname, &port); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		target := fmt.Sprintf("127.0.0.1:%d", port)
 		routes[hostname] = reverseProxy(target)
+		targets[hostname] = target
 		hosts = append(hosts, hostname)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	slices.Sort(hosts)
-	slices.Compact(hosts)
-	return routes, hosts, nil
+	hosts = slices.Compact(hosts)
+	return routes, hosts, targets, nil
+}
+
+// targetsEqual compares the hostname-to-port table, not the route objects: two
+// builds of the same table hold different pointers and mean the same thing.
+func targetsEqual(a map[string]string, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for hostname, target := range a {
+		if b[hostname] != target {
+			return false
+		}
+	}
+	return true
 }
 
 // reverseProxy forwards one hostname to one loopback port. ReverseProxy passes

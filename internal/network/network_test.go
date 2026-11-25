@@ -1,6 +1,7 @@
 package network
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
@@ -309,6 +310,72 @@ func TestProxyServesHTTPSWithItsOwnAuthority(t *testing.T) {
 	}
 	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), "secure hello") {
 		t.Fatalf("response = %d %q, want the upstream over TLS", response.StatusCode, body)
+	}
+}
+
+func TestProxyAnnouncesOnlyWhenTheTableChanges(t *testing.T) {
+	database := openDatabase(t)
+	projectID, applicationID := projectWithApplication(t, database, "Announce")
+	if _, err := Assign(database, projectID, applicationID, "api.announce.test"); err != nil {
+		t.Fatalf("assign: %v", err)
+	}
+	if _, err := database.Exec(`UPDATE applications SET port = 41000 WHERE id = ?`, applicationID); err != nil {
+		t.Fatalf("set port: %v", err)
+	}
+
+	events := 0
+	proxy := NewProxy(database, NewAuthority(t.TempDir()), func(string, any) { events++ })
+	if _, err := proxy.Start([]string{"127.0.0.1:0"}, nil); err != nil {
+		t.Fatalf("start proxy: %v", err)
+	}
+	t.Cleanup(func() { proxy.Stop() })
+
+	first := events
+	if first == 0 {
+		t.Fatal("starting the proxy announced nothing")
+	}
+
+	// The refresh runs every second; an unchanged table must stay silent.
+	proxy.Reload()
+	proxy.Reload()
+	if events != first {
+		t.Fatalf("events = %d after two unchanged reloads, want %d", events, first)
+	}
+
+	if _, err := database.Exec(`UPDATE applications SET port = 41001 WHERE id = ?`, applicationID); err != nil {
+		t.Fatalf("move port: %v", err)
+	}
+	proxy.Reload()
+	if events != first+1 {
+		t.Fatalf("events = %d after a changed table, want %d", events, first+1)
+	}
+}
+
+func TestProxyKeepsItsCertificateAcrossUnchangedReloads(t *testing.T) {
+	database := openDatabase(t)
+	projectID, applicationID := projectWithApplication(t, database, "Stable")
+	if _, err := Assign(database, projectID, applicationID, "api.stable.test"); err != nil {
+		t.Fatalf("assign: %v", err)
+	}
+
+	authority := NewAuthority(t.TempDir())
+	proxy := NewProxy(database, authority, nil)
+	if _, err := proxy.Start([]string{"127.0.0.1:0"}, []string{"127.0.0.1:0"}); err != nil {
+		t.Fatalf("start proxy: %v", err)
+	}
+	t.Cleanup(func() { proxy.Stop() })
+
+	issued, err := os.ReadFile(authority.leafCertPath())
+	if err != nil {
+		t.Fatalf("read served certificate: %v", err)
+	}
+	proxy.Reload()
+	again, err := os.ReadFile(authority.leafCertPath())
+	if err != nil {
+		t.Fatalf("read served certificate: %v", err)
+	}
+	if !bytes.Equal(issued, again) {
+		t.Error("an unchanged reload reissued the certificate")
 	}
 }
 
