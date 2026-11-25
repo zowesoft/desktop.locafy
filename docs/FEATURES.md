@@ -32,6 +32,9 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 | TUN-E2E-001 | End-to-end public tunnel flow (shared) | Gateway · Desktop · API | 9 | NOT_STARTED | TUN-PROTO-001, TUN-AGENT-001, TUN-GATE-001 |
 | DESK-HELP-001 | Help and diagnostics export | desktop.locafy | 10 | NOT_STARTED | DESK-BOOT-001 |
 | DESK-EXT-001 | Extensions platform | desktop.locafy | 11 | NOT_STARTED | DESK-UI-001, DESK-DB-001 |
+| DESK-CLI-001 | Engine JSON API and the local CLI | desktop.locafy | 12 | NOT_STARTED | DESK-PROJ-002, DESK-APP-002, DESK-SVC-001, DESK-NET-001 |
+| DESK-MCP-001 | MCP server for AI clients | desktop.locafy | 12 | NOT_STARTED | DESK-CLI-001 |
+| DESK-AGENT-001 | In-app assistant | desktop.locafy | 12 | NOT_STARTED | DESK-MCP-001 |
 
 ---
 
@@ -354,4 +357,43 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 - **Files/modules:** —
 - **Tests:** Install/enable/disable/uninstall flows; offline catalogue; data-integrity checks after uninstall
 - **Blockers:** The extension model and API definition must be recorded as a decision before implementation (PRD Phase 11)
+- **Evidence:** —
+
+### DESK-CLI-001 — Engine JSON API and the local CLI
+
+- **Repository:** desktop.locafy
+- **Description:** A versioned loopback JSON API over the engine's own service packages (token-authenticated, discovery file for the port), and a `locafy` command-line client on top of it: `status`, `projects`, `apps`, `logs`, project create/import, app add, start/stop/restart, services, domains and scaffolds, JSON-first with stable exit codes. The CLI never opens SQLite or spawns a process.
+- **Dependencies:** DESK-PROJ-002, DESK-APP-002, DESK-SVC-001, DESK-NET-001
+- **Acceptance criteria:** `locafy status` reports the engine and proxy state, or exits 4 with a clear message when the engine is down; `--json` output matches the interface's data for projects, applications and lifecycle results; the API refuses requests without the token and the token file is not readable by other users; a stale discovery file produces one clear message rather than a hang; no CLI code path opens the database or spawns a process; every CLI mutation appears in the activity feed with actor `cli`.
+- **Status:** NOT_STARTED
+- **Assigned agent:** —
+- **Files/modules:** — (planned: `internal/api/`, `cmd/locafy/`, `docs/features/cli-and-mcp.md`)
+- **Tests:** API handler tests against the engine packages; CLI tests for JSON shapes and exit codes; a live check that a CLI start matches a UI start
+- **Blockers:** ADR-0022 proposes the architecture and awaits approval. Three open decisions gate implementation: the binary name against `locafy.exe`, token lifetime, and headless mode for CI. Detailed specification: `docs/features/cli-and-mcp.md`.
+- **Evidence:** —
+
+### DESK-MCP-001 — MCP server for AI clients
+
+- **Repository:** desktop.locafy
+- **Description:** A stdio MCP server (`locafy mcp`) that exposes the engine's operations as typed tools — status, projects, applications, lifecycle, domains, logs — with JSON schemas, read-only by default and writes behind `--allow-writes`. No shell tool and no removal tools in the first version. Every call is attributed in the activity feed as `mcp`.
+- **Dependencies:** DESK-CLI-001
+- **Acceptance criteria:** an MCP client lists the tools with schemas and calls each read tool successfully against a running engine; write tools are refused unless the server was started with `--allow-writes`; the server never opens the database, spawns a process or exposes an arbitrary-command tool; a call while the engine is down returns one clear error rather than failing the server; each mutation is attributed to `mcp` in the activity feed.
+- **Status:** NOT_STARTED
+- **Assigned agent:** —
+- **Files/modules:** — (planned: `internal/mcp/`, `cmd/locafy/`)
+- **Tests:** tool schema snapshots; an MCP client session driving read and write tools; refusal tests for read-only mode and a stopped engine
+- **Blockers:** Needs DESK-CLI-001's API; ADR-0022 approval; the MCP transport beyond stdio is deferred with the tunnel work. Specification: `docs/features/cli-and-mcp.md`.
+- **Evidence:** —
+
+### DESK-AGENT-001 — In-app assistant
+
+- **Repository:** desktop.locafy
+- **Description:** An assistant panel that answers questions about the machine and performs project actions through the same tool surface the CLI and MCP use, server-side, with the owner's model key kept out of the client and a daily usage limit. It explains failures from the same JSON the other clients read.
+- **Dependencies:** DESK-MCP-001
+- **Acceptance criteria:** the assistant can create a project, add an application and start it through the exposed tools, and describe a failed start from the engine's own error; the model key never reaches the frontend, logs or assets; a daily limit is enforced and reported; every action it takes is attributed as `assistant` in the activity feed and is visible in the interface; disabling the assistant removes the surface without affecting the rest of the app.
+- **Status:** NOT_STARTED
+- **Assigned agent:** —
+- **Files/modules:** — (planned: frontend panel, server-side tool calls, `internal/api` client)
+- **Tests:** tool-call transcription tests with a stub model; key-never-in-client check; daily-limit test; attribution test
+- **Blockers:** Depends on a stable tool surface (DESK-MCP-001) and an owner decision on provider, key and spend. Specification: `docs/features/cli-and-mcp.md`.
 - **Evidence:** —

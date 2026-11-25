@@ -34,6 +34,7 @@ rewrite.
 | [ADR-0019](ADR-0019-install-jobs-and-managed-runtimes.md) | Installs are portable archives unpacked into a runtimes directory Locafy owns; jobs are rows with progress, outcome and retry; managed copies surface through the registry | Accepted |
 | [ADR-0020](ADR-0020-service-packaging-native.md) | Services run as native engine processes Locafy supervises; containers only as a recorded per-engine exception; only engines with a verified native build per platform enter the catalogue | Proposed |
 | [ADR-0021](ADR-0021-local-domains-and-proxy.md) | Local domains are served by a proxy inside the desktop process (no Caddy binary); the hostname table is the configuration and is swapped atomically; HTTPS is a separate decision | Proposed |
+| [ADR-0022](ADR-0022-engine-api-cli-and-mcp.md) | One token-authenticated loopback JSON API over the engine; the CLI, an MCP server and the future in-app assistant are clients of it, never second writers | Proposed |
 | — | Desktop stack selections made in the PRD (Wails v3, Go, React/TS, SQLite) are recorded there and considered approved baseline. | — |
 
 ## Decisions pending (do not guess — PRD section 23)
