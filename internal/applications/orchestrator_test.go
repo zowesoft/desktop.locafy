@@ -109,6 +109,48 @@ func TestProjectStartFollowsTheDependencyOrder(t *testing.T) {
 	}
 }
 
+// A runtime removed after it was assigned fails its own application before any
+// other work runs, and the reason is written on the record so it survives a
+// refresh. The rest of the project still starts.
+func TestProjectStartChecksRuntimesBeforeStarting(t *testing.T) {
+	database := openDatabase(t)
+	fastReady(t)
+	project := newProject(t, database)
+
+	live := quoteCommand(script(t, t.TempDir(), "live", 0, true))
+	broken := projectApplication(t, database, project, "api", live)
+	projectApplication(t, database, project, "web", live)
+	// Written straight to the column: the assignment was valid when it was
+	// made, and the copy is gone now, which SetRuntime would refuse.
+	if _, err := database.Exec(`UPDATE applications SET runtime_id = ? WHERE id = ?`,
+		`node@C:\missing\node.exe`, broken.ID); err != nil {
+		t.Fatalf("assign runtime: %v", err)
+	}
+
+	supervisor := NewSupervisor(database, nil)
+	t.Cleanup(func() { _, _ = supervisor.StopProject(project.ID) })
+	report, err := supervisor.StartProject(project.ID)
+	if err != nil {
+		t.Fatalf("start project: %v", err)
+	}
+
+	if len(report.Failed) != 1 || !strings.Contains(report.Failed[0], "api") ||
+		!strings.Contains(report.Failed[0], "assigned runtime is not available") {
+		t.Fatalf("failed = %q, want the broken runtime reported for api", report.Failed)
+	}
+	if got := strings.Join(report.Started, ","); got != "web" {
+		t.Fatalf("started = %q, want the rest of the project to run", got)
+	}
+
+	record, err := Get(database, broken.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if record.Status != StatusError || !strings.Contains(record.Error, "assigned runtime is not available") {
+		t.Fatalf("record = %q/%q, want the runtime failure written on it", record.Status, record.Error)
+	}
+}
+
 func TestProjectStartSkipsDependentsOfAFailedApplication(t *testing.T) {
 	database := openDatabase(t)
 	fastReady(t)

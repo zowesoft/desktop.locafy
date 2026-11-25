@@ -96,6 +96,16 @@ the components it summarises. The interface derives the state it displays from
 the component statuses; the column remains the schema's coarse placeholder
 until a consumer needs it stored.
 
+### Runtimes are checked before anything runs
+
+Start and restart resolve every application's assigned runtime before the first
+service or process is launched (PRD section 7.3 step 2, which waited for
+DESK-RUN-001). An assignment whose copy has gone ends that application as
+`failed`, with the resolver's reason written on its own record and named in the
+run's report; the rest of the project still starts, because one broken
+assignment should not refuse a start the operator asked for. An application
+with no assignment continues to resolve through PATH as before.
+
 ### Deliberately deferred
 
 - Services now take the position before applications in a project start and the
@@ -104,5 +114,3 @@ until a consumer needs it stored.
   not per-dependency.
 - A project-level health summary beyond the derived state (for example a
   readiness percentage) waits for the analytics work.
-- Runtime checking (PRD section 7.3 step 2) arrives with DESK-RUN-001; the
-  supervisor's PATH resolution is the only runtime behaviour today.
