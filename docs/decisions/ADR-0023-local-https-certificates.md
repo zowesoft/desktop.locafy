@@ -71,7 +71,7 @@ the behaviour that matters for local sites. Locafy does not publish a CRL in thi
 release; the limitation is documented rather than papered over with a
 verification switch.
 
-### Applications Locafy starts trust the CA through the environment
+### Processes Locafy starts trust the CA through the environment
 
 The Windows trust store is not the only store that matters. Node ships its own
 Mozilla bundle and ignores the system store, so a Next.js dev server fetching
@@ -80,9 +80,11 @@ after the user trusts Locafy's CA in Windows. The usual workaround is a wrapper
 script per project that sets `NODE_EXTRA_CA_CERTS` before booting Next, which
 puts developer-machine knowledge into every repository.
 
-Locafy starts the application, so it supplies the variable itself: a started
-application receives `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`,
-`REQUESTS_CA_BUNDLE` and `CURL_CA_BUNDLE` pointing at Locafy's CA. No script edit,
+Locafy starts the process, so it supplies the variable itself: a started
+application **and a started service** receive `NODE_EXTRA_CA_CERTS`,
+`SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE` and `CURL_CA_BUNDLE` pointing at Locafy's
+CA, from one helper (`network.CertificateEnvironment`) so the two supervisors
+cannot drift. No script edit,
 no `NODE_TLS_REJECT_UNAUTHORIZED=0` (which disables verification instead of
 adding an anchor), and no effect on the rest of the machine. A variable the
 application already sets is left alone, because an application may trust a CA

@@ -151,7 +151,7 @@ func (s *Supervisor) Start(id string) (Instance, error) {
 	}
 	command := process.CommandFor(context.Background(), binaries.postgres, argv)
 	command.Dir = instanceDirectory(service.DataDirectory)
-	command.Env = os.Environ()
+	command.Env = serviceEnvironment()
 	command.Stdin = nil
 
 	outputs, err := process.NewOutputs(command)
@@ -421,7 +421,7 @@ func (s *Supervisor) prepareDatabase(id string, service Instance) {
 			"-w",
 			service.DatabaseName,
 		})
-		command.Env = os.Environ()
+		command.Env = serviceEnvironment()
 		result, err := command.CombinedOutput()
 		cancel()
 		output = string(result)
@@ -490,7 +490,7 @@ func initialiseData(service Instance, binaries postgresBinaries) error {
 	}
 	command := process.CommandFor(ctx, binaries.initdb, argv)
 	command.Dir = instanceDirectory(service.DataDirectory)
-	command.Env = os.Environ()
+	command.Env = serviceEnvironment()
 	output, err := command.CombinedOutput()
 	if err != nil {
 		tail := lastLines(string(output), 3)
@@ -518,7 +518,7 @@ func requestShutdown(service Instance) {
 	command := process.CommandFor(ctx, binaries.pgctl,
 		[]string{"stop", "-D", service.DataDirectory, "-m", "fast", "-w", "-t", "20"})
 	command.Dir = instanceDirectory(service.DataDirectory)
-	command.Env = os.Environ()
+	command.Env = serviceEnvironment()
 	_ = command.Run()
 }
 

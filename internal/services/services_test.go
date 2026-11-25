@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"locafy.dev/desktop/internal/db"
+	"locafy.dev/desktop/internal/network"
 )
 
 // setup gives each test a database with one project, a data root of its own and
@@ -83,6 +84,9 @@ func stubEngine(t *testing.T) postgresBinaries {
 	pgctl := filepath.Join(dir, program("pg_ctl"))
 	createdb := filepath.Join(dir, program("createdb"))
 	createdMarker := filepath.Join(dir, "database-created.txt")
+	// The stub engine records the certificate variable it was started with, so a
+	// test can assert what the service process actually received.
+	envRecord := filepath.Join(dir, "certificate-env.txt")
 
 	if runtime.GOOS == "windows" {
 		writeScript(t, initdb,
@@ -103,6 +107,7 @@ func stubEngine(t *testing.T) postgresBinaries {
 				"  if \"!prev!\"==\"-D\" set \"d=%%a\"\r\n"+
 				"  set \"prev=%%a\"\r\n"+
 				")\r\n"+
+				"echo %NODE_EXTRA_CA_CERTS%> \""+envRecord+"\"\r\n"+
 				"echo 1234> \"!d!\\postmaster.pid\"\r\n"+
 				"echo started\r\n"+
 				":loop\r\n"+
@@ -128,6 +133,7 @@ func stubEngine(t *testing.T) postgresBinaries {
 				"  if [ \"$prev\" = \"-D\" ]; then d=\"$a\"; fi\n"+
 				"  prev=\"$a\"\n"+
 				"done\n"+
+				"printf '%s' \"$NODE_EXTRA_CA_CERTS\" > \""+envRecord+"\"\n"+
 				"echo 1234 > \"$d/postmaster.pid\"\n"+
 				"echo started\n"+
 				"while true; do echo tick >> \""+heartbeat+"\"; sleep 0.1; done\n")
@@ -346,6 +352,44 @@ func TestStartReportsAMissingEngineInsteadOfFailingSilently(t *testing.T) {
 	}
 	if failed.Status != StatusError || !strings.Contains(failed.Error, "not installed") {
 		t.Fatalf("service = %+v, want the failure recorded on its own record", failed)
+	}
+}
+
+func TestStartGivesTheServiceLocafysCertificate(t *testing.T) {
+	database, projectID, root := setup(t)
+	instance := create(t, database, root, projectID, "certified")
+	supervisor := NewSupervisor(database, nil)
+	t.Cleanup(supervisor.StopAll)
+
+	binaries, err := findPostgres()
+	if err != nil {
+		t.Fatalf("stub engine: %v", err)
+	}
+	record := filepath.Join(binaries.location, "certificate-env.txt")
+
+	if _, err := supervisor.Start(instance.ID); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	// Wait for the run to settle before the test ends, so the teardown stops a
+	// started service rather than one still coming up.
+	waitFor(t, database, instance.ID, func(service Instance) bool {
+		return service.Health == HealthHealthy
+	}, "waiting for a healthy service")
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		raw, readErr := os.ReadFile(record)
+		if readErr == nil && strings.TrimSpace(string(raw)) != "" {
+			received := strings.TrimSpace(string(raw))
+			if received != network.CertificateFile() {
+				t.Fatalf("NODE_EXTRA_CA_CERTS = %q, want Locafy's certificate", received)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the service never recorded NODE_EXTRA_CA_CERTS (read error: %v)", readErr)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 
