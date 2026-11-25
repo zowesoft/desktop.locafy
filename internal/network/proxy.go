@@ -377,10 +377,15 @@ func (p *Proxy) buildRoutes() (map[string]*httputil.ReverseProxy, []string, map[
 		return routes, nil, targets, nil
 	}
 
+	// A removed project stops routing at once: its domains are no longer a
+	// promise the interface makes, and a stale route would answer for a project
+	// the operator can no longer see.
 	rows, err := p.database.Query(`SELECT d.hostname, a.port
 		FROM domains d
 		JOIN applications a ON a.id = d.application_id
-		WHERE d.deleted_at IS NULL AND a.deleted_at IS NULL AND a.port IS NOT NULL`)
+		JOIN projects p ON p.id = d.project_id
+		WHERE d.deleted_at IS NULL AND a.deleted_at IS NULL AND p.deleted_at IS NULL
+			AND a.port IS NOT NULL`)
 	if err != nil {
 		return nil, nil, nil, err
 	}

@@ -482,6 +482,53 @@ func TestProxyReissuesWhenTheRevocationListMoves(t *testing.T) {
 	}
 }
 
+func TestProxyStopsRoutingARemovedProjectsDomains(t *testing.T) {
+	database := openDatabase(t)
+	projectID, applicationID := projectWithApplication(t, database, "Gone")
+	if _, err := Assign(database, projectID, applicationID, "api.gone.test"); err != nil {
+		t.Fatalf("assign: %v", err)
+	}
+	if _, err := database.Exec(`UPDATE applications SET port = 41998 WHERE id = ?`, applicationID); err != nil {
+		t.Fatalf("set port: %v", err)
+	}
+
+	proxy, address := testProxy(t, database)
+	request, err := http.NewRequest(http.MethodGet, "http://"+address+"/", nil)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	request.Host = "api.gone.test"
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status = %d before removal, want a route to the application", response.StatusCode)
+	}
+
+	if _, err := database.Exec(`UPDATE projects SET deleted_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`, projectID); err != nil {
+		t.Fatalf("remove project: %v", err)
+	}
+	if status := proxy.Reload(); status.Routes != 0 {
+		t.Fatalf("routes = %d after removal, want 0", status.Routes)
+	}
+
+	again, err := http.NewRequest(http.MethodGet, "http://"+address+"/", nil)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	again.Host = "api.gone.test"
+	removed, err := http.DefaultClient.Do(again)
+	if err != nil {
+		t.Fatalf("request after removal: %v", err)
+	}
+	removed.Body.Close()
+	if removed.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d after removal, want 404", removed.StatusCode)
+	}
+}
+
 func TestProxyReportsAnApplicationThatIsNotAnswering(t *testing.T) {
 	database := openDatabase(t)
 	projectID, applicationID := projectWithApplication(t, database, "Etugora")
