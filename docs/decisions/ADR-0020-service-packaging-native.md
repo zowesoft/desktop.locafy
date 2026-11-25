@@ -228,7 +228,11 @@ evidence is in `docs/FEATURES.md`.
    (`pg_ctl stop -m fast`), then falls back to the supervised tree kill. As with
    application supervision (ADR-0013), the stop is decided from the process's
    own exit rather than only from the record, so a child still holding the
-   output pipes cannot make a killed engine read as a failed stop.
+   output pipes cannot make a killed engine read as a failed stop. The output
+   readers are released the same way: once the engine has exited they read what
+   it wrote and stop, instead of waiting on a pipe an orphan keeps open. Lines
+   still draining after Stop finalised the run are folded into the transcript
+   the row reads back.
    Restarting the service instance is stop then start, keeping the same
    directory and port. A project restart is a different action and leaves
    running services alone (ADR-0016).

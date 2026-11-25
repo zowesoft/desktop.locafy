@@ -3,6 +3,7 @@ package applications
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -317,6 +318,54 @@ func deadPID(t *testing.T) int {
 		t.Fatalf("reap the short-lived process: %v", err)
 	}
 	return pid
+}
+
+// TestHelperOrphanHoldsOutput is the child half of the test below: it leaves a
+// process holding its own stdout pipe, then exits on its own.
+func TestHelperOrphanHoldsOutput(t *testing.T) {
+	if os.Getenv("LOCAFY_TEST_ORPHAN") != "1" {
+		t.Skip("helper process for TestSuperviseStopsReadingWhenAnOrphanHoldsThePipe")
+	}
+
+	orphan := exec.Command("ping", "-n", "5", "127.0.0.1")
+	if runtime.GOOS != "windows" {
+		orphan = exec.Command("sleep", "4")
+	}
+	// The orphan must not hold the application's folder, or Windows refuses to
+	// remove the test's temporary directory when the test ends.
+	orphan.Dir = os.TempDir()
+	orphan.Stdout = os.Stdout
+	orphan.Stderr = os.Stderr
+	if err := orphan.Start(); err != nil {
+		t.Fatalf("start orphan: %v", err)
+	}
+	fmt.Println("orphan holds the pipe")
+	os.Exit(0)
+}
+
+func TestSuperviseStopsReadingWhenAnOrphanHoldsThePipe(t *testing.T) {
+	t.Setenv("LOCAFY_TEST_ORPHAN", "1")
+
+	database := openDatabase(t)
+	command := quoteCommand(os.Args[0]) + " -test.run=^TestHelperOrphanHoldsOutput$"
+	app, _ := applicationWithCommand(t, database, command)
+
+	events := &recorder{}
+	supervisor := NewSupervisor(database, events.emit)
+	t.Cleanup(supervisor.StopAll)
+
+	started := time.Now()
+	if _, err := supervisor.Start(app.ID); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	waitForStatus(t, database, app.ID, StatusStopped)
+
+	if elapsed := time.Since(started); elapsed > 10*time.Second {
+		t.Fatalf("the run took %s to finish, want the readers released once the process exited", elapsed)
+	}
+	if output := events.joined(); !strings.Contains(output, "orphan holds the pipe") {
+		t.Fatalf("output = %q, want the process's last line kept", output)
+	}
 }
 
 func TestStopDecidesFromTheProcessExitRatherThanItsRecord(t *testing.T) {

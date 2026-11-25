@@ -1,7 +1,6 @@
 package services
 
 import (
-	"bufio"
 	"context"
 	"database/sql"
 	"errors"
@@ -155,11 +154,7 @@ func (s *Supervisor) Start(id string) (Instance, error) {
 	command.Env = os.Environ()
 	command.Stdin = nil
 
-	stdout, err := command.StdoutPipe()
-	if err != nil {
-		return service, s.fail(id, fmt.Errorf("read output: %w", err))
-	}
-	stderr, err := command.StderrPipe()
+	outputs, err := process.NewOutputs(command)
 	if err != nil {
 		return service, s.fail(id, fmt.Errorf("read output: %w", err))
 	}
@@ -173,10 +168,12 @@ func (s *Supervisor) Start(id string) (Instance, error) {
 	}
 	s.runs[id] = live
 	if err := command.Start(); err != nil {
+		outputs.Close()
 		delete(s.runs, id)
 		s.mu.Unlock()
 		return service, s.fail(id, fmt.Errorf("start %s: %w", binaries.postgres, err))
 	}
+	outputs.Release()
 	live.pid = command.Process.Pid
 	pid := live.pid
 	// A new run starts with an empty transcript, so the panel never shows the
@@ -186,7 +183,7 @@ func (s *Supervisor) Start(id string) (Instance, error) {
 	s.mu.Unlock()
 
 	s.emitState(id)
-	go s.supervise(id, live, command, stdout, stderr)
+	go s.supervise(id, live, command, outputs.Stdout, outputs.Stderr)
 	go s.trackHealth(id, live, service)
 
 	started, err := Get(s.database, id)
@@ -198,30 +195,21 @@ func (s *Supervisor) Start(id string) (Instance, error) {
 
 // supervise drains the engine's output, waits for the exit and records it.
 func (s *Supervisor) supervise(id string, live *liveService, command *exec.Cmd, stdout io.ReadCloser, stderr io.ReadCloser) {
+	exited := make(chan struct{})
 	var readers sync.WaitGroup
 	readers.Add(2)
-	stream := func(reader io.Reader) {
+	stream := func(reader io.ReadCloser) {
 		defer readers.Done()
-		scanner := bufio.NewScanner(reader)
-		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-		for scanner.Scan() {
-			line := strings.TrimRight(scanner.Text(), "\r")
-			s.mu.Lock()
-			live.lines = append(live.lines, line)
-			if len(live.lines) > outputLines {
-				live.lines = live.lines[len(live.lines)-outputLines:]
-			}
-			s.mu.Unlock()
-			if s.emit != nil {
-				s.emit(EventOutput, map[string]any{"id": id, "line": line})
-			}
-		}
+		process.Stream(reader, exited, func(line string) {
+			s.appendLine(id, live, line)
+		})
 	}
 	go stream(stdout)
 	go stream(stderr)
-	readers.Wait()
 
 	waitErr := command.Wait()
+	close(exited)
+	readers.Wait()
 
 	var exitCode *int
 	if command.ProcessState != nil {
@@ -244,6 +232,25 @@ func (s *Supervisor) supervise(id string, live *liveService, command *exec.Cmd, 
 		message = describeExit(waitErr, exitCode, output)
 	}
 	s.finish(id, live, status, message)
+}
+
+// appendLine records a line of output. After Stop has finalised a run, lines
+// the readers were still draining are folded into the stored transcript, so the
+// words a stopped process produced last are not lost from what the row shows.
+func (s *Supervisor) appendLine(id string, live *liveService, line string) {
+	s.mu.Lock()
+	live.lines = append(live.lines, line)
+	if len(live.lines) > outputLines {
+		live.lines = live.lines[len(live.lines)-outputLines:]
+	}
+	if live.finalised {
+		s.lastOutput[id] = append([]string(nil), live.lines...)
+	}
+	s.mu.Unlock()
+
+	if s.emit != nil {
+		s.emit(EventOutput, map[string]any{"id": id, "line": line})
+	}
 }
 
 // finish records the end of a run once. Both the supervising goroutine and Stop

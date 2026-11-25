@@ -1,7 +1,6 @@
 package applications
 
 import (
-	"bufio"
 	"context"
 	"database/sql"
 	"errors"
@@ -192,11 +191,7 @@ func (s *Supervisor) Start(id string) (Application, error) {
 	command.Env = env
 	command.Stdin = nil
 
-	stdout, err := command.StdoutPipe()
-	if err != nil {
-		return app, s.fail(app.ID, fmt.Errorf("read output: %w", err))
-	}
-	stderr, err := command.StderrPipe()
+	outputs, err := process.NewOutputs(command)
 	if err != nil {
 		return app, s.fail(app.ID, fmt.Errorf("read output: %w", err))
 	}
@@ -210,17 +205,19 @@ func (s *Supervisor) Start(id string) (Application, error) {
 	}
 	s.runs[id] = live
 	if err := command.Start(); err != nil {
+		outputs.Close()
 		delete(s.runs, id)
 		s.mu.Unlock()
 		return app, s.fail(app.ID, fmt.Errorf("start %s: %w", bin, err))
 	}
+	outputs.Release()
 	live.pid = command.Process.Pid
 	// Written under the lock so a Stop cannot race the transition to running.
 	s.update(app.ID, StatusRunning, nil, "", true)
 	s.mu.Unlock()
 
 	s.emitState(app.ID, StatusRunning, nil, "")
-	go s.supervise(app.ID, live, command, stdout, stderr)
+	go s.supervise(app.ID, live, command, outputs.Stdout, outputs.Stderr)
 	go s.trackRuntime(app.ID, live, live.pid)
 
 	started, err := Get(s.database, app.ID)
@@ -233,21 +230,21 @@ func (s *Supervisor) Start(id string) (Application, error) {
 // supervise drains the process's output, waits for it to exit and records the
 // outcome.
 func (s *Supervisor) supervise(id string, live *run, command *exec.Cmd, stdout io.ReadCloser, stderr io.ReadCloser) {
+	exited := make(chan struct{})
 	var readers sync.WaitGroup
 	readers.Add(2)
-	stream := func(reader io.Reader) {
+	stream := func(reader io.ReadCloser) {
 		defer readers.Done()
-		scanner := bufio.NewScanner(reader)
-		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-		for scanner.Scan() {
-			s.appendLine(id, live, strings.TrimRight(scanner.Text(), "\r"))
-		}
+		process.Stream(reader, exited, func(line string) {
+			s.appendLine(id, live, line)
+		})
 	}
 	go stream(stdout)
 	go stream(stderr)
-	readers.Wait()
 
 	waitErr := command.Wait()
+	close(exited)
+	readers.Wait()
 
 	var exitCode *int
 	if command.ProcessState != nil {

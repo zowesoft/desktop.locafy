@@ -75,7 +75,8 @@ failure, empty otherwise) and `started_at`.
   A child that outlives the tree can hold the output pipes open and delay that
   report on a loaded machine, which is exactly when a stop must not claim the
   process survived; the terminal record is written once, by whichever gets there
-  first. A stop the operator asked for ends `stopped` even when the kill's exit
+  first. The output readers are released by the same exit, so the orphan that
+  caused the delay cannot also keep them blocked. A stop the operator asked for ends `stopped` even when the kill's exit
   code is nonzero, because the exit is the expected result.
 - An application's restart is stop-then-start through the same paths; it never
   launches a second copy of a process that did not stop. This is the single
@@ -93,7 +94,15 @@ prevented at the other end: quitting Locafy kills every supervised tree.
 
 Each process's stdout and stderr are streamed line by line as
 `application:output`, and every status change as `application:state`, both keyed
-by application id. The supervisor keeps the most recent 500 lines per live
+by application id. The pipes are opened by Locafy rather than by `exec`, because
+`exec`'s own `Wait` closes its pipes the moment the process exits and would
+discard output still waiting to be read. A reader ends at EOF, or once the
+process has exited and its pipe has gone quiet for a moment: a child that
+outlived the tree can hold the pipe open for as long as it lives, and its
+orphaned words must not keep the supervisor from finishing. Everything the
+process wrote before exiting is already in the pipe and is read first, so the
+line the reader cuts at is the orphan's, not the process's last line. The
+supervisor keeps the most recent 500 lines per live
 process in memory for a late-opening view; it writes no log files, because
 durable application logs belong to the integrated log work (DESK-DEVX-001).
 Output is not persisted: a process that is gone has no buffer to read.
