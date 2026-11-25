@@ -21,6 +21,11 @@ import (
 	"locafy.dev/desktop/internal/runtimes"
 )
 
+// certificateEnvironment adds Locafy's CA to a started process's environment.
+// It is a variable so a test can point it at a temporary certificate directory
+// instead of writing a certificate into the user's data.
+var certificateEnvironment = network.CertificateEnvironment
+
 // Process states the applications table already allows besides "stopped".
 const (
 	StatusStarting = "starting"
@@ -193,7 +198,7 @@ func (s *Supervisor) Start(id string) (Application, error) {
 	// It also needs Locafy's certificate: a Next.js server fetching another
 	// Locafy domain ignores the Windows trust store, and the alternative would
 	// be a wrapper script in every project (Node reads NODE_EXTRA_CA_CERTS).
-	command.Env = network.CertificateEnvironment(env)
+	command.Env = certificateEnvironment(env)
 	command.Stdin = nil
 
 	outputs, err := process.NewOutputs(command)

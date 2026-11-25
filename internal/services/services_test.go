@@ -16,6 +16,29 @@ import (
 	"locafy.dev/desktop/internal/network"
 )
 
+// testCertificateDirectory is where TestMain points the certificate environment.
+// No test may create a certificate authority in the user's data directory.
+var testCertificateDirectory string
+
+func TestMain(m *testing.M) {
+	directory, err := os.MkdirTemp("", "locafy-certificates")
+	if err != nil {
+		panic("create temporary certificate directory: " + err.Error())
+	}
+	testCertificateDirectory = directory
+
+	previous := certificateEnvironment
+	certificateEnvironment = func(env []string) []string {
+		return network.CertificateEnvironmentAt(env, directory)
+	}
+
+	code := m.Run()
+
+	certificateEnvironment = previous
+	_ = os.RemoveAll(directory)
+	os.Exit(code)
+}
+
 // setup gives each test a database with one project, a data root of its own and
 // a stub engine, so no test needs PostgreSQL installed.
 func setup(t *testing.T) (*sql.DB, string, string) {
@@ -381,8 +404,9 @@ func TestStartGivesTheServiceLocafysCertificate(t *testing.T) {
 		raw, readErr := os.ReadFile(record)
 		if readErr == nil && strings.TrimSpace(string(raw)) != "" {
 			received := strings.TrimSpace(string(raw))
-			if received != network.CertificateFile() {
-				t.Fatalf("NODE_EXTRA_CA_CERTS = %q, want Locafy's certificate", received)
+			want := filepath.Join(testCertificateDirectory, "ca.crt")
+			if received != want {
+				t.Fatalf("NODE_EXTRA_CA_CERTS = %q, want %q", received, want)
 			}
 			return
 		}

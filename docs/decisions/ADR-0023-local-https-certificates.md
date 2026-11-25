@@ -80,6 +80,13 @@ after the user trusts Locafy's CA in Windows. The usual workaround is a wrapper
 script per project that sets `NODE_EXTRA_CA_CERTS` before booting Next, which
 puts developer-machine knowledge into every repository.
 
+Both supervisors reach that helper through a replaceable function, and the helper
+takes its certificate directory as a parameter (`CertificateEnvironmentAt`), so
+the test suites point at a temporary directory and never create a certificate in
+the user's data. The resolved path is cached per directory: every start asks for
+the environment, and the answer cannot change while the file stays where the
+authority put it.
+
 Locafy starts the process, so it supplies the variable itself: a started
 application **and a started service** receive `NODE_EXTRA_CA_CERTS`,
 `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE` and `CURL_CA_BUNDLE` pointing at Locafy's
