@@ -64,12 +64,28 @@ trusted; until then the certificate warning is expected and explained.
 
 A CA that lives on this machine has no CRL distribution point and no OCSP
 responder, so a client that insists on a definitive revocation answer refuses the
-certificate. Windows schannel clients are the visible case: `curl` fails the
-chain until `--ssl-no-revoke` is passed. Chromium soft-fails revocation checks for
-non-public roots and accepts the certificate once the root is trusted, which is
-the behaviour that matters for local sites. Locafy does not publish a CRL in this
-release; the limitation is documented rather than papered over with a
-verification switch.
+certificate. Measured on Windows against `https://api.health-smoke.test` after
+trusting the CA:
+
+| Client | Revocation | Result |
+|---|---|---|
+| PowerShell `Invoke-WebRequest` | as configured (no check) | 200 |
+| .NET `HttpClient`, defaults | off | 200 |
+| .NET `HttpClient`, `CheckCertificateRevocationList = true` | required | rejected |
+| `curl` (schannel) | check on by default | rejected until `--ssl-no-revoke` |
+| Chromium | soft-fail for non-public roots | 200, no interstitial |
+
+**Decision: document it, do not publish a CRL.** A CRL distribution point has to
+be written into the certificate, so adding one now would mean reissuing the CA and
+invalidating every trust already granted; the CRL itself would have to be served
+from a fixed local origin that is reachable while the certificate is being
+validated, which for a loopback CA means depending on the very listener whose
+certificate is in question. In exchange it would fix a failure that only clients
+explicitly asking for revocation hit — the defaults of PowerShell, .NET and every
+browser already pass. The Domains tab states the limitation next to the HTTPS
+address and names the two symptoms (`curl` on Windows, .NET with
+`CheckCertificateRevocationList`), so it is discovered there rather than in a
+build script.
 
 ### Processes Locafy starts trust the CA through the environment
 
@@ -132,6 +148,7 @@ another platform trusts the CA, which stays a stated, manual step.
 
 - Automatic expiry renewal while Locafy runs without a restart.
 - Editing the hosts file or running a local DNS resolver for `.test` names.
+- Publishing a CRL or an OCSP responder for the local authority.
 - Injecting the CA into processes Locafy did not start (a terminal, an editor's
   task runner), which is what trusting the CA in the user's store covers.
 - A user-configurable CA name and organisation (the generated one is "Locafy
