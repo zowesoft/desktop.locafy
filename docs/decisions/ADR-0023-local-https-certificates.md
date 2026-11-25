@@ -60,6 +60,23 @@ Removal is documented as the inverse of the same store operation, and deleting
 the certificate files is the second half. Browsers trust the leaf once the CA is
 trusted; until then the certificate warning is expected and explained.
 
+### Applications Locafy starts trust the CA through the environment
+
+The Windows trust store is not the only store that matters. Node ships its own
+Mozilla bundle and ignores the system store, so a Next.js dev server fetching
+`https://api.project.test` fails with `UNABLE_TO_VERIFY_LEAF_SIGNATURE` even
+after the user trusts Locafy's CA in Windows. The usual workaround is a wrapper
+script per project that sets `NODE_EXTRA_CA_CERTS` before booting Next, which
+puts developer-machine knowledge into every repository.
+
+Locafy starts the application, so it supplies the variable itself: a started
+application receives `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`,
+`REQUESTS_CA_BUNDLE` and `CURL_CA_BUNDLE` pointing at Locafy's CA. No script edit,
+no `NODE_TLS_REJECT_UNAUTHORIZED=0` (which disables verification instead of
+adding an anchor), and no effect on the rest of the machine. A variable the
+application already sets is left alone, because an application may trust a CA
+Locafy knows nothing about; Go and .NET read the system store and need nothing.
+
 ### Resolution stays with the hosts file
 
 A `.test` name reaches this machine only because something maps it to
@@ -95,6 +112,8 @@ another platform trusts the CA, which stays a stated, manual step.
 
 - Automatic expiry renewal while Locafy runs without a restart.
 - Editing the hosts file or running a local DNS resolver for `.test` names.
+- Injecting the CA into processes Locafy did not start (a terminal, an editor's
+  task runner), which is what trusting the CA in the user's store covers.
 - A user-configurable CA name and organisation (the generated one is "Locafy
   Local Development CA").
 - Public HTTPS, which is the tunnel gateway's job and must never be confused with

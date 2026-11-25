@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"locafy.dev/desktop/internal/network"
 	"locafy.dev/desktop/internal/process"
 	"locafy.dev/desktop/internal/projects"
 	"locafy.dev/desktop/internal/runtimes"
@@ -188,7 +189,11 @@ func (s *Supervisor) Start(id string) (Application, error) {
 	command.Dir = directory
 	// A development server should see the same environment as a terminal,
 	// with an assigned runtime's directory ahead of the machine PATH.
-	command.Env = env
+	//
+	// It also needs Locafy's certificate: a Next.js server fetching another
+	// Locafy domain ignores the Windows trust store, and the alternative would
+	// be a wrapper script in every project (Node reads NODE_EXTRA_CA_CERTS).
+	command.Env = network.CertificateEnvironment(env)
 	command.Stdin = nil
 
 	outputs, err := process.NewOutputs(command)
