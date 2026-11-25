@@ -24,7 +24,7 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 | DESK-RUN-001 | Runtime detection and assignment | desktop.locafy | 4 | COMPLETED | DESK-APP-002 |
 | DESK-DL-001 | Downloads view for install jobs | desktop.locafy | 4 | COMPLETED | DESK-RUN-001 |
 | DESK-SVC-001 | Service catalogue and lifecycle | desktop.locafy | 5 | IN_PROGRESS | DESK-APP-002 |
-| DESK-NET-001 | Local domains and reverse proxy | desktop.locafy | 6 | NOT_STARTED | DESK-APP-002, DESK-SVC-001 |
+| DESK-NET-001 | Local domains and reverse proxy | desktop.locafy | 6 | IN_PROGRESS | DESK-APP-002, DESK-SVC-001 |
 | DESK-DEVX-001 | Integrated terminal and logs | desktop.locafy | 7 | NOT_STARTED | DESK-PROJ-002, DESK-APP-002, DESK-SVC-001 |
 | DESK-ANAL-001 | Analytics views | desktop.locafy | 7 | NOT_STARTED | DESK-DB-002, DESK-DEVX-001 |
 | TUN-PROTO-001 | Tunnel threat model and protocol (shared) | Gateway · Desktop · API | 9 | NOT_STARTED | API-AUTH-001, API-DEVICE-001, DESK-NET-001 |
@@ -258,12 +258,12 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 - **Description:** Reverse-proxy integration (Caddy candidate), local domain assignment and routing, local HTTPS (mkcert candidate), WebSocket proxying, port/domain conflict detection, network diagnostics, validated configuration reloads.
 - **Dependencies:** DESK-APP-002, DESK-SVC-001
 - **Acceptance criteria:** Multiple applications/projects use distinct local domains; configuration changes are validated before reload; local HTTPS works on all supported platforms (Windows, macOS, Linux); loopback-by-default enforced; port owners visible (PRD sections 11, 20, Phase 6).
-- **Status:** NOT_STARTED
+- **Status:** IN_PROGRESS
 - **Assigned agent:** —
-- **Files/modules:** —
-- **Tests:** Routing/domain conflict tests; certificate workflow tests
-- **Blockers:** Reverse proxy and certificate tooling candidates must be validated (PRD section 23)
-- **Evidence:** —
+- **Files/modules:** `internal/network/` (`domains.go` records, hostname validation and claim refusal, `proxy.go` the loopback listener and host routing table, `service.go` bindings), `internal/db/migrations/0014_domains.sql`, `frontend/src/components/project-domains.tsx`, `frontend/src/screens/project-tabs.tsx`, `frontend/bindings/locafy.dev/desktop/internal/network/`, `docs/decisions/ADR-0021-local-domains-and-proxy.md`
+- **Tests:** 6 Go tests in `internal/network`: hostname normalisation and refusal (wrong suffix, reserved `locafy.dev`, bad labels, ports and paths), assignment storing the lowercased name against its application with no port before a start, a hostname claimed by another project refused and released for reuse on removal, an application from another project refused, the proxy routing a request by hostname to the application's port while passing the browser's host and `X-Forwarded-Host` through, and an application that stopped answering producing a 502 naming the failure. The project workspace suite still passes (17 tests) with the Domains tab driven by the engine.
+- **Blockers:** Review of ADR-0021 pending. Local HTTPS is not built: it needs a certificate authority and trust-store decision, so the criterion that HTTPS works on all supported platforms is open. The proxy binds `127.0.0.1:80`, which a Unix desktop app cannot bind without privileges; a refused bind is reported in the tab, but the fallback port and its explanation are still to decide. A user-configured suffix is not offered (`.test` only), and port-owner diagnostics reuse the application port panel rather than a dedicated network diagnosis.
+- **Evidence:** ADR-0021 proposes serving local domains from the desktop process itself rather than shipping Caddy: `net/http` plus `httputil.ReverseProxy`, one loopback listener, and a hostname table rebuilt from the database and swapped atomically — so a "reload" is the swap, and there is no configuration file to validate or half-apply. A domain is a row (`domains`, migration 0014) with a unique live index on the lowercased hostname; the hostname is normalised at write time, so the stored value, the interface and the router agree. A name outside `.test`, a reserved `locafy.dev` name, a malformed label or a name another project holds is refused with its own message. A domain whose application has no port is a valid record that shows `Waiting for a port` and routes nothing; once the application binds, the proxy refreshes its table every second and the route appears without another action. An unknown host answers 404 naming the host, and an application that is not answering produces a 502 that names the target instead of a blank failure. The proxy starts with the app on `127.0.0.1:80`, reports a refused port in the Domains tab, and stops on shutdown with the other supervised processes.
 
 ### DESK-DEVX-001 — Integrated terminal and logs
 

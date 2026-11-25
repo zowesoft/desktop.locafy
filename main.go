@@ -21,6 +21,7 @@ import (
 	"locafy.dev/desktop/internal/downloads"
 	"locafy.dev/desktop/internal/logs"
 	"locafy.dev/desktop/internal/machine"
+	"locafy.dev/desktop/internal/network"
 	"locafy.dev/desktop/internal/projects"
 	"locafy.dev/desktop/internal/runtimes"
 	"locafy.dev/desktop/internal/scaffold"
@@ -94,6 +95,7 @@ func run() error {
 	statusService := status.NewService(database, startedAt)
 	servicesService := services.NewService(database)
 	appsService := applications.NewService(database, services.SupervisorOf(servicesService))
+	networkService := network.NewService(database)
 	scaffoldService := scaffold.NewService(database)
 	runtimesService := runtimes.NewService()
 	downloadsService := downloads.NewService(downloads.NewManager(
@@ -115,6 +117,7 @@ func run() error {
 			application.NewService(projects.NewService(database)),
 			application.NewService(appsService),
 			application.NewService(servicesService),
+			application.NewService(networkService),
 			application.NewService(scaffoldService),
 			application.NewService(runtimesService),
 			application.NewService(downloadsService),
@@ -140,9 +143,16 @@ func run() error {
 		},
 	})
 
+	// Domains are served as soon as Locafy is up. A refused port is reported in
+	// the Domains tab instead of blocking the window from opening.
+	if _, err := networkService.StartProxy(); err != nil {
+		slog.Warn("local proxy did not start", "error", err)
+	}
+
 	// A server started from Locafy must not outlive it.
 	app.OnShutdown(appsService.StopAll)
 	app.OnShutdown(servicesService.StopAll)
+	app.OnShutdown(func() { networkService.StopProxy() })
 
 	startPosition, startX, startY := windowStartPosition()
 

@@ -15,13 +15,12 @@ import {
   ExternalLink,
   Info,
   Layers,
-  MoreHorizontal,
-  Plus,
   Terminal as TerminalIcon,
   Trash2,
 } from "lucide-react";
 import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/projects/service";
 import { ProjectServices } from "@/components/project-services";
+import { ProjectDomains } from "@/components/project-domains";
 import type { Project } from "../../bindings/locafy.dev/desktop/internal/projects/models";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,38 +34,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { projectsKey } from "@/lib/projects-query";
 import { notificationsKey } from "@/components/top-bar-status";
 import { cn } from "@/lib/utils";
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
-
-function StatusPill({ status }: { status: "running" | "stopped" | "error" }) {
-  const styles = {
-    running: "text-success",
-    stopped: "text-muted-foreground",
-    error: "text-destructive",
-  };
-  const dotStyles = {
-    running: "bg-success",
-    stopped: "bg-muted-foreground/40",
-    error: "bg-destructive",
-  };
-  const labels = { running: "Running", stopped: "Stopped", error: "Error" };
-
-  return (
-    <span className={cn("inline-flex items-center gap-1.5 text-xs", styles[status])}>
-      <span className={cn("size-1.5 rounded-full", dotStyles[status])} />
-      {labels[status]}
-    </span>
-  );
-}
 
 function SectionWrap({ children }: { children: React.ReactNode }) {
   return (
@@ -83,106 +55,11 @@ export function ProjectServicesTab() {
 
 // ─── Domains tab ──────────────────────────────────────────────────────────────
 
-const MOCK_DOMAINS = [
-  { domain: "api.etugora.test", port: 8000, https: true, app: "API", status: "running" as const },
-  { domain: "auth.etugora.test", port: 3001, https: true, app: "Auth", status: "running" as const },
-  { domain: "ml.etugora.test", port: 5000, https: false, app: "ML Service", status: "running" as const },
-];
-
 export function ProjectDomainsTab() {
+  const project = useOutletContext<Project>();
   return (
     <SectionWrap>
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-base font-semibold">Domains</h2>
-          <p className="text-xs text-muted-foreground">
-            Local hostnames assigned to this project's applications
-          </p>
-        </div>
-        <Button size="sm">
-          <Plus className="mr-1.5 size-3.5" />
-          Add domain
-        </Button>
-      </div>
-
-      <div className="overflow-hidden rounded-lg border border-border">
-        <table className="w-full text-sm">
-          <thead className="border-b border-border bg-muted/40">
-            <tr>
-              <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                Domain
-              </th>
-              <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                App
-              </th>
-              <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                Port
-              </th>
-              <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                HTTPS
-              </th>
-              <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                Status
-              </th>
-              <th className="px-4 py-2.5" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {MOCK_DOMAINS.map((row) => (
-              <tr key={row.domain} className="hover:bg-muted/30">
-                <td className="px-4 py-2.5">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs">{row.domain}</span>
-                    <button
-                      title="Open in browser"
-                      className="text-muted-foreground hover:text-foreground"
-                    >
-                      <ExternalLink className="size-3.5" />
-                    </button>
-                  </div>
-                </td>
-                <td className="px-4 py-2.5 text-muted-foreground">{row.app}</td>
-                <td className="px-4 py-2.5 font-mono text-xs">{row.port}</td>
-                <td className="px-4 py-2.5">
-                  {row.https ? (
-                    <Badge className="bg-success/10 text-success border-success/20 text-xs">
-                      HTTPS
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="text-xs text-muted-foreground">
-                      HTTP
-                    </Badge>
-                  )}
-                </td>
-                <td className="px-4 py-2.5">
-                  <StatusPill status={row.status} />
-                </td>
-                <td className="px-4 py-2.5">
-                  <div className="flex justify-end gap-1">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger className="inline-flex h-7 cursor-pointer items-center justify-center rounded-md px-2 text-muted-foreground hover:bg-muted hover:text-foreground">
-                        <MoreHorizontal className="size-3.5" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem>Edit domain</DropdownMenuItem>
-                        <DropdownMenuItem className="text-destructive">
-                          Remove domain
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="flex items-start gap-2 rounded-lg border border-border p-3 text-xs text-muted-foreground">
-        <Info className="mt-0.5 size-3.5 shrink-0" />
-        Domains resolve via your system hosts file. Changes take effect immediately. Domains use
-        the .test suffix reserved for local testing — they never leave this machine.
-      </div>
+      <ProjectDomains projectID={project.ID} />
     </SectionWrap>
   );
 }
