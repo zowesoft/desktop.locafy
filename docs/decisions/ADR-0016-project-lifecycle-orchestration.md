@@ -98,13 +98,15 @@ until a consumer needs it stored.
 
 ### Runtimes are checked before anything runs
 
-Start and restart resolve every application's assigned runtime before the first
-service or process is launched (PRD section 7.3 step 2, which waited for
-DESK-RUN-001). An assignment whose copy has gone ends that application as
-`failed`, with the resolver's reason written on its own record and named in the
-run's report; the rest of the project still starts, because one broken
-assignment should not refuse a start the operator asked for. An application
-with no assignment continues to resolve through PATH as before.
+Start and restart resolve the assigned runtime of every application they are
+about to start, before the first service or process is launched (PRD section
+7.3 step 2, which waited for DESK-RUN-001). An assignment whose copy has gone
+ends that application as `failed`, with the resolver's reason written on its own
+record and named in the run's report; the rest of the project still starts,
+because one broken assignment should not refuse a start the operator asked for.
+An application with no assignment continues to resolve through PATH as before,
+and one that is already running keeps its status: the preflight decides what to
+start, it never demotes a live process whose runtime file has since moved.
 
 ### Deliberately deferred
 

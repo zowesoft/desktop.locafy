@@ -73,51 +73,57 @@ func (s *Supervisor) startProject(projectID string) (*ProjectReport, error) {
 	if err != nil {
 		return nil, err
 	}
+	order := startOrder(apps)
 	// The assigned runtimes are checked before anything runs, so a copy that was
 	// removed after assignment is reported against its application instead of
 	// being discovered once the project's services are already up.
-	problems := s.runtimeProblems(apps, report)
+	broken := s.runtimeProblems(order, report)
 	// Services are the project's foundations: every application sees a running
 	// database before its own command is executed.
 	s.startServices(projectID, report)
-	if err := s.startApplications(apps, report, problems); err != nil {
+	if err := s.startApplications(order, report, broken); err != nil {
 		return nil, err
 	}
 	return report, nil
 }
 
-// runtimeProblems checks every application's assigned runtime before a project
-// action runs anything. A copy that is gone is recorded as the application's
-// failure and the application is not attempted; the rest of the project still
-// runs, so the operator sees one broken assignment rather than a refused start.
-func (s *Supervisor) runtimeProblems(apps []Application, report *ProjectReport) map[string]string {
-	problems := make(map[string]string)
-	for _, app := range startOrder(apps) {
+// runtimeProblems checks the runtime of every application that is about to be
+// started, before any service or process is launched. A copy that is gone is
+// recorded as that application's failure and it is not attempted; the rest of
+// the project still runs, so one broken assignment does not refuse the start.
+// An application that is already running or mid-transition keeps its status:
+// the preflight decides what to start, it never demotes a live process.
+func (s *Supervisor) runtimeProblems(order []Application, report *ProjectReport) map[string]bool {
+	broken := make(map[string]bool)
+	for _, app := range order {
+		switch app.Status {
+		case StatusRunning, StatusStarting, StatusStopping:
+			continue
+		}
 		if strings.TrimSpace(app.RuntimeID) == "" {
 			continue
 		}
 		if _, err := runtimes.Resolve(app.RuntimeID); err != nil {
-			reason := fmt.Sprintf("the assigned runtime is not available: %s", err)
-			s.update(app.ID, StatusError, nil, reason, false)
-			s.emitState(app.ID, StatusError, nil, reason)
+			reason := fmt.Errorf("the assigned runtime is not available: %w", err)
+			_ = s.fail(app.ID, reason)
 			report.Failed = append(report.Failed, fmt.Sprintf("%s: %s", app.Name, reason))
-			problems[app.ID] = reason
+			broken[app.ID] = true
 		}
 	}
-	return problems
+	return broken
 }
 
 // startApplications runs the project's applications in dependency order and
 // reports each one into report. It is separate from startProject because a
 // restart runs it without touching services, and it takes the preflight's
-// problems so an application that cannot run is not attempted twice.
-func (s *Supervisor) startApplications(apps []Application, report *ProjectReport, problems map[string]string) error {
-	for _, app := range startOrder(apps) {
+// broken assignments so an application that cannot run is not attempted twice.
+func (s *Supervisor) startApplications(order []Application, report *ProjectReport, broken map[string]bool) error {
+	for _, app := range order {
 		current, err := Get(s.database, app.ID)
 		if err != nil {
 			return err
 		}
-		if _, broken := problems[current.ID]; broken {
+		if broken[current.ID] {
 			continue
 		}
 		switch current.Status {
@@ -253,8 +259,9 @@ func (s *Supervisor) restartProject(projectID string) (*ProjectReport, error) {
 	if err != nil {
 		return report, err
 	}
-	problems := s.runtimeProblems(apps, report)
-	if err := s.startApplications(apps, report, problems); err != nil {
+	order := startOrder(apps)
+	broken := s.runtimeProblems(order, report)
+	if err := s.startApplications(order, report, broken); err != nil {
 		return report, err
 	}
 	return report, nil

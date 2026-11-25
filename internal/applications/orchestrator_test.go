@@ -151,6 +151,46 @@ func TestProjectStartChecksRuntimesBeforeStarting(t *testing.T) {
 	}
 }
 
+// A project start never demotes an application that is already running, even
+// when the runtime it was assigned has since moved: the preflight decides what
+// to start, it does not police what is already up.
+func TestProjectStartLeavesARunningApplicationAloneWhenItsRuntimeIsGone(t *testing.T) {
+	database := openDatabase(t)
+	fastReady(t)
+	project := newProject(t, database)
+	app := projectApplication(t, database, project, "web",
+		quoteCommand(script(t, t.TempDir(), "live", 0, true)))
+
+	supervisor := NewSupervisor(database, nil)
+	t.Cleanup(func() { _, _ = supervisor.StopProject(project.ID) })
+	if _, err := supervisor.Start(app.ID); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if _, err := database.Exec(`UPDATE applications SET runtime_id = ? WHERE id = ?`,
+		`node@C:\missing\node.exe`, app.ID); err != nil {
+		t.Fatalf("assign runtime: %v", err)
+	}
+
+	report, err := supervisor.StartProject(project.ID)
+	if err != nil {
+		t.Fatalf("start project: %v", err)
+	}
+	if len(report.Failed) != 0 {
+		t.Fatalf("failed = %q, want the running application left alone", report.Failed)
+	}
+	if got := strings.Join(report.AlreadyRunning, ","); got != "web" {
+		t.Fatalf("already running = %q, want web", got)
+	}
+
+	record, err := Get(database, app.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if record.Status != StatusRunning || record.Error != "" {
+		t.Fatalf("record = %q/%q, want the process still running and untouched", record.Status, record.Error)
+	}
+}
+
 func TestProjectStartSkipsDependentsOfAFailedApplication(t *testing.T) {
 	database := openDatabase(t)
 	fastReady(t)
