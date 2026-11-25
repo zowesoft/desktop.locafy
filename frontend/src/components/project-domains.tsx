@@ -146,6 +146,12 @@ export function ProjectDomains({ projectID }: { projectID: string }) {
           Trust Locafy's certificate
         </Button>
       </div>
+      {trustPlan.data ? (
+        <p className="text-xs text-muted-foreground">
+          Trusting runs <span className="font-mono text-foreground">{trustPlan.data.command}</span> —{" "}
+          {trustPlan.data.explanation}
+        </p>
+      ) : null}
       {trusted ? <p className="text-xs text-muted-foreground">{trusted}</p> : null}
       {trust.isError ? (
         <p className="text-xs text-destructive">{messageOf(trust.error)}</p>

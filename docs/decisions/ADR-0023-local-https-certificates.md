@@ -60,6 +60,17 @@ Removal is documented as the inverse of the same store operation, and deleting
 the certificate files is the second half. Browsers trust the leaf once the CA is
 trusted; until then the certificate warning is expected and explained.
 
+### A local authority publishes no revocation information
+
+A CA that lives on this machine has no CRL distribution point and no OCSP
+responder, so a client that insists on a definitive revocation answer refuses the
+certificate. Windows schannel clients are the visible case: `curl` fails the
+chain until `--ssl-no-revoke` is passed. Chromium soft-fails revocation checks for
+non-public roots and accepts the certificate once the root is trusted, which is
+the behaviour that matters for local sites. Locafy does not publish a CRL in this
+release; the limitation is documented rather than papered over with a
+verification switch.
+
 ### Applications Locafy starts trust the CA through the environment
 
 The Windows trust store is not the only store that matters. Node ships its own
