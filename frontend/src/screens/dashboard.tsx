@@ -1,121 +1,97 @@
+import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
   ArrowUpRight,
   Box,
   Boxes,
-  BrainCircuit,
   Clock,
-  Copy,
-  EllipsisVertical,
   FileText,
   FolderKanban,
-  Globe,
+  FolderOpen,
   Plus,
   Puzzle,
   Server,
-  ShieldCheck,
   Terminal,
   Zap,
 } from "lucide-react";
+import { Link } from "react-router-dom";
+
+import * as ApplicationsService from "../../bindings/locafy.dev/desktop/internal/applications/service";
+import * as StatusService from "../../bindings/locafy.dev/desktop/internal/status/service";
 import { PlannedTag } from "@/components/app-shell";
+import { LifecycleBadge } from "@/components/lifecycle-badge";
+import { notificationsKey } from "@/components/top-bar-status";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useProjectLifecycles } from "@/lib/lifecycle-query";
+import { useProjects } from "@/lib/projects-query";
+import { useMachineStatus } from "@/lib/usage-query";
 import { cn } from "@/lib/utils";
 
-/*
- * Placeholder content until the projects, tunnels and activity services
- * exist. Shapes mirror the records those services are expected to return, so
- * replacing this block with queries is a matter of swapping the source.
- */
-const projects = [
-  {
-    name: "Etugora",
-    description: "E-commerce platform",
-    tags: ["API", "Auth", "ML Service", "+1"],
-    url: "https://etugora.locafy.dev",
-    tone: "primary" as const,
-    trend: [3, 5, 4, 7, 6, 9, 8, 12, 11, 14],
-  },
-  {
-    name: "Portfolio",
-    description: "Personal portfolio site",
-    tags: ["Web App", "API"],
-    url: "https://portfolio.locafy.dev",
-    tone: "accent" as const,
-    trend: [8, 7, 9, 8, 6, 7, 5, 6, 4, 5],
-  },
-];
-
-const applications = [
-  { name: "api", description: "REST API for Etugora", port: ":8080", icon: Server, url: "https://api.etugora.locafy.dev" },
-  { name: "auth", description: "Authentication Service", port: ":8081", icon: ShieldCheck, url: "https://auth.etugora.locafy.dev" },
-  { name: "ml-service", description: "Machine Learning Service", port: ":8082", icon: BrainCircuit, url: "https://ml.etugora.locafy.dev" },
-];
-
-const quickActions = [
-  { label: "Create New Project", icon: FolderKanban, planned: false },
+const quietActions = [
   { label: "Start Tunnel", icon: Zap, planned: true },
-  { label: "View Logs", icon: FileText, planned: false },
   { label: "Manage Extensions", icon: Puzzle, planned: true },
 ];
 
-const activity = [
-  { text: "Project ‘Etugora’ started", time: "2m ago", tone: "bg-primary" },
-  { text: "Application ‘auth’ restarted", time: "5m ago", tone: "bg-success" },
-  { text: "Application ‘api’ deployed", time: "12m ago", tone: "bg-accent" },
-];
-
-const metrics = [
-  { label: "Projects", value: "2", delta: "+1 new", icon: FolderKanban, tone: "text-primary bg-primary/15", planned: false },
-  { label: "Applications", value: "5", delta: "+2 running", icon: Boxes, tone: "text-success bg-success/15", planned: false },
-  { label: "Tunnels", value: "—", delta: "Planned", icon: Zap, tone: "text-muted-foreground bg-muted", planned: true },
-  { label: "Uptime", value: "12h 34m", delta: "+12%", icon: Clock, tone: "text-accent bg-accent/15", planned: false },
-];
-
-const projectTabs = [
-  { label: "Applications", planned: false },
-  { label: "Tunnels", planned: true },
-  { label: "Logs", planned: false },
-  { label: "Settings", planned: false },
-];
-
-function Sparkline({ points, className }: { points: number[]; className?: string }) {
-  const max = Math.max(...points);
-  const min = Math.min(...points);
-  const span = max - min || 1;
-  const coords = points
-    .map((point, index) => {
-      const x = (index / (points.length - 1)) * 100;
-      const y = 28 - ((point - min) / span) * 24;
-      return `${x},${y}`;
-    })
-    .join(" ");
-
-  return (
-    <svg viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden className={cn("h-8 w-full", className)}>
-      <polyline
-        points={coords}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.5}
-        strokeLinecap="round"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
-  );
+function uptime(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
 
-function StatusPill({ label = "Running" }: { label?: string }) {
-  return (
-    <Badge variant="outline" className="gap-1.5 border-success/30 text-success">
-      <span className="size-1.5 rounded-full bg-success" />
-      {label}
-    </Badge>
-  );
+function startedAt(iso: string): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function ago(iso: string): string {
+  if (!iso) return "";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const seconds = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
 }
 
 export function Dashboard() {
+  const projects = useProjects();
+  const lifecycles = useProjectLifecycles();
+  const health = useMachineStatus();
+  const notifications = useQuery({
+    queryKey: [...notificationsKey, "dashboard"],
+    queryFn: async () => (await StatusService.Notifications(6)) ?? [],
+    refetchInterval: 30_000,
+  });
+
+  const projectList = projects.data ?? [];
+  const applicationQueries = useQueries({
+    queries: projectList.map((project) => ({
+      queryKey: ["applications", project.ID],
+      queryFn: async () => (await ApplicationsService.List(project.ID)) ?? [],
+    })),
+  });
+  const applicationsByProject = new Map(
+    projectList.map((project, index) => [project.ID, applicationQueries[index]?.data ?? []]),
+  );
+  const applications = projectList.flatMap((project) => applicationsByProject.get(project.ID) ?? []);
+  const runningApplications = applications.filter((app) => app.Status === "running").length;
+
+  const stateOf = (project: (typeof projectList)[number]) =>
+    lifecycles.data?.[project.ID] ?? project.LifecycleState;
+  const runningProjects = projectList.filter((project) =>
+    ["running", "partial"].includes(stateOf(project)),
+  ).length;
+
+  const engine = health.data;
+  const activity = notifications.data ?? [];
+
   return (
     <div className="space-y-6 px-6 py-6">
       <section className="relative overflow-hidden rounded-2xl border border-border bg-card px-8 py-10">
@@ -148,22 +124,76 @@ export function Dashboard() {
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {metrics.map((metric) => (
-          <Card key={metric.label} className="py-0">
-            <CardContent className="flex items-center gap-3 p-4">
-              <span className={cn("flex size-11 shrink-0 items-center justify-center rounded-xl", metric.tone)}>
-                <metric.icon className="size-5" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-xs text-muted-foreground">{metric.label}</p>
-                <p className="text-xl font-semibold tracking-tight">{metric.value}</p>
-                <p className={cn("text-xs", metric.planned ? "text-muted-foreground" : "text-success")}>
-                  {metric.delta}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+        <Card className="py-0">
+          <CardContent className="flex items-center gap-3 p-4">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
+              <FolderKanban className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">Projects</p>
+              <p className="text-xl font-semibold tracking-tight">
+                {projects.isPending ? "—" : projectList.length}
+              </p>
+              <p
+                className={cn(
+                  "text-xs",
+                  runningProjects > 0 ? "text-success" : "text-muted-foreground",
+                )}
+              >
+                {projects.isPending ? "Reading projects" : `${runningProjects} running`}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="py-0">
+          <CardContent className="flex items-center gap-3 p-4">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-success/15 text-success">
+              <Boxes className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">Applications</p>
+              <p className="text-xl font-semibold tracking-tight">
+                {projects.isPending ? "—" : applications.length}
+              </p>
+              <p
+                className={cn(
+                  "text-xs",
+                  runningApplications > 0 ? "text-success" : "text-muted-foreground",
+                )}
+              >
+                {projects.isPending ? "Reading applications" : `${runningApplications} running`}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="py-0">
+          <CardContent className="flex items-center gap-3 p-4">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+              <Zap className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">Tunnels</p>
+              <p className="text-xl font-semibold tracking-tight">—</p>
+              <p className="text-xs text-muted-foreground">Planned</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="py-0">
+          <CardContent className="flex items-center gap-3 p-4">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
+              <Clock className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">Uptime</p>
+              <p className="text-xl font-semibold tracking-tight">
+                {engine ? uptime(engine.UptimeSeconds) : "—"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {engine ? `Engine started ${startedAt(engine.StartedAt)}` : "Checking the engine"}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       </section>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
@@ -175,144 +205,149 @@ export function Dashboard() {
                 Manage your development projects and their applications.
               </p>
             </div>
-            <Button size="lg">
+            <Link to="/projects" className={cn(buttonVariants({ size: "lg" }))}>
               <Plus />
               New Project
-            </Button>
+            </Link>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            {projects.map((project) => (
-              <Card key={project.name} className="py-0">
-                <CardContent className="space-y-3 p-4">
-                  <div className="flex items-start gap-3">
-                    <span
-                      className={cn(
-                        "flex size-9 shrink-0 items-center justify-center rounded-lg",
-                        project.tone === "primary" ? "bg-primary/15 text-primary" : "bg-accent/15 text-accent",
-                      )}
-                    >
-                      {project.tone === "primary" ? <Box className="size-4.5" /> : <Terminal className="size-4.5" />}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="truncate font-medium">{project.name}</p>
-                        <StatusPill />
+          {projects.error ? (
+            <p role="alert" className="text-sm text-destructive">
+              Could not read projects: {String(projects.error)}
+            </p>
+          ) : projects.isPending ? (
+            <p className="text-sm text-muted-foreground">Reading projects…</p>
+          ) : projectList.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center">
+              <p className="text-sm font-medium">No projects yet</p>
+              <p className="mx-auto mt-1 max-w-sm text-xs text-muted-foreground">
+                Create a project in the workspace or link an existing folder to see it here.
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {projectList.map((project) => {
+                const apps = applicationsByProject.get(project.ID) ?? [];
+                const running = apps.filter((app) => app.Status === "running").length;
+                const shown = apps.slice(0, 3);
+                return (
+                  <Card key={project.ID} className="py-0">
+                    <CardContent className="space-y-3 p-4">
+                      <div className="flex items-start gap-3">
+                        <span
+                          className={cn(
+                            "flex size-9 shrink-0 items-center justify-center rounded-lg",
+                            project.Kind === "managed"
+                              ? "bg-primary/15 text-primary"
+                              : "bg-accent/15 text-accent",
+                          )}
+                        >
+                          {project.Kind === "managed" ? (
+                            <Box className="size-4.5" />
+                          ) : (
+                            <Terminal className="size-4.5" />
+                          )}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="truncate font-medium">{project.Name}</p>
+                            <LifecycleBadge state={stateOf(project)} />
+                          </div>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {project.Description ||
+                              (project.Kind === "managed"
+                                ? "A project Locafy created in its workspace."
+                                : "An existing folder Locafy points at.")}
+                          </p>
+                        </div>
                       </div>
-                      <p className="truncate text-xs text-muted-foreground">{project.description}</p>
-                    </div>
-                  </div>
 
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex flex-wrap gap-1.5">
-                      {project.tags.map((tag) => (
-                        <Badge key={tag} variant="secondary" className="font-normal">
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex flex-wrap gap-1.5">
+                          <Badge variant="outline" className="font-normal capitalize">
+                            {project.Kind}
+                          </Badge>
+                          {shown.map((app) => (
+                            <Badge key={app.ID} variant="secondary" className="font-normal">
+                              {app.Name}
+                            </Badge>
+                          ))}
+                          {apps.length > shown.length && (
+                            <Badge variant="secondary" className="font-normal">
+                              +{apps.length - shown.length}
+                            </Badge>
+                          )}
+                        </div>
+                        <span className="shrink-0 text-right text-xs text-muted-foreground">
+                          {apps.length === 0 ? "No applications" : `${running} of ${apps.length} running`}
+                        </span>
+                      </div>
 
-                    <Sparkline
-                      points={project.trend}
-                      className={cn(
-                        "h-9 w-28 shrink-0",
-                        project.tone === "primary" ? "text-primary" : "text-accent",
-                      )}
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
-                    <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-                      <Globe className="size-3.5 shrink-0" />
-                      <span className="truncate">{project.url}</span>
-                    </span>
-                    <Button variant="secondary" size="sm">
-                      Manage
-                      <ArrowRight />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                      <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+                        <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                          <FolderOpen className="size-3.5 shrink-0" />
+                          <span className="truncate font-mono" title={project.RootPath}>
+                            {project.RootPath}
+                          </span>
+                        </span>
+                        <Link
+                          to={`/projects/${project.ID}`}
+                          className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "shrink-0")}
+                        >
+                          Manage
+                          <ArrowRight />
+                        </Link>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
 
           <Card className="py-0">
+            <CardHeader className="flex flex-row items-center justify-between gap-3 p-4 pb-0">
+              <CardTitle className="text-base">Applications</CardTitle>
+              <Link
+                to="/projects"
+                className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "shrink-0")}
+              >
+                Open a project
+                <ArrowUpRight />
+              </Link>
+            </CardHeader>
             <CardContent className="space-y-4 p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-start gap-3">
-                  <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
-                    <Box className="size-5" />
-                  </span>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <p className="text-lg font-semibold tracking-tight">Etugora Project</p>
-                      <StatusPill />
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      A full-stack e-commerce platform with AI-powered recommendations.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex shrink-0 items-center gap-1.5">
-                  <Button variant="secondary">
-                    Open Project
-                    <ArrowUpRight />
-                  </Button>
-                  <Button variant="ghost" size="icon" aria-label="More project actions">
-                    <EllipsisVertical />
-                  </Button>
-                </div>
-              </div>
-
-              <div className="flex gap-6 border-b border-border">
-                {projectTabs.map((tab, index) => (
-                  <span
-                    key={tab.label}
-                    aria-disabled={tab.planned || undefined}
-                    title={tab.planned ? `${tab.label} is planned for a later phase` : undefined}
-                    className={cn(
-                      "-mb-px cursor-default border-b-2 pb-2 text-sm",
-                      index === 0
-                        ? "border-primary text-foreground"
-                        : tab.planned
-                          ? "border-transparent text-muted-foreground/60"
-                          : "border-transparent text-muted-foreground",
-                    )}
-                  >
-                    {tab.label}
-                    {tab.planned && (
-                      <span className="ml-1 text-[0.6rem] uppercase tracking-wide">planned</span>
-                    )}
-                  </span>
-                ))}
-              </div>
-
-              <ul className="divide-y divide-border">
-                {applications.map((app) => (
-                  <li key={app.name} className="flex items-center gap-3 py-2.5">
-                    <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent">
-                      <app.icon className="size-4" />
-                    </span>
-                    <div className="min-w-28 shrink-0">
-                      <p className="truncate text-sm font-medium">{app.name}</p>
-                    </div>
-                    <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                      {app.description}
-                    </p>
-                    <StatusPill />
-                    <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">
-                      {app.port}
-                    </span>
-                    <span className="hidden min-w-0 shrink-0 items-center gap-1.5 text-xs text-muted-foreground md:flex">
-                      <span className="max-w-56 truncate">{app.url}</span>
-                      <Copy className="size-3.5" />
-                    </span>
-                    <Button variant="ghost" size="icon-xs" aria-label={`More actions for ${app.name}`}>
-                      <EllipsisVertical />
-                    </Button>
-                  </li>
-                ))}
-              </ul>
+              {projects.isPending ? (
+                <p className="text-sm text-muted-foreground">Reading applications…</p>
+              ) : applications.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No applications yet. Add one inside a project to see it here.
+                </p>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {applications.map((app) => (
+                    <li key={app.ID} className="flex items-center gap-3 py-2.5">
+                      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent">
+                        <Server className="size-4" />
+                      </span>
+                      <div className="min-w-24 shrink-0">
+                        <p className="truncate text-sm font-medium">{app.Name}</p>
+                      </div>
+                      <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                        {projectList.find((project) => project.ID === app.ProjectID)?.Name ??
+                          "Unknown project"}
+                        {app.Directory ? ` · ${app.Directory}` : ""}
+                      </p>
+                      <span className="shrink-0 text-xs capitalize text-muted-foreground">
+                        {app.Status}
+                      </span>
+                      <span className="hidden w-16 shrink-0 text-right font-mono text-xs text-muted-foreground sm:block">
+                        {app.Port === null ? "—" : `:${app.Port}`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -323,21 +358,49 @@ export function Dashboard() {
               <CardTitle className="text-base">Quick Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-0.5 p-2">
-              {quickActions.map((action) => (
-                <Button
+              <Link
+                to="/projects"
+                className={cn(
+                  buttonVariants({ variant: "ghost" }),
+                  "h-9 w-full justify-start gap-2.5 px-2 font-normal text-muted-foreground",
+                )}
+              >
+                <FolderKanban className="size-4" />
+                Create New Project
+              </Link>
+              {quietActions.slice(0, 1).map((action) => (
+                <span
                   key={action.label}
-                  variant="ghost"
-                  disabled={action.planned}
-                  title={action.planned ? `${action.label} is planned for a later phase` : undefined}
-                  className={cn(
-                    "h-9 w-full justify-start gap-2.5 px-2 font-normal text-muted-foreground",
-                    action.planned && "opacity-60",
-                  )}
+                  aria-disabled
+                  title={`${action.label} is planned for a later phase`}
+                  className="flex h-9 w-full items-center gap-2.5 rounded-md px-2 text-sm text-muted-foreground opacity-60"
                 >
                   <action.icon className="size-4" />
                   {action.label}
-                  {action.planned && <PlannedTag />}
-                </Button>
+                  <PlannedTag />
+                </span>
+              ))}
+              <Link
+                to="/logs"
+                className={cn(
+                  buttonVariants({ variant: "ghost" }),
+                  "h-9 w-full justify-start gap-2.5 px-2 font-normal text-muted-foreground",
+                )}
+              >
+                <FileText className="size-4" />
+                View Logs
+              </Link>
+              {quietActions.slice(1).map((action) => (
+                <span
+                  key={action.label}
+                  aria-disabled
+                  title={`${action.label} is planned for a later phase`}
+                  className="flex h-9 w-full items-center gap-2.5 rounded-md px-2 text-sm text-muted-foreground opacity-60"
+                >
+                  <action.icon className="size-4" />
+                  {action.label}
+                  <PlannedTag />
+                </span>
               ))}
             </CardContent>
           </Card>
@@ -352,10 +415,16 @@ export function Dashboard() {
                 Sharing a local app on a public address arrives in a later phase. Nothing is
                 exposed today.
               </p>
-              <Button variant="outline" disabled className="w-full opacity-60">
+              <span
+                aria-disabled
+                className={cn(
+                  buttonVariants({ variant: "outline" }),
+                  "w-full cursor-not-allowed opacity-60",
+                )}
+              >
                 Manage Tunnel
                 <ArrowRight />
-              </Button>
+              </span>
             </CardContent>
           </Card>
 
@@ -364,23 +433,40 @@ export function Dashboard() {
               <CardTitle className="text-base">Recent Activity</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 p-4">
-              <ul className="space-y-3">
-                {activity.map((entry) => (
-                  <li key={entry.text} className="flex gap-2.5">
-                    <span className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", entry.tone)} />
-                    <div className="min-w-0">
-                      <p className="truncate text-xs">{entry.text}</p>
-                      <p className="text-[0.7rem] text-muted-foreground">{entry.time}</p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              <div className="flex justify-end">
-                <Button variant="link" className="h-auto px-0 text-xs text-primary">
-                  View All
-                  <ArrowRight />
-                </Button>
-              </div>
+              {notifications.isPending ? (
+                <p className="text-xs text-muted-foreground">Reading activity…</p>
+              ) : notifications.error ? (
+                <p role="alert" className="text-xs text-destructive">
+                  Could not read activity: {String(notifications.error)}
+                </p>
+              ) : activity.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Nothing recorded yet.</p>
+              ) : (
+                <ul className="space-y-3">
+                  {activity.map((entry) => (
+                    <li key={entry.ID} className="flex gap-2.5">
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "mt-1.5 size-1.5 shrink-0 rounded-full",
+                          entry.Severity === "warning" ? "bg-destructive" : "bg-primary",
+                        )}
+                      />
+                      <div className="min-w-0">
+                        <p className="truncate text-xs">
+                          {entry.Action}
+                          {entry.Detail && (
+                            <span className="text-muted-foreground"> — {entry.Detail}</span>
+                          )}
+                        </p>
+                        <p className="text-[0.7rem] text-muted-foreground">
+                          {ago(entry.CreatedAt)}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </CardContent>
           </Card>
         </aside>
