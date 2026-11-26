@@ -1,6 +1,6 @@
 # ADR-0023: Local HTTPS from a Locafy-generated certificate authority
 
-- **Status:** Proposed — awaiting operator approval
+- **Status:** Accepted — 2026-11-26, after the implementation review at the end of this record
 - **Date:** 2026-11-25
 - **Depends on:** ADR-0004 (local data model), ADR-0021 (in-process proxy)
 - **Affects:** DESK-NET-001
@@ -53,12 +53,19 @@ command:
   store, no elevation.
 - **macOS:** `security add-trusted-cert -r trustRoot -k ~/Library/Keychains/login.keychain-db <ca.crt>`
   — the login keychain, no elevation.
-- **Linux:** the system store needs root and differs per distribution, so Locafy
-  prints the command for the detected family instead of escalating itself.
+- **Linux:** the system store needs root and differs per distribution. Locafy
+  runs nothing and offers no trust button: the Domains tab shows the certificate
+  path and one generic instruction (copy it to
+  `/usr/local/share/ca-certificates` and run `update-ca-certificates`). Naming the
+  exact command per distribution is deferred, and the shipped text does not
+  detect the family.
 
 Removal is documented as the inverse of the same store operation, and deleting
-the certificate files is the second half. Browsers trust the leaf once the CA is
-trusted; until then the certificate warning is expected and explained.
+the certificate files is the second half. Browsers that read the operating
+system's store trust the leaf once the CA is trusted; a browser with a store of
+its own — Firefox's NSS database, on every platform — needs the CA imported
+there or its enterprise-roots setting enabled. Until then the certificate
+warning is expected and explained.
 
 ### The leaf names a revocation list the proxy serves
 
@@ -182,3 +189,33 @@ another platform trusts the CA, which stays a stated, manual step.
   Local Development CA").
 - Public HTTPS, which is the tunnel gateway's job and must never be confused with
   this.
+
+## Implementation review (2026-11-26)
+
+Checked against `internal/network/certs.go`, `proxy.go`, `environment.go` and
+`service.go` as shipped:
+
+- **Matches.** The authority is created lazily under
+  `UserConfigDir()/Locafy/certs` (directory `0700`, certificate and keys `0600`),
+  is a ten-year CA with certificate-signing and CRL-signing usage, and is never
+  replaced once it exists. The leaf names exactly the sorted domain set (or
+  `localhost` when none is assigned), lives a year, and is reused only when the
+  names, the CRL distribution point and the CA signature still match and it is
+  more than a day from expiry. TLS listens on `127.0.0.1:443` then `:8443`, with
+  TLS 1.2 as the floor and the current leaf served through `GetCertificate`; a
+  TLS failure is reported without taking the HTTP listener down. The CRL is
+  CA-signed, valid thirty days, renewed within a day of expiry, and served at
+  `/.well-known/locafy/ca.crl` before hostname routing with
+  `application/pkix-crl` and `no-store`; the leaf points at the HTTP address
+  actually bound, and a changed address reissues it. Started applications and
+  started services receive `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`,
+  `REQUESTS_CA_BUNDLE` and `CURL_CA_BUNDLE` from one helper, an existing value is
+  never overwritten, and `NODE_TLS_REJECT_UNAUTHORIZED` is never set.
+- **Corrected here.** The Linux trust step is one generic instruction rather than
+  a per-distribution command, and the browser statement now distinguishes
+  OS-store browsers from Firefox's own store. The Domains tab also shows the
+  reason the trust plan failed, so on Linux the instruction is visible instead of
+  a disabled button with no explanation.
+- **Open.** macOS and Linux have not run the authority, the TLS listener or a
+  real browser against it. The per-platform evidence is listed in
+  `docs/FEATURES.md` under DESK-NET-001; Windows measurements are the table above.
