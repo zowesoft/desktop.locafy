@@ -24,7 +24,9 @@ import type { RouteObject } from "react-router-dom";
 
 import * as ApplicationsService from "../../bindings/locafy.dev/desktop/internal/applications/service";
 import type { Project } from "../../bindings/locafy.dev/desktop/internal/projects/models";
+import * as NetworkService from "../../bindings/locafy.dev/desktop/internal/network/service";
 import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/projects/service";
+import { domainsKey } from "@/components/project-domains";
 import { useProjectServices } from "@/components/project-services";
 import { LifecycleBadge } from "@/components/lifecycle-badge";
 import { PlannedTag } from "@/components/app-shell";
@@ -307,8 +309,8 @@ function HealthChip({
 
 /*
  * The project's command centre: what the project is, what it owns, and the
- * machine state behind it. Domains and tunnels have no records yet, so they are
- * shown as planned rather than invented.
+ * machine state behind it. Services, domains and applications come from the
+ * engine; tunnels have no records yet, so they alone are shown as planned.
  */
 export function ProjectOverview() {
   const project = useOutletContext<Project>();
@@ -324,6 +326,7 @@ export function ProjectOverview() {
     void queryClient.invalidateQueries({ queryKey: lifecycleKey(project.ID) });
     void queryClient.invalidateQueries({ queryKey: lifecyclesKey });
     void queryClient.invalidateQueries({ queryKey: notificationsKey });
+    void queryClient.invalidateQueries({ queryKey: domainsKey(project.ID) });
   };
   const startProject = useMutation({
     mutationFn: () => ApplicationsService.StartProject(project.ID),
@@ -341,6 +344,10 @@ export function ProjectOverview() {
     startProject.isPending || stopProject.isPending || restartProject.isPending;
   const lifecycleError = startProject.error ?? stopProject.error ?? restartProject.error;
   const services = useProjectServices(project.ID);
+  const domains = useQuery({
+    queryKey: domainsKey(project.ID),
+    queryFn: async () => (await NetworkService.List(project.ID)) ?? [],
+  });
   const health = useMachineStatus();
   const usage = useProjectUsage(project.ID);
   const activity = useQuery({
@@ -354,6 +361,8 @@ export function ProjectOverview() {
   const withStart = apps.filter((app) => app.StartCommand.trim() !== "").length;
   const serviceList = services.data ?? [];
   const runningServices = serviceList.filter((service) => service.Status === "running").length;
+  const domainList = domains.data ?? [];
+  const routingDomains = domainList.filter((domain) => domain.port !== null).length;
   const machine = health.data;
   const diskPercent = machine?.Disk.Percent ?? 0;
   const entries = activity.data ?? [];
@@ -479,10 +488,12 @@ export function ProjectOverview() {
         <StatTile
           icon={Globe}
           tone="bg-muted text-muted-foreground"
-          value="0"
+          value={String(domainList.length)}
           label="Domains"
-          detail="Planned for a later phase"
-          planned
+          detail={
+            domainList.length === 0 ? "None assigned" : `${routingDomains} routing`
+          }
+          detailMuted={domainList.length === 0}
         />
         <StatTile
           icon={Zap}
@@ -525,6 +536,16 @@ export function ProjectOverview() {
                       : `${serviceList.length} attached, ${runningServices} running`
                   }
                   tone={runningServices > 0 ? "ok" : "muted"}
+                />
+                <HealthChip
+                  icon={Globe}
+                  label="Domains"
+                  value={
+                    domainList.length === 0
+                      ? "None assigned"
+                      : `${domainList.length} assigned, ${routingDomains} routing`
+                  }
+                  tone={routingDomains > 0 ? "ok" : "muted"}
                 />
                 <HealthChip
                   icon={ActivityIcon}

@@ -8,6 +8,7 @@ import * as ApplicationsService from "../../bindings/locafy.dev/desktop/internal
 import type { Application } from "../../bindings/locafy.dev/desktop/internal/applications/models";
 import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/projects/service";
 import type { Project } from "../../bindings/locafy.dev/desktop/internal/projects/models";
+import * as NetworkService from "../../bindings/locafy.dev/desktop/internal/network/service";
 import * as ServicesService from "../../bindings/locafy.dev/desktop/internal/services/service";
 import * as StatusService from "../../bindings/locafy.dev/desktop/internal/status/service";
 import type { Health } from "../../bindings/locafy.dev/desktop/internal/status/models";
@@ -42,6 +43,18 @@ vi.mock("../../bindings/locafy.dev/desktop/internal/services/service", () => ({
   Stop: vi.fn(),
   Restart: vi.fn(),
   Remove: vi.fn(),
+}));
+
+vi.mock("../../bindings/locafy.dev/desktop/internal/network/service", () => ({
+  List: vi.fn(),
+  Assign: vi.fn(),
+  Remove: vi.fn(),
+  ProxyStatus: vi.fn(),
+  ReloadRoutes: vi.fn(),
+  StartProxy: vi.fn(),
+  StopProxy: vi.fn(),
+  TrustCertificate: vi.fn(),
+  TrustPlan: vi.fn(),
 }));
 
 const project = (overrides: Partial<Project> = {}): Project => ({
@@ -158,6 +171,8 @@ beforeEach(() => {
   vi.mocked(ServicesService.List).mockResolvedValue([]);
   vi.mocked(ServicesService.Catalogue).mockReset();
   vi.mocked(ServicesService.Catalogue).mockResolvedValue([]);
+  vi.mocked(NetworkService.List).mockReset();
+  vi.mocked(NetworkService.List).mockResolvedValue([]);
   vi.mocked(StatusService.Health).mockReset();
   vi.mocked(StatusService.Health).mockResolvedValue(health());
   vi.mocked(ProjectsService.OverrideStatus).mockReset();
@@ -217,14 +232,46 @@ describe("ProjectWorkspace", () => {
     expect(screen.getByText("Machine disk")).toBeInTheDocument();
   });
 
-  it("counts recorded services and keeps domains and tunnels planned", async () => {
+  it("counts recorded services and domains and keeps tunnels planned", async () => {
+    vi.mocked(NetworkService.List).mockResolvedValue([
+      {
+        id: "d1",
+        projectID: "p1",
+        applicationID: "app-1",
+        applicationName: "api",
+        directory: ".",
+        hostname: "api.etugora.test",
+        port: 8000,
+        createdAt: "2026-11-26T09:00:00Z",
+      },
+      {
+        id: "d2",
+        projectID: "p1",
+        applicationID: "app-2",
+        applicationName: "web",
+        directory: "apps/web",
+        hostname: "etugora.test",
+        port: null,
+        createdAt: "2026-11-26T09:00:00Z",
+      },
+    ]);
+
     renderAt("/projects/p1");
 
     expect(await screen.findByRole("group", { name: "Services: 0" })).toBeInTheDocument();
     expect(screen.getAllByText("None attached").length).toBeGreaterThan(0);
-    expect(screen.getByRole("group", { name: "Domains: 0" })).toBeInTheDocument();
+    expect(await screen.findByRole("group", { name: "Domains: 2" })).toBeInTheDocument();
+    expect(screen.getByText("1 routing")).toBeInTheDocument();
+    expect(screen.getByText("2 assigned, 1 routing")).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Tunnels: 0" })).toBeInTheDocument();
-    expect(screen.getAllByText("Planned for a later phase").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("Planned for a later phase")).toHaveLength(1);
+  });
+
+  it("reports no domains when the project has none", async () => {
+    renderAt("/projects/p1");
+
+    expect(await screen.findByRole("group", { name: "Domains: 0" })).toBeInTheDocument();
+    expect(screen.getAllByText("None assigned").length).toBeGreaterThanOrEqual(1);
   });
 
   it("opens the project folder on request", async () => {
