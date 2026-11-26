@@ -67,17 +67,21 @@ func setup(t *testing.T) (*sql.DB, string, string) {
 
 // useStubEngine replaces discovery, the port bind check and the health probe so
 // a lifecycle test never touches a real engine or socket.
-func useStubEngine(t *testing.T) postgresBinaries {
+func useStubEngine(t *testing.T) binaries {
 	t.Helper()
 
-	binaries := stubEngine(t)
+	programs := stubEngine(t)
 	previousFind := findPostgres
+	previousMySQL := findMySQL
 	previousBind := bindProbe
 	previousProbe := healthProbe
 	previousInterval := healthInterval
 	previousStop := stopTimeout
 
-	findPostgres = func() (postgresBinaries, error) { return binaries, nil }
+	findPostgres = func() (binaries, error) { return programs, nil }
+	// MySQL stays out of the way unless a test describes it, so a developer's
+	// installed copy cannot change what the catalogue tests see.
+	findMySQL = func() (binaries, error) { return binaries{}, errors.New("not installed") }
 	bindProbe = func(int) error { return nil }
 	healthProbe = func(int) error { return nil }
 	healthInterval = 30 * time.Millisecond
@@ -85,18 +89,19 @@ func useStubEngine(t *testing.T) postgresBinaries {
 
 	t.Cleanup(func() {
 		findPostgres = previousFind
+		findMySQL = previousMySQL
 		bindProbe = previousBind
 		healthProbe = previousProbe
 		healthInterval = previousInterval
 		stopTimeout = previousStop
 	})
-	return binaries
+	return programs
 }
 
 // stubEngine writes the three programs the PostgreSQL lifecycle calls. initdb
 // creates a cluster marker, postgres keeps a heartbeat file growing until it is
 // killed, and pg_ctl records that a graceful stop was attempted.
-func stubEngine(t *testing.T) postgresBinaries {
+func stubEngine(t *testing.T) binaries {
 	t.Helper()
 	dir := t.TempDir()
 	heartbeat := filepath.Join(dir, "heartbeat.txt")
@@ -164,7 +169,8 @@ func stubEngine(t *testing.T) postgresBinaries {
 		writeScript(t, createdb, "#!/bin/sh\necho created >> \""+createdMarker+"\"\n")
 	}
 
-	return postgresBinaries{postgres: postgres, initdb: initdb, pgctl: pgctl, createdb: createdb, version: "17.6", location: dir}
+	return binaries{engine: EnginePostgreSQL, server: postgres, init: initdb, control: pgctl,
+		client: createdb, version: "17.6", location: dir}
 }
 
 func program(name string) string {
@@ -263,7 +269,7 @@ func TestCreateGivesEachServiceItsOwnPortAndDataDirectory(t *testing.T) {
 
 func TestCreateRefusesAnEngineThatIsNotInstalled(t *testing.T) {
 	database, projectID, root := setup(t)
-	findPostgres = func() (postgresBinaries, error) { return postgresBinaries{}, errors.New("nothing here") }
+	findPostgres = func() (binaries, error) { return binaries{}, errors.New("nothing here") }
 
 	_, err := Create(database, root, projectID, CreateInput{Engine: EnginePostgreSQL})
 	if !errors.Is(err, ErrEngineUnavailable) {
@@ -295,14 +301,17 @@ func TestCatalogueReportsWhetherTheEngineIsInstalled(t *testing.T) {
 	setup(t)
 
 	templates := Catalogue()
-	if len(templates) != 1 || templates[0].Engine != EnginePostgreSQL {
-		t.Fatalf("catalogue = %+v, want PostgreSQL", templates)
+	if len(templates) != 2 || templates[0].Engine != EnginePostgreSQL || templates[1].Engine != EngineMySQL {
+		t.Fatalf("catalogue = %+v, want PostgreSQL and MySQL", templates)
 	}
 	if !templates[0].Available || templates[0].Version != "17.6" || templates[0].Location == "" {
 		t.Fatalf("template = %+v, want the installed engine described", templates[0])
 	}
+	if templates[1].Available || !strings.Contains(templates[1].Detail, "not installed") {
+		t.Fatalf("template = %+v, want the absent MySQL reported with its reason", templates[1])
+	}
 
-	findPostgres = func() (postgresBinaries, error) { return postgresBinaries{}, errors.New("not found") }
+	findPostgres = func() (binaries, error) { return binaries{}, errors.New("not found") }
 	missing := Catalogue()
 	if missing[0].Available {
 		t.Fatalf("template = %+v, want the missing engine reported", missing[0])
@@ -345,7 +354,7 @@ func TestStartInitialisesTheDataDirectoryAndReportsHealth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("engine: %v", err)
 	}
-	createdMarker := filepath.Join(filepath.Dir(binaries.createdb), "database-created.txt")
+	createdMarker := filepath.Join(filepath.Dir(binaries.client), "database-created.txt")
 	if _, err := os.Stat(createdMarker); err != nil {
 		t.Fatalf("database marker: %v, want the project's database created once the cluster answers", err)
 	}
@@ -361,7 +370,7 @@ func TestStartInitialisesTheDataDirectoryAndReportsHealth(t *testing.T) {
 func TestStartReportsAMissingEngineInsteadOfFailingSilently(t *testing.T) {
 	database, projectID, root := setup(t)
 	instance := create(t, database, root, projectID, "")
-	findPostgres = func() (postgresBinaries, error) { return postgresBinaries{}, errors.New("nothing here") }
+	findPostgres = func() (binaries, error) { return binaries{}, errors.New("nothing here") }
 
 	supervisor := NewSupervisor(database, nil)
 	_, err := supervisor.Start(instance.ID)
@@ -462,7 +471,7 @@ func TestStopEndsTheProcessAndClearsHealth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("engine: %v", err)
 	}
-	stopMarker := filepath.Join(filepath.Dir(binaries.pgctl), "stop-invoked.txt")
+	stopMarker := filepath.Join(filepath.Dir(binaries.control), "stop-invoked.txt")
 	if _, err := os.Stat(stopMarker); err != nil {
 		t.Fatalf("graceful stop marker: %v", err)
 	}
@@ -666,13 +675,13 @@ func TestDatabasePreparationRetriesWhileTheClusterStarts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("engine: %v", err)
 	}
-	flag := filepath.Join(filepath.Dir(binaries.createdb), "first-attempt.txt")
-	success := filepath.Join(filepath.Dir(binaries.createdb), "database-created.txt")
+	flag := filepath.Join(filepath.Dir(binaries.client), "first-attempt.txt")
+	success := filepath.Join(filepath.Dir(binaries.client), "database-created.txt")
 	if err := os.Remove(success); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("clear marker: %v", err)
 	}
 	if runtime.GOOS == "windows" {
-		writeScript(t, binaries.createdb,
+		writeScript(t, binaries.client,
 			"@echo off\r\n"+
 				"if exist \""+flag+"\" (\r\n"+
 				"  echo created>> \""+success+"\"\r\n"+
@@ -682,7 +691,7 @@ func TestDatabasePreparationRetriesWhileTheClusterStarts(t *testing.T) {
 				"echo the database system is starting up 1>&2\r\n"+
 				"exit /b 1\r\n")
 	} else {
-		writeScript(t, binaries.createdb,
+		writeScript(t, binaries.client,
 			"#!/bin/sh\n"+
 				"if [ -f \""+flag+"\" ]; then echo created >> \""+success+"\"; exit 0; fi\n"+
 				"touch \""+flag+"\"\n"+
@@ -725,7 +734,7 @@ func TestOutputKeepsWhatAProcessSaidBeforeItExited(t *testing.T) {
 	}
 
 	if runtime.GOOS == "windows" {
-		writeScript(t, binaries.postgres,
+		writeScript(t, binaries.server,
 			"@echo off\r\n"+
 				"setlocal enabledelayedexpansion\r\n"+
 				"set d=\r\nset prev=\r\n"+
@@ -737,7 +746,7 @@ func TestOutputKeepsWhatAProcessSaidBeforeItExited(t *testing.T) {
 				"echo 2026-11-23 10:00:00.000 GMT [1234] FATAL: could not create shared memory segment 1>&2\r\n"+
 				"exit /b 1\r\n")
 	} else {
-		writeScript(t, binaries.postgres,
+		writeScript(t, binaries.server,
 			"#!/bin/sh\n"+
 				"d=\"\"\nprev=\"\"\n"+
 				"for a in \"$@\"; do\n"+
@@ -765,9 +774,9 @@ func TestOutputKeepsWhatAProcessSaidBeforeItExited(t *testing.T) {
 	}
 
 	if runtime.GOOS == "windows" {
-		writeScript(t, binaries.postgres, "@echo off\r\necho started\r\nexit /b 0\r\n")
+		writeScript(t, binaries.server, "@echo off\r\necho started\r\nexit /b 0\r\n")
 	} else {
-		writeScript(t, binaries.postgres, "#!/bin/sh\necho started\nexit 0\n")
+		writeScript(t, binaries.server, "#!/bin/sh\necho started\nexit 0\n")
 	}
 	if _, err := supervisor.Start(instance.ID); err != nil {
 		t.Fatalf("start again: %v", err)
@@ -783,5 +792,199 @@ func TestOutputKeepsWhatAProcessSaidBeforeItExited(t *testing.T) {
 			t.Fatalf("output after a restart = %q, want only the new run's line", lines)
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// stubMySQL writes the programs the MySQL lifecycle calls. The initialiser
+// records its argv and creates the system schema marker, the server keeps a
+// heartbeat going, the client records that the database was offered and
+// mysqladmin records the graceful-stop attempt.
+func stubMySQL(t *testing.T) binaries {
+	t.Helper()
+	dir := t.TempDir()
+	argsRecord := filepath.Join(dir, "init-args.txt")
+	heartbeat := filepath.Join(dir, "heartbeat.txt")
+	stopMarker := filepath.Join(dir, "stop-invoked.txt")
+	createdMarker := filepath.Join(dir, "database-created.txt")
+
+	mysqld := filepath.Join(dir, program("mysqld"))
+	client := filepath.Join(dir, program("mysql"))
+	admin := filepath.Join(dir, program("mysqladmin"))
+
+	if runtime.GOOS == "windows" {
+		writeScript(t, mysqld,
+			"@echo off\r\n"+
+				"setlocal enabledelayedexpansion\r\n"+
+				"echo %*>> \""+argsRecord+"\"\r\n"+
+				"if not \"%~1\"==\"--initialize-insecure\" goto serve\r\n"+
+				"rem cmd splits --datadir=<path> into two batch arguments.\r\n"+
+				"set d=%~3\r\n"+
+				"if not exist \"!d!\" mkdir \"!d!\"\r\n"+
+				"mkdir \"!d!\\mysql\"\r\n"+
+				"exit /b 0\r\n"+
+				":serve\r\n"+
+				"echo started\r\n"+
+				":loop\r\n"+
+				"echo tick>> \""+heartbeat+"\"\r\n"+
+				"ping -n 2 127.0.0.1 >nul\r\n"+
+				"goto loop\r\n")
+		writeScript(t, client, "@echo off\r\necho created>> \""+createdMarker+"\"\r\nexit /b 0\r\n")
+		writeScript(t, admin, "@echo off\r\necho stop>> \""+stopMarker+"\"\r\nexit /b 0\r\n")
+	} else {
+		writeScript(t, mysqld,
+			"#!/bin/sh\n"+
+				"d=\"\"\ninit=\"\"\n"+
+				"for a in \"$@\"; do\n"+
+				"  printf '%s\n' \"$a\" >> \""+argsRecord+"\"\n"+
+				"  case \"$a\" in\n"+
+				"    --datadir=*) d=\"${a#--datadir=}\" ;;\n"+
+				"    --initialize-insecure) init=1 ;;\n"+
+				"  esac\n"+
+				"done\n"+
+				"if [ -n \"$init\" ]; then\n"+
+				"  mkdir -p \"$d/mysql\"\n"+
+				"  exit 0\n"+
+				"fi\n"+
+				"echo started\n"+
+				"while true; do echo tick >> \""+heartbeat+"\"; sleep 0.1; done\n")
+		writeScript(t, client, "#!/bin/sh\necho created >> \""+createdMarker+"\"\n")
+		writeScript(t, admin, "#!/bin/sh\necho stop >> \""+stopMarker+"\"\n")
+	}
+	return binaries{engine: EngineMySQL, server: mysqld, init: mysqld, control: admin,
+		client: client, version: "8.0.30", location: dir}
+}
+
+// createEngine attaches a service for one engine with the given name.
+func createEngine(t *testing.T, database *sql.DB, root string, projectID string, engine string, name string) Instance {
+	t.Helper()
+	instance, err := Create(database, root, projectID, CreateInput{Engine: engine, Name: name})
+	if err != nil {
+		t.Fatalf("create %s service: %v", engine, err)
+	}
+	return instance
+}
+
+func TestCatalogueOffersMySQLWhenItIsInstalled(t *testing.T) {
+	setup(t)
+	programs := stubMySQL(t)
+	findMySQL = func() (binaries, error) { return programs, nil }
+
+	templates := Catalogue()
+	if len(templates) != 2 {
+		t.Fatalf("catalogue = %+v, want both engines", templates)
+	}
+	mysql := templates[1]
+	if mysql.Engine != EngineMySQL || !mysql.Available {
+		t.Fatalf("template = %+v, want MySQL described as installed", mysql)
+	}
+	if mysql.Version != "8.0.30" || mysql.Location != programs.server || mysql.DefaultPort != 3306 {
+		t.Fatalf("template = %+v, want the discovered version, program and port", mysql)
+	}
+}
+
+func TestCreateGivesMySQLItsOwnDefaults(t *testing.T) {
+	database, projectID, root := setup(t)
+	programs := stubMySQL(t)
+	findMySQL = func() (binaries, error) { return programs, nil }
+
+	instance := createEngine(t, database, root, projectID, EngineMySQL, "")
+	if instance.Engine != EngineMySQL || instance.Version != "8.0.30" {
+		t.Fatalf("service = %+v, want a MySQL instance with the discovered version", instance)
+	}
+	if instance.Port != 3306 {
+		t.Fatalf("port = %d, want the engine's preferred port", instance.Port)
+	}
+	if instance.UserName != "root" || instance.DatabaseName != "locafy" {
+		t.Fatalf("user/database = %q/%q, want root/locafy", instance.UserName, instance.DatabaseName)
+	}
+	want := fmt.Sprintf("mysql://root@127.0.0.1:%d/locafy", instance.Port)
+	if instance.Connection.URL != want || instance.Connection.Environment != "DATABASE_URL="+want {
+		t.Fatalf("connection = %+v, want the mysql URL %q", instance.Connection, want)
+	}
+}
+
+func TestMySQLStartInitialisesAndCreatesTheDatabase(t *testing.T) {
+	database, projectID, root := setup(t)
+	programs := stubMySQL(t)
+	findMySQL = func() (binaries, error) { return programs, nil }
+
+	instance := createEngine(t, database, root, projectID, EngineMySQL, "MySQL")
+	supervisor := NewSupervisor(database, nil)
+	t.Cleanup(supervisor.StopAll)
+
+	if _, err := supervisor.Start(instance.ID); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	running := waitFor(t, database, instance.ID, func(service Instance) bool {
+		return service.Health == HealthHealthy
+	}, "waiting for a healthy MySQL instance")
+
+	if running.Status != StatusRunning || running.PID == nil {
+		t.Fatalf("service = %+v, want a running supervised process", running)
+	}
+	raw, err := os.ReadFile(filepath.Join(filepath.Dir(programs.server), "init-args.txt"))
+	if err != nil {
+		t.Fatalf("read the initialiser arguments: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(instance.DataDirectory, "mysql")); err != nil {
+		t.Fatalf("initialised data directory: %v (args: %q)", err, string(raw))
+	}
+	args := string(raw)
+	for _, want := range []string{"--initialize-insecure", "--datadir=" + instance.DataDirectory, "--basedir="} {
+		if !strings.Contains(args, want) {
+			t.Fatalf("initialiser arguments = %q, want %q", args, want)
+		}
+	}
+	if !strings.Contains(args, "--bind-address=127.0.0.1") {
+		t.Fatalf("server arguments = %q, want the loopback binding", args)
+	}
+
+	created := filepath.Join(filepath.Dir(programs.client), "database-created.txt")
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, err := os.Stat(created); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the project's database was never created once the port answered")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if err := supervisor.Stop(instance.ID); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	stopMarker := filepath.Join(filepath.Dir(programs.control), "stop-invoked.txt")
+	if _, err := os.Stat(stopMarker); err != nil {
+		t.Fatalf("graceful stop marker: %v", err)
+	}
+	stopped, err := Get(database, instance.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if stopped.Status != StatusStopped || stopped.PID != nil {
+		t.Fatalf("service = %+v, want it stopped with no pid", stopped)
+	}
+}
+
+// MySQL answers @@datadir with doubled separators and a trailing one, and can
+// differ in case; the comparison has to see through that. A different server's
+// data directory must never be accepted as this instance's.
+func TestSameDirectoryReadsTheEnginesOwnAnswer(t *testing.T) {
+	want := `C:\Users\me\AppData\Roaming\Locafy\services\id\data`
+	cases := []struct {
+		reported string
+		same     bool
+	}{
+		{`C:\Users\me\AppData\Roaming\Locafy\services\id\data\`, true},
+		{`c:/users/me/appdata/roaming/locafy/services/id/data/`, true},
+		{`C:\laragon\data\mysql-8\`, false},
+		{`C:\Users\me\AppData\Roaming\Locafy\services\other\data\`, false},
+		{"", false},
+	}
+	for _, test := range cases {
+		if got := sameDirectory(test.reported, want); got != test.same {
+			t.Errorf("sameDirectory(%q) = %v, want %v", test.reported, got, test.same)
+		}
 	}
 }

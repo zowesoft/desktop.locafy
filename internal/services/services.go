@@ -20,7 +20,10 @@ import (
 )
 
 // Engines a service can be created from.
-const EnginePostgreSQL = "postgresql"
+const (
+	EnginePostgreSQL = "postgresql"
+	EngineMySQL      = "mysql"
+)
 
 // Process states, matching the applications vocabulary.
 const (
@@ -131,25 +134,28 @@ func DataRoot() (string, error) {
 	return filepath.Join(home, db.AppDirName(), "services"), nil
 }
 
+// templates is the catalogue's engine list, whether or not this machine can run
+// each one.
+func templates() []Template {
+	return []Template{postgresTemplate, mysqlTemplate}
+}
+
 // Catalogue lists the engines Locafy can attach, with the state of each on this
 // machine.
 func Catalogue() []Template {
-	templates := []Template{postgresTemplate}
-	engine, err := findPostgres()
-	for index := range templates {
-		if templates[index].Engine != EnginePostgreSQL {
-			continue
-		}
+	list := templates()
+	for index := range list {
+		programs, err := findEngine(list[index].Engine)
 		switch {
 		case err != nil:
-			templates[index].Detail = missingEngineDetail(err)
+			list[index].Detail = missingEngineDetail(list[index].Engine, err)
 		default:
-			templates[index].Available = true
-			templates[index].Version = engine.version
-			templates[index].Location = engine.postgres
+			list[index].Available = true
+			list[index].Version = programs.version
+			list[index].Location = programs.server
 		}
 	}
-	return templates
+	return list
 }
 
 func templateFor(engine string) (Template, bool) {
@@ -217,12 +223,20 @@ func Create(database *sql.DB, root string, projectID string, input CreateInput) 
 		return Instance{}, err
 	}
 
+	// MySQL has no trust authentication: a fresh instance's root account is
+	// created with an empty password and is only reachable on loopback, which is
+	// the same local-development posture PostgreSQL's trust rule gives.
+	databaseName, userName := defaultDatabase, defaultUser
+	if engine == EngineMySQL {
+		userName = "root"
+	}
+
 	id := db.NewID()
 	dataDirectory := filepath.Join(root, id, "data")
 	_, err = database.Exec(`INSERT INTO services
 			(id, project_id, name, engine, version, port, data_directory, database_name, user_name)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, projectID, name, engine, template.Version, port, dataDirectory, defaultDatabase, defaultUser)
+		id, projectID, name, engine, template.Version, port, dataDirectory, databaseName, userName)
 	if err != nil {
 		if isUniqueViolation(err) {
 			if strings.Contains(err.Error(), "services.port") {
@@ -283,14 +297,19 @@ func scan(row interface{ Scan(...any) error }) (Instance, error) {
 
 func connectionFor(service Instance) Connection {
 	hostPort := net.JoinHostPort("127.0.0.1", strconv.Itoa(service.Port))
+	scheme := "postgresql"
+	if service.Engine == EngineMySQL {
+		scheme = "mysql"
+	}
+	url := fmt.Sprintf("%s://%s@%s/%s", scheme, service.UserName, hostPort, service.DatabaseName)
 	return Connection{
 		Host:        "127.0.0.1",
 		HostPort:    hostPort,
 		Port:        service.Port,
 		Database:    service.DatabaseName,
 		User:        service.UserName,
-		URL:         fmt.Sprintf("postgresql://%s@%s/%s", service.UserName, hostPort, service.DatabaseName),
-		Environment: fmt.Sprintf("DATABASE_URL=postgresql://%s@%s/%s", service.UserName, hostPort, service.DatabaseName),
+		URL:         url,
+		Environment: "DATABASE_URL=" + url,
 	}
 }
 

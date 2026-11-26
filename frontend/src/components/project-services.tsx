@@ -82,6 +82,13 @@ function CopyField({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** The engine's display name; the record stores the catalogue id. */
+function engineLabel(engine: string): string {
+  if (engine === "postgresql") return "PostgreSQL";
+  if (engine === "mysql") return "MySQL";
+  return engine;
+}
+
 function stateWord(service: Instance): string {
   switch (service.Status) {
     case "running":
@@ -139,7 +146,7 @@ function ServiceRow({
           <div className="flex items-center gap-2">
             <span className="font-medium">{service.Name}</span>
             <Badge variant="outline" className="text-[10px] text-muted-foreground">
-              {service.Engine === "postgresql" ? "PostgreSQL" : service.Engine} {service.Version}
+              {engineLabel(service.Engine)} {service.Version}
             </Badge>
           </div>
           {service.Error && (

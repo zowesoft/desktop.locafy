@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -128,9 +129,9 @@ func (s *Supervisor) Start(id string) (Instance, error) {
 		return service, ErrAlreadyRunning
 	}
 
-	binaries, err := findPostgres()
+	binaries, err := findEngine(service.Engine)
 	if err != nil {
-		return service, s.fail(id, fmt.Errorf("%w: %s", ErrEngineUnavailable, missingEngineDetail(err)))
+		return service, s.fail(id, fmt.Errorf("%w: %s", ErrEngineUnavailable, missingEngineDetail(service.Engine, err)))
 	}
 
 	if err := prepareInstanceDirectory(service.DataDirectory); err != nil {
@@ -144,12 +145,8 @@ func (s *Supervisor) Start(id string) (Instance, error) {
 			ErrPortInUse, service.Port))
 	}
 
-	argv := []string{
-		"-D", service.DataDirectory,
-		"-p", strconv.Itoa(service.Port),
-		"-c", "listen_addresses=127.0.0.1",
-	}
-	command := process.CommandFor(context.Background(), binaries.postgres, argv)
+	argv := serverArguments(service)
+	command := process.CommandFor(context.Background(), binaries.server, argv)
 	command.Dir = instanceDirectory(service.DataDirectory)
 	command.Env = serviceEnvironment()
 	command.Stdin = nil
@@ -171,7 +168,7 @@ func (s *Supervisor) Start(id string) (Instance, error) {
 		outputs.Close()
 		delete(s.runs, id)
 		s.mu.Unlock()
-		return service, s.fail(id, fmt.Errorf("start %s: %w", binaries.postgres, err))
+		return service, s.fail(id, fmt.Errorf("start %s: %w", binaries.server, err))
 	}
 	outputs.Release()
 	live.pid = command.Process.Pid
@@ -404,23 +401,68 @@ func (s *Supervisor) trackHealth(id string, live *liveService, service Instance)
 // details point at. The engine's own tool creates it, and an existing database
 // is not an error. A cluster that has just bound its port may still be in
 // startup recovery, so a refusal of that kind is retried rather than reported.
+// ownsPort reports whether the server answering on the instance's port is the
+// one Locafy started for it. Two MySQL servers can share a port when one binds
+// loopback and another binds every address, so a statement sent before this
+// instance's server is up would otherwise land in the other server's data.
+func (s *Supervisor) ownsPort(binaries binaries, service Instance) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), engineVersionTimeout)
+	defer cancel()
+
+	argv := []string{
+		"--protocol=TCP",
+		"-h", "127.0.0.1",
+		"-P", strconv.Itoa(service.Port),
+		"-u", service.UserName,
+		"--raw", "-N", "-B",
+		"-e", "SELECT @@datadir",
+	}
+	command := process.CommandFor(ctx, binaries.client, argv)
+	command.Env = serviceEnvironment()
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return false
+	}
+	return sameDirectory(strings.TrimSpace(string(output)), service.DataDirectory)
+}
+
+// sameDirectory compares two paths the way the engine reports them: MySQL
+// answers with doubled separators and a trailing one.
+func sameDirectory(reported string, want string) bool {
+	normalise := func(path string) string {
+		path = strings.ReplaceAll(path, "\\\\", "\\")
+		path = strings.ReplaceAll(path, "/", "\\")
+		path = strings.TrimRight(path, "\\")
+		return strings.ToLower(path)
+	}
+	return normalise(reported) == normalise(want)
+}
+
 func (s *Supervisor) prepareDatabase(id string, service Instance) {
-	binaries, err := findPostgres()
-	if err != nil || binaries.createdb == "" {
+	binaries, err := findEngine(service.Engine)
+	if err != nil || binaries.client == "" {
+		// Silently skipping would leave the operator with a running server and no
+		// database, so the reason is recorded on the record instead.
+		reason := "its client program could not be found"
+		if err != nil {
+			reason = err.Error()
+		}
+		s.recordPrepareError(id, fmt.Sprintf("The database %s could not be created: %s", service.DatabaseName, reason))
 		return
 	}
 
 	var output string
 	var lastErr error
 	for attempt := 0; attempt < databasePrepareAttempts; attempt++ {
+		// MySQL's statements are only safe once the server that answers is this
+		// instance's own; until then the loop waits like any other startup delay.
+		if service.Engine == EngineMySQL && !s.ownsPort(binaries, service) {
+			time.Sleep(databasePrepareBackoff)
+			continue
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), engineVersionTimeout)
-		command := process.CommandFor(ctx, binaries.createdb, []string{
-			"-h", "127.0.0.1",
-			"-p", strconv.Itoa(service.Port),
-			"-U", service.UserName,
-			"-w",
-			service.DatabaseName,
-		})
+		command := process.CommandFor(ctx, binaries.client, prepareDatabaseArguments(service))
 		command.Env = serviceEnvironment()
 		result, err := command.CombinedOutput()
 		cancel()
@@ -442,7 +484,12 @@ func (s *Supervisor) prepareDatabase(id string, service Instance) {
 	if detail == "" && lastErr != nil {
 		detail = lastErr.Error()
 	}
-	message := fmt.Sprintf("The database %s could not be created: %s", service.DatabaseName, detail)
+	s.recordPrepareError(id, fmt.Sprintf("The database %s could not be created: %s", service.DatabaseName, detail))
+}
+
+// recordPrepareError writes a preparation failure on a running instance and
+// announces it, so the tab shows why the project's database is missing.
+func (s *Supervisor) recordPrepareError(id string, message string) {
 	if s.database != nil {
 		_, _ = s.database.Exec(`UPDATE services SET error = ? WHERE id = ? AND status = ?`,
 			message, id, StatusRunning)
@@ -453,7 +500,14 @@ func (s *Supervisor) prepareDatabase(id string, service Instance) {
 // stillStarting reports whether the engine refused work because the cluster has
 // not finished coming up yet, which is worth retrying.
 func stillStarting(output string) bool {
-	for _, phrase := range []string{"starting up", "not yet accepting connections", "the database system is"} {
+	for _, phrase := range []string{
+		"starting up",
+		"not yet accepting connections",
+		"the database system is",
+		"can't connect to local mysql server",
+		"can't connect to mysql server",
+		"connection refused",
+	} {
 		if strings.Contains(output, phrase) {
 			return true
 		}
@@ -471,9 +525,91 @@ func (s *Supervisor) clearPrepareError(id string) {
 		WHERE id = ? AND status = ? AND error LIKE 'The database % could not be created%'`, id, StatusRunning)
 }
 
+// serverArguments is the foreground command for one instance. Each engine keeps
+// its own spelling; the supervisor's promises — recorded pid, captured output,
+// loopback binding — are the same for both.
+func serverArguments(service Instance) []string {
+	if service.Engine == EngineMySQL {
+		args := []string{
+			"--datadir=" + service.DataDirectory,
+			"--port=" + strconv.Itoa(service.Port),
+			"--bind-address=127.0.0.1",
+			"--mysqlx=OFF",
+		}
+		if runtime.GOOS == "windows" {
+			// Without --console MySQL on Windows writes to its error log and the
+			// supervised transcript stays empty, which would hide a failed start.
+			args = append(args, "--console")
+		}
+		return args
+	}
+	return []string{
+		"-D", service.DataDirectory,
+		"-p", strconv.Itoa(service.Port),
+		"-c", "listen_addresses=127.0.0.1",
+	}
+}
+
+// prepareDatabaseArguments creates the project's database with the engine's own
+// client. Both engines treat an existing database as success.
+func prepareDatabaseArguments(service Instance) []string {
+	if service.Engine == EngineMySQL {
+		return []string{
+			"--protocol=TCP",
+			"-h", "127.0.0.1",
+			"-P", strconv.Itoa(service.Port),
+			"-u", service.UserName,
+			"-e", "CREATE DATABASE IF NOT EXISTS `" + service.DatabaseName + "`",
+		}
+	}
+	return []string{
+		"-h", "127.0.0.1",
+		"-p", strconv.Itoa(service.Port),
+		"-U", service.UserName,
+		"-w",
+		service.DatabaseName,
+	}
+}
+
 // initialiseData runs the engine's initialiser once, when the data directory
 // has no cluster in it yet.
-func initialiseData(service Instance, binaries postgresBinaries) error {
+func initialiseData(service Instance, binaries binaries) error {
+	if service.Engine == EngineMySQL {
+		return initialiseMySQLData(service, binaries)
+	}
+	return initialisePostgresData(service, binaries)
+}
+
+// initialiseMySQLData creates an empty data directory with an empty-password
+// root account, the same posture PostgreSQL's trust rule gives on loopback.
+func initialiseMySQLData(service Instance, binaries binaries) error {
+	if _, err := os.Stat(filepath.Join(service.DataDirectory, "mysql")); err == nil {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), initTimeout)
+	defer cancel()
+
+	argv := []string{
+		"--initialize-insecure",
+		"--datadir=" + service.DataDirectory,
+		"--basedir=" + filepath.Dir(binaries.location),
+	}
+	command := process.CommandFor(ctx, binaries.init, argv)
+	command.Dir = instanceDirectory(service.DataDirectory)
+	command.Env = serviceEnvironment()
+	output, err := command.CombinedOutput()
+	if err != nil {
+		tail := lastLines(string(output), 3)
+		if tail == "" {
+			return fmt.Errorf("initialise the data directory: %w", err)
+		}
+		return fmt.Errorf("initialise the data directory: %w: %s", err, tail)
+	}
+	return nil
+}
+
+func initialisePostgresData(service Instance, binaries binaries) error {
 	if _, err := os.Stat(filepath.Join(service.DataDirectory, "PG_VERSION")); err == nil {
 		return nil
 	}
@@ -488,7 +624,7 @@ func initialiseData(service Instance, binaries postgresBinaries) error {
 		"--encoding=UTF8",
 		"--locale=C",
 	}
-	command := process.CommandFor(ctx, binaries.initdb, argv)
+	command := process.CommandFor(ctx, binaries.init, argv)
 	command.Dir = instanceDirectory(service.DataDirectory)
 	command.Env = serviceEnvironment()
 	output, err := command.CombinedOutput()
@@ -505,18 +641,36 @@ func initialiseData(service Instance, binaries postgresBinaries) error {
 // requestShutdown asks the engine's control program to stop the cluster. It is
 // best effort: the caller falls back to killing the supervised tree.
 func requestShutdown(service Instance) {
-	binaries, err := findPostgres()
+	binaries, err := findEngine(service.Engine)
 	if err != nil {
 		return
 	}
+
 	// A data directory without a cluster in it has nothing to stop.
-	if _, err := os.Stat(filepath.Join(service.DataDirectory, "PG_VERSION")); err != nil {
+	marker := "PG_VERSION"
+	if service.Engine == EngineMySQL {
+		marker = "mysql"
+	}
+	if _, err := os.Stat(filepath.Join(service.DataDirectory, marker)); err != nil {
 		return
 	}
+
+	var argv []string
+	if service.Engine == EngineMySQL {
+		argv = []string{
+			"--protocol=TCP",
+			"-h", "127.0.0.1",
+			"-P", strconv.Itoa(service.Port),
+			"-u", service.UserName,
+			"shutdown",
+		}
+	} else {
+		argv = []string{"stop", "-D", service.DataDirectory, "-m", "fast", "-w", "-t", "20"}
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), stopTimeout)
 	defer cancel()
-	command := process.CommandFor(ctx, binaries.pgctl,
-		[]string{"stop", "-D", service.DataDirectory, "-m", "fast", "-w", "-t", "20"})
+	command := process.CommandFor(ctx, binaries.control, argv)
 	command.Dir = instanceDirectory(service.DataDirectory)
 	command.Env = serviceEnvironment()
 	_ = command.Run()
