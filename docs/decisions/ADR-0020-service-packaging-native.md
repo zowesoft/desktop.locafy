@@ -1,6 +1,6 @@
 # ADR-0020: Service packaging — native engine processes, with containers as a per-engine exception
 
-- **Status:** Proposed — awaiting operator approval
+- **Status:** Accepted — 2026-11-26, with the MySQL slice delivered and verified live on Windows
 - **Date:** 2026-11-23
 - **Depends on:** ADR-0001 (cross-platform), ADR-0004 (local data model), ADR-0008 (service engines and instances), ADR-0013 (process supervision), ADR-0014 (ports and ownership), ADR-0015 (health checks), ADR-0019 (managed runtimes and installs)
 - **Affects:** DESK-SVC-001, DESK-NET-001, DESK-DL-001
@@ -8,12 +8,14 @@
 ## Status note
 
 This record was first written as accepted, and the PostgreSQL slice of
-DESK-SVC-001 was built and verified against it. It now also carries the
-engine-by-engine comparison, and it is returned to **proposed** so the operator
-can approve the packaging rule before the remaining engines are committed to
-it. Nothing in the delivered PostgreSQL slice changes if the rule is approved;
-if it is rejected in favour of container-backed instances, that slice is the
-part that would need reworking.
+DESK-SVC-001 was built and verified against it. It then carried the
+engine-by-engine comparison and was returned to **proposed** so the operator
+could approve the packaging rule before the remaining engines were committed to
+it. The rule was approved on 2026-11-26 together with the MySQL slice, and both
+of those engines are now delivered: MySQL has a discovery path, an initialiser,
+supervision and tests in this repository, and Locafy started, queried and stopped
+it on Windows. The rows below stay the record of what was checked before each
+engine existed.
 
 The engine table was corrected on 2026-11-23. It previously read as though every
 engine had been checked against its published downloads; in fact only
@@ -84,23 +86,50 @@ ran the installed PostgreSQL 17 on Windows, and every binary it used came from
 one `bin`. Everything else below was read off the vendors' current download
 pages, release assets and registry responses on 2026-11-23 and 2026-11-24 — a
 published build is evidence that a build exists, not that Locafy can find it,
-initialise it and supervise it. None
-of Redis, MySQL, MariaDB, Mailpit or MinIO has a discovery path, an initialiser
-or a first-run procedure in this repository, and none has been started by
-Locafy on any platform. Each row below is therefore a lead, not a verified path.
+initialise it and supervise it. PostgreSQL and MySQL have since gained a
+discovery path, an initialiser and supervision; Redis, MariaDB, Mailpit and
+MinIO still have none, and none of those four has been started by Locafy on any
+platform. Their rows are therefore leads, not verified paths.
 "Container" means the engine's official image under Docker or Podman.
 
 | Engine | What was checked | Native on Windows | Native on macOS | Native on Linux | Container | Recommendation |
 |---|---|---|---|---|---|---|
 | **PostgreSQL 17** | **Verified live** on Windows: discovered, initialised and run by the delivered slice | The installed PostgreSQL 17 at `C:\Program Files\PostgreSQL\17\bin` (the EDB installer's layout): `initdb`, `postgres`, `pg_ctl`, `createdb` in one `bin` — **verified live** | Not checked here; Homebrew and the EDB installer are the documented routes | Not checked here; Oracle packages and distro packages are the documented routes | Official `postgres` image | **Native now.** Satisfies the admission rule, needs one initialiser (`initdb`), runs from a plain argv. Delivered. |
 | **Redis 8.x** | Published downloads and install docs, 2026-11-23 | **No official native build.** Redis documents Windows as Docker-only and names Memurai its Windows partner. Community forks build it anyway — `redis-windows` and `zkteco-home` both track 8.10.3, `tporadowski` ships a native 5.0.14.1 with an 8.10 port in progress — none with vendor support | Homebrew `redis` — Redis documents Homebrew as the supported macOS route; source builds work | `packages.redis.io` APT/RPM, Snap, distro packages, source | Official `redis` image | **Blocked on Windows.** Not merely "no build": the only vendor-blessed native option is development-only with a forced 10-day restart, which Locafy cannot ship or hide. Needs the operator decision below. |
-| **MySQL 8.4 LTS / 9.7 LTS** | Published download page for 8.4.13 LTS (also 26.10 Innovation), 2026-11-23 | MSI installer and ZIP archive | Official `.dmg`/pkg installer and `.tar.gz` | Generic `.tar.gz`, Oracle RPM/DEB repositories, distro packages | Official `mysql` image | **Native, next after PostgreSQL.** A vendor build exists on all three platforms; the cost is its own initialiser (`mysqld --initialize-insecure`), port handling and default-auth choice. |
+| **MySQL 8.4 LTS / 9.7 LTS** | Published download page for 8.4.13 LTS (also 26.10 Innovation), 2026-11-23; **delivered and verified live on 8.0.30** on Windows, 2026-11-26 | MSI installer and ZIP archive | Official `.dmg`/pkg installer and `.tar.gz` | Generic `.tar.gz`, Oracle RPM/DEB repositories, distro packages | Official `mysql` image | **Native, delivered.** Discovered from PATH, `Program Files\MySQL`, the Laragon layout and Locafy's managed engines; initialised with `mysqld --initialize-insecure`; run on loopback with its own data directory and port; stopped through `mysqladmin shutdown`. macOS and Linux runs are still outstanding. |
 | **MariaDB 13.0** | Published download page and the 13.0.2 file listing, 2026-11-23 | MSI package (`winx64-packages`) | **No official package.** MariaDB's own documentation states there is no `.pkg` installer for macOS and sends users to Homebrew; its 13.0.2 file listing has no macOS directory | Repositories (DEB/RPM), systemd binary tarball | Official `mariadb` image | **Does not satisfy the rule as published.** Windows and Linux are vendor builds; macOS is a third-party Homebrew build that MariaDB merely points at. Either the operator accepts that macOS route, or the relational slot is MySQL only. |
 | **Mail capture (Mailpit)** | v1.34.0 release assets and install documentation, 2026-11-24 | `mailpit-windows-amd64.zip`, `mailpit-windows-arm64.zip` | `mailpit-darwin-amd64.tar.gz`, `mailpit-darwin-arm64.tar.gz`, also Homebrew `mailpit` | `mailpit-linux-386`, `-amd64`, `-arm`, `-arm64` `.tar.gz` | Official multi-arch images (`axllent/mailpit`) | **Native — cheapest of the set.** One binary, no install step, no data directory to initialise unless persistence (`--database`) is turned on; two ports, 1025 SMTP and 8025 UI. |
 | **Object storage (MinIO)** | Download server and registry responses, repository state and licence, 2026-11-24 | Community edition is **source-only** and archived, and its binaries are gone, not merely frozen: MinIO's own download server answers **HTTP 410 Gone** for every community file, with its own text saying "These files are no longer served from this site. This applies to all community releases and to all hotfix builds". AIStor publishes a paid binary | Same for community; AIStor publishes a `darwin-arm64` binary and a Homebrew tap, both behind a licence key | Same for community; AIStor RPM/DEB/binary behind a licence key | No community images: the archived README offers only "build a Docker image from the provided Dockerfile", and a maintainer declined to publish the October 2025 security release as an image (issue 21647). Docker Hub's API answers **404** for `minio/minio` and quay.io answers **401** to anonymous requests (checked 2026-11-24). MinIO published no dated notice of the removal, so the dates come from the registries, not from MinIO. AIStor images need a licence | **Fails the rule.** There is no maintained community build on any platform — the source is archived and the binaries are withdrawn — and the maintained build (AIStor) is commercial and licensed. Building the archived source ourselves is not a project this catalogue should take on. Garage and SeaweedFS are the alternatives to evaluate (PRD section 23). |
 
 Engines that look attractive but fail the admission rule stay out until they
 do not: that is the deliberate cost of a cross-platform promise.
+
+### The MySQL slice (delivered 2026-11-26)
+
+- **Discovery** reads PATH, `%ProgramFiles%\MySQL\MySQL Server *\bin`,
+  `C:\laragon\bin\mysql\*\bin` and Locafy's managed engines on Windows, and
+  `/usr/local/mysql/bin`, the Homebrew opt paths and MAMP on Unix. The version
+  comes from `mysqld --version`, never from a folder name.
+- **Initialisation** runs `mysqld --initialize-insecure --datadir=<instance>
+  --basedir=<install>`; an instance counts as initialised when `<datadir>/mysql`
+  exists. Its `root` account has an empty password and is reachable only on
+  loopback, the same local-development posture PostgreSQL's trust rule gives.
+- **Supervision** runs `mysqld --datadir=… --port=… --bind-address=127.0.0.1
+  --mysqlx=OFF`, plus `--console` on Windows so the transcript stays in Locafy's
+  hands instead of an error-log file. A stop asks `mysqladmin --protocol=TCP …
+  shutdown` first and falls back to the supervised tree kill.
+- **The project's database** is created once the instance answers, with
+  `mysql --protocol=TCP -e "CREATE DATABASE IF NOT EXISTS …"`, and `root` is the
+  user recorded for the connection URL.
+
+**Port sharing is a real failure mode.** Windows lets a loopback listener and a
+wildcard listener hold the same port, so on a machine where another MySQL already
+binds `0.0.0.0:3306`, Locafy's instance can bind `127.0.0.1:3306` and a statement
+sent before Locafy's server has finished starting reaches the other server. The
+first live run did exactly that: the project's database was created in the
+machine's own MySQL instead of the instance. The preparation step therefore asks
+the server for `@@datadir` and writes only when that directory is the instance's
+own, retrying while it is not.
 
 ### Why native for this catalogue
 
