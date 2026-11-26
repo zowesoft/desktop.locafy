@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"locafy.dev/desktop/internal/logs"
 	"locafy.dev/desktop/internal/network"
 	"locafy.dev/desktop/internal/process"
 	"locafy.dev/desktop/internal/projects"
@@ -107,6 +108,9 @@ type Supervisor struct {
 	// services runs the backing services a project start brings up first. It
 	// is nil when the project has none wired, as in most tests.
 	services ServiceRuntime
+	// logSink keeps the recent output for the Logs surfaces. It is nil in
+	// tests and in a build that captures nothing.
+	logSink *logs.Store
 }
 
 // NewSupervisor returns a supervisor for applications stored in database. emit
@@ -120,6 +124,17 @@ func NewSupervisor(database *sql.DB, emit func(string, any)) *Supervisor {
 	}
 	supervisor.reconcile()
 	return supervisor
+}
+
+// SetLogSink records this supervisor's output in the central log store.
+func (s *Supervisor) SetLogSink(store *logs.Store) {
+	s.logSink = store
+}
+
+// SupervisorOf returns the supervisor an applications service drives, so the
+// engine can wire the parts that are not binding calls.
+func SupervisorOf(service *Service) *Supervisor {
+	return service.supervisor
 }
 
 // reconcile corrects records left in a process state by a previous run: the
@@ -358,16 +373,27 @@ func (s *Supervisor) Restart(id string) (Application, error) {
 func (s *Supervisor) StopAll() {
 	s.mu.Lock()
 	pids := make([]int, 0, len(s.runs))
+	dones := make([]chan struct{}, 0, len(s.runs))
 	for _, live := range s.runs {
 		live.stopped = true
 		if live.pid > 0 && !live.exited {
 			pids = append(pids, live.pid)
 		}
+		dones = append(dones, live.done)
 	}
 	s.mu.Unlock()
 
 	for _, pid := range pids {
 		process.KillTree(pid)
+	}
+	// A kill is asynchronous and the exit record lands behind it: wait for the
+	// runs to record it, so a caller that closes the database or quits the
+	// application behind StopAll never races the last writes.
+	for _, done := range dones {
+		select {
+		case <-done:
+		case <-time.After(stopTimeout):
+		}
 	}
 }
 
@@ -595,6 +621,7 @@ func (s *Supervisor) appendLine(id string, live *run, line string) {
 	}
 	s.mu.Unlock()
 
+	s.logSink.Record(logs.LayerApplication, id, line)
 	if s.emit != nil {
 		s.emit(EventOutput, map[string]any{"applicationId": id, "line": line})
 	}

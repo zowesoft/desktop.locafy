@@ -25,7 +25,7 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 | DESK-DL-001 | Downloads view for install jobs | desktop.locafy | 4 | COMPLETED | DESK-RUN-001 |
 | DESK-SVC-001 | Service catalogue and lifecycle | desktop.locafy | 5 | IN_PROGRESS | DESK-APP-002 |
 | DESK-NET-001 | Local domains and reverse proxy | desktop.locafy | 6 | TESTING | DESK-APP-002, DESK-SVC-001 |
-| DESK-DEVX-001 | Integrated terminal and logs | desktop.locafy | 7 | NOT_STARTED | DESK-PROJ-002, DESK-APP-002, DESK-SVC-001 |
+| DESK-DEVX-001 | Integrated terminal and logs | desktop.locafy | 7 | IN_PROGRESS | DESK-PROJ-002, DESK-APP-002, DESK-SVC-001 |
 | DESK-ANAL-001 | Analytics views | desktop.locafy | 7 | NOT_STARTED | DESK-DB-002, DESK-DEVX-001 |
 | TUN-PROTO-001 | Tunnel threat model and protocol (shared) | Gateway · Desktop · API | 9 | NOT_STARTED | API-AUTH-001, API-DEVICE-001, DESK-NET-001 |
 | TUN-AGENT-001 | Desktop tunnel agent | desktop.locafy | 9 | NOT_STARTED | TUN-PROTO-001 |
@@ -288,11 +288,11 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 - **Description:** Integrated terminal at global/project/application/service scopes (xterm.js + Go PTY); centralized logs with filtering and source attribution; process/CPU/memory/disk monitoring; environment management and secret masking.
 - **Dependencies:** DESK-PROJ-002, DESK-APP-002, DESK-SVC-001
 - **Acceptance criteria:** Developers can diagnose common local problems without leaving Locafy; metrics and logs have clear scope and source attribution; secrets are not exposed in logs or UI; environment precedence rules documented (PRD sections 12, 13, 20, Phase 7).
-- **Status:** NOT_STARTED
+- **Status:** IN_PROGRESS
 - **Assigned agent:** —
-- **Files/modules:** —
-- **Tests:** Terminal/PTY tests; log attribution tests; secret-masking tests
-- **Blockers:** Platform PTY behavior must be documented (PRD section 19)
+- **Files/modules:** Landed: `internal/logs` (`rotate.go` the size-rolling log file writer, `store.go` the bounded attributed line store with secret masking and project scoping, `service.go` the read side over bindings), `internal/db/retry.go` (`ExecRetry` for SQLite busy/locked writes), `internal/db/db.go` (pragmas in the DSN so every pooled connection carries them), `internal/applications/supervisor.go` and `internal/services/supervisor.go` (output recorded into the store, `StopAll` now waits for the runs to record their exit), `main.go` wiring, `frontend/bindings/.../internal/logs/`
+- **Tests:** Landed: `internal/logs/store_test.go` (masking of passwords, tokens, bearer and URL credentials — including env-style names like `DB_PASSWORD` — capacity, layer/source/text filtering, project scoping) and `rotate_test.go`; `internal/db/retry_test.go` and `TestOpenAppliesSettingsToEveryConnection` (every pooled connection carries busy_timeout, foreign_keys and WAL). The Windows CI failure in `TestStopEndsTheProcessAndClearsHealth` and two stress-time TempDir teardown races were fixed here: pragmas applied per connection plus `ExecRetry` end the lost-write race that left a stale health reading, the guarded `stopping` write never overwrites a terminal state, and `StopAll` drains its runs before a caller closes the database. Full `go test ./...` is green twice over on Windows.
+- **Blockers:** The Logs screens themselves (global and per-project tabs) still read placeholder data — the store and its binding exist for them to consume. The terminal (PTY) half, environment precedence rules and the process/CPU/disk monitoring views remain. Platform PTY behavior must be documented (PRD section 19).
 - **Evidence:** —
 
 ### DESK-ANAL-001 — Analytics views

@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 
+	"locafy.dev/desktop/internal/db"
+	"locafy.dev/desktop/internal/logs"
 	"locafy.dev/desktop/internal/process"
 )
 
@@ -87,6 +89,9 @@ type Supervisor struct {
 	// can be read in the interface after the process is gone. Cleared when the
 	// next run starts.
 	lastOutput map[string][]string
+	// logSink keeps the recent output for the Logs surfaces. It is nil in
+	// tests and in a build that captures nothing.
+	logSink *logs.Store
 }
 
 // NewSupervisor returns a supervisor for the services in database. emit may be
@@ -100,6 +105,11 @@ func NewSupervisor(database *sql.DB, emit func(string, any)) *Supervisor {
 	}
 	supervisor.reconcile()
 	return supervisor
+}
+
+// SetLogSink records this supervisor's output in the central log store.
+func (s *Supervisor) SetLogSink(store *logs.Store) {
+	s.logSink = store
 }
 
 // reconcile corrects records left running by a previous session: a process
@@ -245,6 +255,7 @@ func (s *Supervisor) appendLine(id string, live *liveService, line string) {
 	}
 	s.mu.Unlock()
 
+	s.logSink.Record(logs.LayerService, id, line)
 	if s.emit != nil {
 		s.emit(EventOutput, map[string]any{"id": id, "line": line})
 	}
@@ -336,11 +347,13 @@ func (s *Supervisor) StopAll() {
 	s.mu.Lock()
 	instances := make([]Instance, 0, len(s.runs))
 	pids := make([]int, 0, len(s.runs))
+	dones := make([]chan struct{}, 0, len(s.runs))
 	for id, live := range s.runs {
 		live.stopped = true
 		if live.pid > 0 && !live.exited {
 			pids = append(pids, live.pid)
 		}
+		dones = append(dones, live.done)
 		if service, err := Get(s.database, id); err == nil {
 			instances = append(instances, service)
 		}
@@ -354,6 +367,15 @@ func (s *Supervisor) StopAll() {
 	}
 	for _, pid := range pids {
 		process.KillTree(pid)
+	}
+	// A kill is asynchronous and the exit record lands behind it: wait for the
+	// runs to record it, so a caller that closes the database or quits the
+	// application behind StopAll never races the last writes.
+	for _, done := range dones {
+		select {
+		case <-done:
+		case <-time.After(stopTimeout + killTimeout):
+		}
 	}
 }
 
@@ -491,7 +513,7 @@ func (s *Supervisor) prepareDatabase(id string, service Instance) {
 // announces it, so the tab shows why the project's database is missing.
 func (s *Supervisor) recordPrepareError(id string, message string) {
 	if s.database != nil {
-		_, _ = s.database.Exec(`UPDATE services SET error = ? WHERE id = ? AND status = ?`,
+		_, _ = db.ExecRetry(s.database, `UPDATE services SET error = ? WHERE id = ? AND status = ?`,
 			message, id, StatusRunning)
 	}
 	s.emitState(id)
@@ -521,7 +543,7 @@ func (s *Supervisor) clearPrepareError(id string) {
 	if s.database == nil {
 		return
 	}
-	_, _ = s.database.Exec(`UPDATE services SET error = ''
+	_, _ = db.ExecRetry(s.database, `UPDATE services SET error = ''
 		WHERE id = ? AND status = ? AND error LIKE 'The database % could not be created%'`, id, StatusRunning)
 }
 
@@ -700,28 +722,35 @@ func (s *Supervisor) setStatus(id string, status string, message string, pid *in
 	if s.database == nil {
 		return
 	}
-	_, _ = s.database.Exec(`UPDATE services SET status = ?, error = ?, pid = ? WHERE id = ?`,
+	if status == StatusStopping {
+		// Stop records "stopping" after releasing the supervisor lock, so the
+		// run may already have finished; only move a record that still runs,
+		// and never overwrite a terminal state with a stopping one.
+		_, _ = db.ExecRetry(s.database, `UPDATE services SET status = ?, error = ?, pid = ?
+			WHERE id = ? AND status IN (?, ?)`,
+			status, message, pid, id, StatusStarting, StatusRunning)
+		return
+	}
+	_, _ = db.ExecRetry(s.database, `UPDATE services SET status = ?, error = ?, pid = ? WHERE id = ?`,
 		status, message, pid, id)
 	switch status {
 	case StatusRunning:
-		_, _ = s.database.Exec(`UPDATE services
+		_, _ = db.ExecRetry(s.database, `UPDATE services
 			SET started_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
 				health = '', health_detail = '', health_checked_at = ''
 			WHERE id = ?`, id)
 	case StatusStopped, StatusError:
-		_, _ = s.database.Exec(`UPDATE services
+		_, _ = db.ExecRetry(s.database, `UPDATE services
 			SET health = '', health_detail = '', health_checked_at = ''
 			WHERE id = ?`, id)
 	}
 }
 
-// setHealth records a probe result, but only while the instance is running.
-// It reports whether the write applied.
 func (s *Supervisor) setHealth(id string, health string, detail string) bool {
 	if s.database == nil {
 		return false
 	}
-	result, err := s.database.Exec(`UPDATE services
+	result, err := db.ExecRetry(s.database, `UPDATE services
 		SET health = ?, health_detail = ?, health_checked_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
 		WHERE id = ? AND status = ?`, health, detail, id, StatusRunning)
 	if err != nil {

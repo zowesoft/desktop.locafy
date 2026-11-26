@@ -95,6 +95,10 @@ func run() error {
 	statusService := status.NewService(database, startedAt)
 	servicesService := services.NewService(database)
 	appsService := applications.NewService(database, services.SupervisorOf(servicesService))
+	logStore := logs.NewStore(database, logs.DefaultCapacity)
+	applications.SupervisorOf(appsService).SetLogSink(logStore)
+	services.SupervisorOf(servicesService).SetLogSink(logStore)
+	logsService := logs.NewService(logStore)
 	networkService := network.NewService(database)
 	scaffoldService := scaffold.NewService(database)
 	runtimesService := runtimes.NewService()
@@ -117,6 +121,7 @@ func run() error {
 			application.NewService(projects.NewService(database)),
 			application.NewService(appsService),
 			application.NewService(servicesService),
+			application.NewService(logsService),
 			application.NewService(networkService),
 			application.NewService(scaffoldService),
 			application.NewService(runtimesService),
