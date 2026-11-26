@@ -9,6 +9,12 @@ export interface Domain {
     "projectID": string;
     "applicationID": string;
     "applicationName": string;
+
+    /**
+     * Directory is the application's folder, relative to the project root, so
+     * an empty document root is visible in the tab without opening the database.
+     */
+    "directory": string;
     "hostname": string;
 
     /**

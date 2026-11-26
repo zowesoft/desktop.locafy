@@ -101,8 +101,8 @@ func TestAssignStoresTheNormalisedNameAgainstItsApplication(t *testing.T) {
 	if len(domains) != 1 {
 		t.Fatalf("domains = %+v, want one", domains)
 	}
-	if domains[0].ApplicationName != "Etugora" || domains[0].Port != nil {
-		t.Fatalf("domain = %+v, want the application named and no port before a start", domains[0])
+	if domains[0].ApplicationName != "Etugora" || domains[0].Directory != "Etugora" || domains[0].Port != nil {
+		t.Fatalf("domain = %+v, want the application named with its folder and no port before a start", domains[0])
 	}
 }
 

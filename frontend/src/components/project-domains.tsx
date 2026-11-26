@@ -152,6 +152,9 @@ export function ProjectDomains({ projectID }: { projectID: string }) {
           {trustPlan.data.explanation}
         </p>
       ) : null}
+      {trustPlan.isError ? (
+        <p className="text-xs text-muted-foreground">{messageOf(trustPlan.error)}</p>
+      ) : null}
       {trusted ? <p className="text-xs text-muted-foreground">{trusted}</p> : null}
       {proxy.data?.httpsAddress ? (
         <p className="text-xs text-muted-foreground">
@@ -177,6 +180,9 @@ export function ProjectDomains({ projectID }: { projectID: string }) {
                 App
               </th>
               <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
+                Folder
+              </th>
+              <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
                 Port
               </th>
               <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
@@ -190,6 +196,9 @@ export function ProjectDomains({ projectID }: { projectID: string }) {
               <tr key={domain.id} className="hover:bg-muted/30">
                 <td className="px-4 py-2.5 font-mono text-xs">{domain.hostname}</td>
                 <td className="px-4 py-2.5 text-muted-foreground">{domain.applicationName}</td>
+                <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">
+                  {domain.directory || <span className="text-muted-foreground">—</span>}
+                </td>
                 <td className="px-4 py-2.5 font-mono text-xs">
                   {domain.port ?? <span className="text-muted-foreground">—</span>}
                 </td>
@@ -220,7 +229,7 @@ export function ProjectDomains({ projectID }: { projectID: string }) {
             ))}
             {rows.length === 0 && !domains.isLoading ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-xs text-muted-foreground">
+                <td colSpan={6} className="px-4 py-8 text-center text-xs text-muted-foreground">
                   No domain is assigned yet. Give an application a name like{" "}
                   <span className="font-mono">api.etugora.test</span> to reach it without a port.
                 </td>

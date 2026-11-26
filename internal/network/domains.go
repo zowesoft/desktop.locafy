@@ -36,7 +36,10 @@ type Domain struct {
 	ProjectID       string `json:"projectID"`
 	ApplicationID   string `json:"applicationID"`
 	ApplicationName string `json:"applicationName"`
-	Hostname        string `json:"hostname"`
+	// Directory is the application's folder, relative to the project root, so
+	// an empty document root is visible in the tab without opening the database.
+	Directory string `json:"directory"`
+	Hostname  string `json:"hostname"`
 	// Port is the application's discovered port, nil until it has bound one.
 	// A domain without a port is a valid record that cannot route yet.
 	Port      *int   `json:"port"`
@@ -80,11 +83,11 @@ func NormalizeHostname(raw string) (string, error) {
 	return host, nil
 }
 
-// List returns a project's domains with the name and port of the application
-// each one routes to.
+// List returns a project's domains with the name, folder and port of the
+// application each one routes to.
 func List(database *sql.DB, projectID string) ([]Domain, error) {
-	rows, err := database.Query(`SELECT d.id, d.project_id, d.application_id, a.name, d.hostname,
-			a.port, d.created_at
+	rows, err := database.Query(`SELECT d.id, d.project_id, d.application_id, a.name, a.directory,
+			d.hostname, a.port, d.created_at
 		FROM domains d
 		JOIN applications a ON a.id = d.application_id
 		WHERE d.project_id = ? AND d.deleted_at IS NULL AND a.deleted_at IS NULL
@@ -99,7 +102,8 @@ func List(database *sql.DB, projectID string) ([]Domain, error) {
 		var domain Domain
 		var port sql.NullInt64
 		if err := rows.Scan(&domain.ID, &domain.ProjectID, &domain.ApplicationID,
-			&domain.ApplicationName, &domain.Hostname, &port, &domain.CreatedAt); err != nil {
+			&domain.ApplicationName, &domain.Directory, &domain.Hostname, &port,
+			&domain.CreatedAt); err != nil {
 			return nil, err
 		}
 		if port.Valid {
