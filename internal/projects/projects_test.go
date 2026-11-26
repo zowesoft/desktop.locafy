@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"locafy.dev/desktop/internal/db"
+	"locafy.dev/desktop/internal/network"
 	"locafy.dev/desktop/internal/settings"
 )
 
@@ -24,6 +25,28 @@ func newTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("migrate: %v", err)
 	}
 	return database
+}
+
+func activityDetails(t *testing.T, database *sql.DB, scopeID string) []string {
+	t.Helper()
+	rows, err := database.Query(`SELECT detail FROM activity_logs WHERE scope_id = ? ORDER BY rowid`, scopeID)
+	if err != nil {
+		t.Fatalf("query activity details: %v", err)
+	}
+	defer rows.Close()
+
+	var details []string
+	for rows.Next() {
+		var detail string
+		if err := rows.Scan(&detail); err != nil {
+			t.Fatalf("scan activity detail: %v", err)
+		}
+		details = append(details, detail)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("read activity details: %v", err)
+	}
+	return details
 }
 
 func activityActions(t *testing.T, database *sql.DB, scopeID string) []string {
@@ -438,6 +461,66 @@ func TestRemoveKeepsFilesAndReleasesThePath(t *testing.T) {
 	if actions := activityActions(t, database, project.ID); len(actions) != 2 || actions[1] != "Project removed" {
 		t.Fatalf("activity = %v, want Project created then Project removed", actions)
 	}
+}
+
+func TestRemoveReleasesTheProjectDomains(t *testing.T) {
+	database := newTestDB(t)
+	workspace := t.TempDir()
+
+	project, err := Create(database, workspace, "Smoke")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	appID := insertTestApplication(t, database, project.ID, ".")
+	domain, err := network.Assign(database, project.ID, appID, "api.removed.test")
+	if err != nil {
+		t.Fatalf("assign: %v", err)
+	}
+
+	if err := Remove(database, project.ID); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+
+	domains, err := network.List(database, project.ID)
+	if err != nil {
+		t.Fatalf("list domains: %v", err)
+	}
+	if len(domains) != 0 {
+		t.Fatalf("list holds %d domains after remove, want none", len(domains))
+	}
+	var deletedAt sql.NullString
+	if err := database.QueryRow(`SELECT deleted_at FROM domains WHERE id = ?`, domain.ID).Scan(&deletedAt); err != nil {
+		t.Fatalf("read domain: %v", err)
+	}
+	if !deletedAt.Valid || deletedAt.String == "" {
+		t.Fatalf("domain deleted_at = %v, want the release time", deletedAt)
+	}
+
+	// The released hostname is free again, so a later project can claim it.
+	next, err := Create(database, workspace, "Next")
+	if err != nil {
+		t.Fatalf("create next: %v", err)
+	}
+	nextApp := insertTestApplication(t, database, next.ID, ".")
+	if _, err := network.Assign(database, next.ID, nextApp, "api.removed.test"); err != nil {
+		t.Fatalf("reassign released hostname: %v", err)
+	}
+
+	details := activityDetails(t, database, project.ID)
+	if len(details) != 2 || !strings.Contains(details[1], "released 1 domain") {
+		t.Fatalf("removal detail = %v, want it to name the released domain", details)
+	}
+}
+
+func insertTestApplication(t *testing.T, database *sql.DB, projectID string, directory string) string {
+	t.Helper()
+	id := db.NewID()
+	_, err := database.Exec(`INSERT INTO applications (id, project_id, name, directory, start_command)
+		VALUES (?, ?, 'api', ?, 'go run .')`, id, projectID, directory)
+	if err != nil {
+		t.Fatalf("insert application: %v", err)
+	}
+	return id
 }
 
 func TestListOrdersLiveProjectsByName(t *testing.T) {

@@ -156,6 +156,30 @@ func Assign(database *sql.DB, projectID string, applicationID string, rawHostnam
 	return Domain{}, fmt.Errorf("assign %s: the record was not readable back", hostname)
 }
 
+// Execer is the part of *sql.DB and *sql.Tx that releasing domains needs, so
+// the release can join a caller's transaction.
+type Execer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
+// ReleaseProject releases every live hostname a project holds. Removing a
+// project calls it so a record cannot outlive the project that owned it and
+// keep routing, or keep its name claimed, once the project is gone. It reports
+// how many records it released.
+func ReleaseProject(database Execer, projectID string) (int, error) {
+	result, err := database.Exec(`UPDATE domains
+		SET deleted_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+		WHERE project_id = ? AND deleted_at IS NULL`, projectID)
+	if err != nil {
+		return 0, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return int(affected), nil
+}
+
 // Remove releases a hostname. The name becomes available to any project, and the
 // application is untouched.
 func Remove(database *sql.DB, id string) error {

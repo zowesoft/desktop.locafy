@@ -16,6 +16,7 @@ import (
 
 	"locafy.dev/desktop/internal/activity"
 	"locafy.dev/desktop/internal/db"
+	"locafy.dev/desktop/internal/network"
 	"locafy.dev/desktop/internal/settings"
 )
 
@@ -284,13 +285,21 @@ func ChangeRoot(database *sql.DB, id string, rootPath string) (Project, error) {
 }
 
 // Remove takes a project out of Locafy. The directory and its files stay on
-// disk, for managed and linked projects alike.
+// disk, for managed and linked projects alike, and the project's live domain
+// records are released with it so nothing keeps routing for a project that is
+// gone.
 func Remove(database *sql.DB, id string) error {
 	project, err := Get(database, id)
 	if err != nil {
 		return err
 	}
-	result, err := database.Exec(`UPDATE projects
+	tx, err := database.Begin()
+	if err != nil {
+		return fmt.Errorf("remove project %q: %w", id, err)
+	}
+	defer tx.Rollback()
+
+	result, err := tx.Exec(`UPDATE projects
 		SET deleted_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
 		WHERE id = ? AND deleted_at IS NULL`, id)
 	if err != nil {
@@ -299,7 +308,27 @@ func Remove(database *sql.DB, id string) error {
 	if affected, err := result.RowsAffected(); err == nil && affected == 0 {
 		return ErrNotFound
 	}
-	return activity.Log(database, activity.ScopeProject, id, "Project removed", project.Name)
+	released, err := network.ReleaseProject(tx, id)
+	if err != nil {
+		return fmt.Errorf("release the domains of project %q: %w", id, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("remove project %q: %w", id, err)
+	}
+	return activity.Log(database, activity.ScopeProject, id, "Project removed", releasedDetail(project.Name, released))
+}
+
+// releasedDetail names the hostnames a removal freed, so the activity feed
+// shows that the project's domains went with it.
+func releasedDetail(name string, released int) string {
+	switch released {
+	case 0:
+		return name
+	case 1:
+		return name + ", released 1 domain"
+	default:
+		return fmt.Sprintf("%s, released %d domains", name, released)
+	}
 }
 
 func insert(database *sql.DB, name string, root string, kind string) (Project, error) {
