@@ -1,6 +1,6 @@
 # ADR-0021: Local domains served by an in-process reverse proxy
 
-- **Status:** Accepted — 2026-11-26, after the implementation review at the end of this record
+- **Status:** Proposed — implementation reviewed against the shipped code on 2026-11-26 (see the review at the end of this record); operator approval is outstanding
 - **Date:** 2026-11-25
 - **Depends on:** ADR-0004 (local data model), ADR-0010 (applications and dependency graph), ADR-0014 (application ports and ownership), ADR-0009 (project workspace tabs)
 - **Affects:** DESK-NET-001
