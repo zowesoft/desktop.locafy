@@ -18,6 +18,7 @@ import (
 	"locafy.dev/desktop/internal/analytics"
 	"locafy.dev/desktop/internal/applications"
 	"locafy.dev/desktop/internal/db"
+	"locafy.dev/desktop/internal/diagnostics"
 	"locafy.dev/desktop/internal/dialogs"
 	"locafy.dev/desktop/internal/downloads"
 	"locafy.dev/desktop/internal/logs"
@@ -100,6 +101,7 @@ func run() error {
 	applications.SupervisorOf(appsService).SetLogSink(logStore)
 	services.SupervisorOf(servicesService).SetLogSink(logStore)
 	logsService := logs.NewService(logStore)
+	diagnosticsService := diagnostics.NewService(database, logStore, startedAt, logFile.Path())
 	analyticsService := analytics.NewService(database)
 	if pruned, err := analytics.ApplyRetention(database); err != nil {
 		slog.Warn("history retention could not run", "error", err)
@@ -129,6 +131,7 @@ func run() error {
 			application.NewService(appsService),
 			application.NewService(servicesService),
 			application.NewService(logsService),
+			application.NewService(diagnosticsService),
 			application.NewService(analyticsService),
 			application.NewService(networkService),
 			application.NewService(scaffoldService),

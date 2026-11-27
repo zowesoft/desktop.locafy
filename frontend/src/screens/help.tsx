@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Browser } from "@wailsio/runtime";
 import {
   BookOpen,
   ChevronDown,
@@ -11,9 +12,19 @@ import {
   Wrench,
   Zap,
 } from "lucide-react";
+import * as DiagnosticsService from "../../bindings/locafy.dev/desktop/internal/diagnostics/service";
+import type { Bundle } from "../../bindings/locafy.dev/desktop/internal/diagnostics/models";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
 // ─── Mock content ─────────────────────────────────────────────────────────────
@@ -133,7 +144,12 @@ function ArticleRow({ article }: { article: HelpArticle }) {
 
 export function HelpScreen() {
   const [search, setSearch] = useState("");
-  const [exporting, setExporting] = useState(false);
+  const [bundle, setBundle] = useState<Bundle | null>(null);
+  const [selected, setSelected] = useState("");
+  const [preparing, setPreparing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedPath, setSavedPath] = useState("");
+  const [failure, setFailure] = useState("");
 
   const filtered = HELP_SECTIONS.map((section) => ({
     ...section,
@@ -145,10 +161,40 @@ export function HelpScreen() {
     ),
   })).filter((section) => section.articles.length > 0);
 
-  const handleExport = () => {
-    setExporting(true);
-    setTimeout(() => setExporting(false), 2000);
+  // Preparing and saving are separate steps: the bundle is shown for review
+  // first, and only the explicit save reaches the native dialog.
+  const handleReview = async () => {
+    setPreparing(true);
+    setFailure("");
+    setSavedPath("");
+    try {
+      const prepared = await DiagnosticsService.Preview();
+      setBundle(prepared);
+      setSelected(prepared.files?.[0]?.name ?? "");
+    } catch (error) {
+      setFailure(`The diagnostics bundle could not be prepared: ${String(error)}`);
+    } finally {
+      setPreparing(false);
+    }
   };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setFailure("");
+    try {
+      const path = await DiagnosticsService.Export();
+      setSavedPath(path);
+    } catch (error) {
+      const message = String(error);
+      setFailure(
+        /cancelled/i.test(message) ? "" : `The bundle was not saved: ${message}`,
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const shownFile = bundle?.files?.find((file) => file.name === selected) ?? bundle?.files?.[0];
 
   return (
     <div className="flex min-h-full flex-col">
@@ -212,7 +258,11 @@ export function HelpScreen() {
               <p className="text-xs text-muted-foreground">locafy.dev/docs — requires internet</p>
             </div>
           </div>
-          <Button variant="outline" size="sm">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void Browser.OpenURL("https://locafy.dev/docs")}
+          >
             <ExternalLink className="mr-1.5 size-3.5" />
             Open docs
           </Button>
@@ -227,8 +277,8 @@ export function HelpScreen() {
                 <p className="text-sm font-medium">Export diagnostics bundle</p>
                 <p className="text-xs text-muted-foreground">
                   Creates a zip with logs, config, and system info to share with support. All
-                  passwords, tokens, and secrets are automatically masked before export — review the
-                  bundle before sharing.
+                  passwords, tokens, and secrets are automatically masked. You review every file
+                  before anything is saved.
                 </p>
               </div>
             </div>
@@ -236,19 +286,84 @@ export function HelpScreen() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleExport}
-                disabled={exporting}
+                onClick={() => void handleReview()}
+                disabled={preparing}
               >
                 <Download className="mr-1.5 size-3.5" />
-                {exporting ? "Preparing bundle…" : "Export diagnostics"}
+                {preparing ? "Preparing bundle…" : "Review diagnostics"}
               </Button>
               <Badge
                 variant="secondary"
                 className="bg-amber-500/10 text-amber-500 border-amber-500/20 text-xs"
               >
-                Review before sharing
+                Nothing is saved until you confirm
               </Badge>
             </div>
+            {failure && (
+              <p role="alert" className="text-xs text-destructive">
+                {failure}
+              </p>
+            )}
+            {savedPath && (
+              <p className="break-all text-xs text-muted-foreground">
+                Saved to <span className="font-mono">{savedPath}</span>
+              </p>
+            )}
+            {bundle && (
+              <Dialog open onOpenChange={(open) => !open && setBundle(null)}>
+                <DialogContent className="max-w-2xl">
+                  <DialogHeader>
+                    <DialogTitle>Review the diagnostics bundle</DialogTitle>
+                    <DialogDescription>
+                      {bundle.files?.length ?? 0} files, masked before they leave this machine.
+                      Secrets appear as •••.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="flex flex-wrap gap-1">
+                    {(bundle.files ?? []).map((file) => (
+                      <button
+                        key={file.name}
+                        type="button"
+                        onClick={() => setSelected(file.name)}
+                        className={
+                          file.name === shownFile?.name
+                            ? "rounded-md border border-border bg-muted px-2 py-1 font-mono text-xs"
+                            : "rounded-md border border-transparent px-2 py-1 font-mono text-xs text-muted-foreground hover:bg-muted/60"
+                        }
+                      >
+                        {file.name}
+                        {file.masked && <span className="ml-1 text-amber-500">•••</span>}
+                      </button>
+                    ))}
+                  </div>
+                  {shownFile && (
+                    <div className="space-y-1">
+                      <pre className="max-h-64 overflow-auto rounded-md border border-border bg-muted/30 p-3 text-xs whitespace-pre-wrap break-all">
+                        {shownFile.content}
+                      </pre>
+                      <p className="text-[0.7rem] text-muted-foreground">
+                        {shownFile.bytes} bytes
+                        {shownFile.truncated ? " · showing the first part only; the archive holds the whole file" : ""}
+                        {shownFile.masked ? " · at least one value in this file was masked" : ""}
+                      </p>
+                    </div>
+                  )}
+                  {failure && (
+                    <p role="alert" className="text-xs text-destructive">
+                      {failure}
+                    </p>
+                  )}
+                  <DialogFooter>
+                    <Button variant="ghost" size="sm" onClick={() => setBundle(null)}>
+                      Close
+                    </Button>
+                    <Button size="sm" onClick={() => void handleSave()} disabled={saving}>
+                      {saving ? "Saving…" : "Save bundle…"}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            )}
           </CardContent>
         </Card>
       </div>

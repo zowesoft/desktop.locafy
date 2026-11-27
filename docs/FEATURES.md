@@ -30,7 +30,7 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 | TUN-PROTO-001 | Tunnel threat model and protocol (shared) | Gateway · Desktop · API | 9 | NOT_STARTED | API-AUTH-001, API-DEVICE-001, DESK-NET-001 |
 | TUN-AGENT-001 | Desktop tunnel agent | desktop.locafy | 9 | NOT_STARTED | TUN-PROTO-001 |
 | TUN-E2E-001 | End-to-end public tunnel flow (shared) | Gateway · Desktop · API | 9 | NOT_STARTED | TUN-PROTO-001, TUN-AGENT-001, TUN-GATE-001 |
-| DESK-HELP-001 | Help and diagnostics export | desktop.locafy | 10 | NOT_STARTED | DESK-BOOT-001 |
+| DESK-HELP-001 | Help and diagnostics export | desktop.locafy | 10 | IN_PROGRESS | DESK-BOOT-001 |
 | DESK-EXT-001 | Extensions platform | desktop.locafy | 11 | NOT_STARTED | DESK-UI-001, DESK-DB-001 |
 | DESK-CLI-001 | Engine JSON API and the local CLI | desktop.locafy | 12 | NOT_STARTED | DESK-PROJ-002, DESK-APP-002, DESK-SVC-001, DESK-NET-001 |
 | DESK-MCP-001 | MCP server for AI clients | desktop.locafy | 12 | NOT_STARTED | DESK-CLI-001 |
@@ -353,12 +353,13 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 - **Description:** Offline help entry point: built-in guidance for common tasks and problems, a way to open the documentation, and an exportable diagnostics bundle for reporting issues (PRD section 6.4).
 - **Dependencies:** DESK-BOOT-001
 - **Acceptance criteria:** Help content is usable without a network connection; a diagnostics bundle can be exported only after explicit user review; secrets and environment values are masked in the bundle (PRD sections 6.4, 12, 18.1).
-- **Status:** NOT_STARTED
+- **Status:** IN_PROGRESS
 - **Assigned agent:** —
-- **Files/modules:** —
-- **Tests:** Offline help rendering; bundle export; secret-masking checks on bundle contents
-- **Blockers:** —
-- **Evidence:** —
+- **Files/modules:** `internal/diagnostics/diagnostics.go` (the bundle builder: system, counts, settings, activity and log files, every one re-masked before it is written, and the zip writer), `internal/diagnostics/service.go` (the bindings: `Preview` prepares the bundle in memory, `Export` opens the native save dialog and writes the archive; a cancelled dialog returns `ErrCancelled`), `internal/diagnostics/diagnostics_test.go`, `internal/logs/rotate.go` (a `Path()` accessor for the live log file), `main.go` (service wiring), `frontend/src/screens/help.tsx`, `frontend/src/screens/help.test.tsx`, `frontend/bindings/.../internal/diagnostics/`
+- **Tests:** `internal/diagnostics/diagnostics_test.go` (4 tests) — the bundle describes the engine and masks secrets in every file, an empty engine still produces a complete bundle instead of failing, the archive round-trips every member, and the default filename carries the moment. `frontend/src/screens/help.test.tsx` (4 tests) — the built-in articles are searchable with no network, the documentation link opens in the system browser, the masked bundle is shown for review and nothing is saved until the dialog's Save is chosen, and a cancelled save stays quiet while a real failure is reported.
+- **Blockers:** None for this slice. Status history and usage trends are unrelated and tracked under DESK-ANAL-001.
+- **Evidence (offline help and reviewed bundle):** The Help screen keeps its original shape — searchable Getting started, Troubleshooting and Key concepts articles, a full-documentation link that calls `Browser.OpenURL`, and the diagnostics card — and now really works offline: the articles are compiled into the frontend, the search filters titles and bodies, and the link is the only network-dependent action. Export is two steps by construction. `Review diagnostics` calls `Preview`, which builds the bundle in memory (nothing touches the disk) and returns its files, each already masked and carrying a `masked` flag; the dialog lists the file names with a ••• marker on the masked ones and shows the selected file's content, its byte count, a truncation note when only the head is shown, and the honest reminder that the archive holds the whole file. `Save bundle…` calls `Export`, which asks for a destination through the native save dialog with a suggested `locafy-diagnostics-<timestamp>.zip` name and only then writes the zip; closing the dialog without choosing a path leaves the screen unchanged, while a real failure shows a `role="alert"` message inside the dialog. The bundle holds `system.txt` (app version, Go version, OS, CPU), `counts.txt` (projects, applications, services, activity rows), `settings.txt` (the stored preferences), `activity.txt` (the recent action history) and `logs.txt` (the rotated log), and every file passes through `logs.Mask` again even though the stored log lines were masked on the way in, so a value that slipped through in settings or activity is masked too.
+- **Evidence (checks):** `go build ./...` and `go test ./internal/diagnostics ./internal/logs` (4 + 5 tests) are green; `npx tsc --noEmit` is clean and `npx vitest run src/screens/help.test.tsx` passes (4 tests). The full suites and a rebuilt-app check of the review dialog are the next step.
 
 ### DESK-EXT-001 — Extensions platform
 

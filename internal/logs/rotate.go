@@ -37,6 +37,14 @@ func New(path string, maxBytes int64, backups int) (*Rotator, error) {
 	return rotator, nil
 }
 
+// Path reports the file the engine writes its own log to.
+func (r *Rotator) Path() string {
+	if r == nil {
+		return ""
+	}
+	return r.path
+}
+
 // open seeks to the end of the log file so appends continue where the
 // last run stopped.
 func (r *Rotator) open() error {
