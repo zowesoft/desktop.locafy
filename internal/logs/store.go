@@ -17,6 +17,19 @@ const (
 	LayerService     = "service"
 )
 
+// Levels are read from the line's wording, the only signal an unstructured
+// process output offers. They drive the severity column and filter, so a line
+// that names a failure is shown as one instead of being buried in the stream.
+const (
+	LevelError = "error"
+	LevelWarn  = "warn"
+	LevelInfo  = "info"
+	LevelDebug = "debug"
+)
+
+// timeFormat keeps milliseconds, the precision a log reader expects to see.
+const timeFormat = "2006-01-02T15:04:05.000Z07:00"
+
 // DefaultCapacity is how many lines the store keeps, oldest dropped first.
 const DefaultCapacity = 2000
 
@@ -27,6 +40,7 @@ type Entry struct {
 	Layer    string `json:"layer"`
 	SourceID string `json:"sourceId"`
 	Source   string `json:"source"`
+	Level    string `json:"level"`
 	Line     string `json:"line"`
 	Masked   bool   `json:"masked"`
 }
@@ -37,6 +51,7 @@ type Filter struct {
 	ProjectID string `json:"projectId"`
 	Layer     string `json:"layer"`
 	SourceID  string `json:"sourceId"`
+	Level     string `json:"level"`
 	Contains  string `json:"contains"`
 	Limit     int    `json:"limit"`
 }
@@ -70,9 +85,10 @@ func (s *Store) Record(layer string, sourceID string, line string) {
 	}
 	clean, masked := Mask(line)
 	entry := Entry{
-		Time:     time.Now().UTC().Format(time.RFC3339),
+		Time:     time.Now().UTC().Format(timeFormat),
 		Layer:    layer,
 		SourceID: sourceID,
+		Level:    LevelOf(clean),
 		Line:     clean,
 		Masked:   masked,
 	}
@@ -108,6 +124,9 @@ func (s *Store) Query(filter Filter) []Entry {
 	for index := len(s.entries) - 1; index >= 0 && len(found) < limit; index-- {
 		entry := s.entries[index]
 		if filter.Layer != "" && entry.Layer != filter.Layer {
+			continue
+		}
+		if filter.Level != "" && entry.Level != filter.Level {
 			continue
 		}
 		if filter.SourceID != "" && entry.SourceID != filter.SourceID {
@@ -186,6 +205,20 @@ func (s *Store) sourceNames() map[string]string {
 	return names
 }
 
+// LevelOf reads a line's severity from its wording.
+func LevelOf(line string) string {
+	switch {
+	case errorLine.MatchString(line):
+		return LevelError
+	case warnLine.MatchString(line):
+		return LevelWarn
+	case debugLine.MatchString(line):
+		return LevelDebug
+	default:
+		return LevelInfo
+	}
+}
+
 // Mask replaces values that look like secrets, so a password printed by a
 // framework never reaches the log store, the interface or an exported copy. It
 // reports whether it changed the line.
@@ -211,4 +244,8 @@ var (
 	bearer = regexp.MustCompile(`(?i)\b(bearer\s+)[A-Za-z0-9._~+/=-]{8,}`)
 	// Credentials embedded in a URL.
 	urlCredentials = regexp.MustCompile(`(://[^/\s:@]+:)[^/\s@]+@`)
+	// Severity words a line may name itself with.
+	errorLine = regexp.MustCompile(`(?i)\b(err|error|fatal|panic|exception|traceback|failed|failure|refused|denied)\b`)
+	warnLine  = regexp.MustCompile(`(?i)\b(warn|warning|deprecated|slow|timeout|timed out|retry|retrying|caution)\b`)
+	debugLine = regexp.MustCompile(`(?i)\b(debug|trace|verbose)\b`)
 )

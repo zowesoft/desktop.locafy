@@ -10,6 +10,7 @@ export interface Entry {
     "layer": string;
     "sourceId": string;
     "source": string;
+    "level": string;
     "line": string;
     "masked": boolean;
 }
@@ -22,6 +23,7 @@ export interface Filter {
     "projectId": string;
     "layer": string;
     "sourceId": string;
+    "level": string;
     "contains": string;
     "limit": number;
 }

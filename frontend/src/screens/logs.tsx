@@ -11,8 +11,8 @@ export function LogsScreen() {
       <div className="border-b border-border px-6 py-5">
         <h1 className="text-lg font-semibold tracking-tight">Logs</h1>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Output from every application and service Locafy started in this session, with its source
-          named on each line. A project's own lines are in that project's Logs tab.
+          Machine-wide log stream from all Locafy-managed processes · Project-specific logs are in
+          each project's Logs tab
         </p>
       </div>
       <LiveLogs />

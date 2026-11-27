@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -17,7 +17,8 @@ const entry = (overrides: Partial<Entry> = {}): Entry => ({
   layer: "application",
   sourceId: "app-1",
   source: "Etugora Web",
-  line: "vite ready in 240ms",
+  level: "info",
+  line: "✓ Ready in 2.6s",
   masked: false,
   ...overrides,
 });
@@ -37,42 +38,53 @@ beforeEach(() => {
 });
 
 describe("LiveLogs", () => {
-  it("lists the captured lines with their source and masks the credentials", async () => {
+  it("shows each line with its time, source, severity and masked marker", async () => {
     vi.mocked(LogsService.Entries).mockResolvedValue([
       entry(),
-      entry({ id: 2, layer: "service", sourceId: "svc-1", source: "PostgreSQL", line: "password=••• accepted", masked: true }),
+      entry({
+        id: 2,
+        layer: "service",
+        sourceId: "svc-1",
+        source: "PostgreSQL",
+        level: "warn",
+        line: "password=••• accepted after retry",
+        masked: true,
+      }),
     ]);
 
     renderLogs("p1");
 
-    expect(await screen.findByText("vite ready in 240ms")).toBeInTheDocument();
-    const lines = within(screen.getByRole("list"));
-    expect(lines.getByText("PostgreSQL")).toBeInTheDocument();
-    expect(lines.getByText("Etugora Web")).toBeInTheDocument();
-    expect(lines.getByText("masked")).toBeInTheDocument();
-    expect(screen.getByText(/1 with secrets masked/)).toBeInTheDocument();
+    expect(await screen.findByText("✓ Ready in 2.6s")).toBeInTheDocument();
+    expect(screen.getByText("info")).toBeInTheDocument();
+    expect(screen.getByText("warn")).toBeInTheDocument();
+    expect(screen.getAllByText("PostgreSQL").length).toBeGreaterThan(0);
+    expect(screen.getByText("masked")).toBeInTheDocument();
+    expect(screen.getByText(/1 masked/)).toBeInTheDocument();
     expect(LogsService.Entries).toHaveBeenCalledWith({
       projectId: "p1",
       layer: "",
       sourceId: "",
+      level: "",
       contains: "",
       limit: 300,
     });
   });
 
-  it("asks the engine for the chosen layer and the typed text", async () => {
+  it("asks the engine for the chosen source kind, severity and text", async () => {
     const user = userEvent.setup();
     renderLogs();
 
     await user.selectOptions(screen.getByLabelText("Filter by source kind"), "service");
-    await user.type(screen.getByLabelText("Search log lines"), "ready");
+    await user.click(screen.getByRole("button", { name: "Error" }));
+    await user.type(screen.getByLabelText("Search log lines"), "refused");
 
     await waitFor(() =>
       expect(LogsService.Entries).toHaveBeenCalledWith({
         projectId: "",
         layer: "service",
         sourceId: "",
-        contains: "ready",
+        level: "error",
+        contains: "refused",
         limit: 300,
       }),
     );
@@ -81,6 +93,7 @@ describe("LiveLogs", () => {
   it("says nothing has been captured yet on an idle engine", async () => {
     renderLogs();
 
-    expect(await screen.findByText(/No output captured yet/)).toBeInTheDocument();
+    expect(await screen.findByText("No output captured yet.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Export logs" })).toBeDisabled();
   });
 });

@@ -44,6 +44,23 @@ func TestMaskRemovesCredentials(t *testing.T) {
 	}
 }
 
+func TestLevelOfReadsTheWording(t *testing.T) {
+	cases := map[string]string{
+		"Error: connect ECONNREFUSED 127.0.0.1:5432": LevelError,
+		"npm ERR! code ELIFECYCLE":                   LevelError,
+		"warning: deprecated option --legacy":         LevelWarn,
+		"request timed out after 5000ms":              LevelWarn,
+		"debug: resolved 42 modules":                  LevelDebug,
+		"✓ Ready in 2.6s":                             LevelInfo,
+		"- Local: http://localhost:3000":              LevelInfo,
+	}
+	for line, want := range cases {
+		if got := LevelOf(line); got != want {
+			t.Fatalf("LevelOf(%q) = %q, want %q", line, got, want)
+		}
+	}
+}
+
 func TestStoreKeepsTheNewestLinesWithinItsCapacity(t *testing.T) {
 	store := NewStore(nil, 3)
 
@@ -82,6 +99,20 @@ func TestStoreFiltersByLayerSourceAndText(t *testing.T) {
 	}
 	if limited := store.Query(Filter{Limit: 2}); len(limited) != 2 || limited[1].SourceID != "app-2" {
 		t.Fatalf("limit = %+v, want the newest two lines", limited)
+	}
+}
+
+func TestStoreFiltersByLevel(t *testing.T) {
+	store := NewStore(nil, 0)
+	store.Record(LayerApplication, "app-1", "✓ Ready in 2.6s")
+	store.Record(LayerApplication, "app-1", "warning: deprecated option")
+	store.Record(LayerApplication, "app-1", "Error: connect ECONNREFUSED")
+
+	for level, want := range map[string]string{LevelError: "ECONNREFUSED", LevelWarn: "deprecated", LevelInfo: "Ready"} {
+		entries := store.Query(Filter{Level: level})
+		if len(entries) != 1 || !strings.Contains(entries[0].Line, want) {
+			t.Fatalf("level %q = %+v, want the line containing %q", level, entries, want)
+		}
 	}
 }
 
