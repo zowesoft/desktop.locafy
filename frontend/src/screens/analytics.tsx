@@ -1,269 +1,262 @@
-import { Activity, Clock, Cpu, HardDrive, Info } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Activity, CalendarDays, Database, ListChecks } from "lucide-react";
+
+import * as AnalyticsService from "../../bindings/locafy.dev/desktop/internal/analytics/service";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
+const analyticsKey = (days: number) => ["analytics", "trend", days] as const;
+const retentionKey = ["analytics", "retention"] as const;
+const windows = [7, 30, 90] as const;
+const retentionChoices = [30, 90, 180, 365];
 
-const ACTIVITY_ITEMS = [
-  { time: "16:47", event: "Locafy engine started", project: null, kind: "system" as const },
-  { time: "16:47", event: "PostgreSQL 17 started (shared)", project: null, kind: "service" as const },
-  { time: "16:47", event: "Redis 7.4 started (shared)", project: null, kind: "service" as const },
-  { time: "16:47", event: "Etugora project resumed", project: "Etugora", kind: "project" as const },
-  { time: "16:48", event: "Etugora API started on :8000", project: "Etugora", kind: "app" as const },
-  { time: "16:48", event: "Etugora Auth started on :3001", project: "Etugora", kind: "app" as const },
-  { time: "16:48", event: "ML Service started on :5000", project: "Etugora", kind: "app" as const },
-  { time: "16:49", event: "PHP 8.4.2 download started", project: null, kind: "system" as const },
-  { time: "16:51", event: "Folio project opened", project: "Folio", kind: "project" as const },
-];
-
-const CPU_SPARKLINE = [12, 18, 24, 20, 32, 28, 24, 30, 26, 24];
-const MEM_SPARKLINE = [2.1, 2.2, 2.4, 2.5, 2.7, 2.8, 2.8, 2.8, 2.8, 2.8];
-const DISK_SPARKLINE = [18.0, 18.1, 18.2, 18.3, 18.4, 18.5, 18.5, 18.5, 18.6, 18.6];
-
-function Sparkline({
-  data,
-  color,
-  unit,
-}: {
-  data: number[];
-  color: string;
-  unit?: string;
-}) {
-  const max = Math.max(...data);
-  const min = Math.min(...data) * 0.9;
-  const range = max - min || 1;
-  const height = 40;
-  const width = 120;
-  const step = width / (data.length - 1);
-
-  const points = data
-    .map((v, i) => {
-      const x = i * step;
-      const y = height - ((v - min) / range) * height;
-      return `${x},${y}`;
-    })
-    .join(" ");
-
-  return (
-    <svg width={width} height={height} className="shrink-0">
-      <polyline
-        points={points}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className={color}
-      />
-    </svg>
-  );
-}
-
-function ResourceCard({
-  label,
-  current,
-  max,
-  unit,
-  icon: Icon,
-  color,
-  sparkline,
-  scope,
-}: {
-  label: string;
-  current: string;
-  max?: string;
-  unit: string;
-  icon: React.ElementType;
-  color: string;
-  sparkline: number[];
-  scope: string;
-}) {
-  return (
-    <Card>
-      <CardContent className="pt-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Icon className="size-3.5" />
-              {label}
-            </div>
-            <p className="text-2xl font-semibold tabular-nums">
-              {current}
-              <span className="ml-1 text-sm font-normal text-muted-foreground">{unit}</span>
-            </p>
-            {max && (
-              <p className="text-xs text-muted-foreground">
-                of {max} {unit}
-              </p>
-            )}
-            <Badge variant="secondary" className="text-xs font-normal">
-              {scope}
-            </Badge>
-          </div>
-          <Sparkline data={sparkline} color={color} />
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function ActivityDot({ kind }: { kind: "system" | "service" | "project" | "app" }) {
-  const styles = {
-    system: "bg-muted-foreground",
-    service: "bg-blue-400",
-    project: "bg-primary",
-    app: "bg-success",
-  };
-  return <span className={cn("size-2 shrink-0 rounded-full mt-1.5", styles[kind])} />;
+function dayLabel(day: string): string {
+  const date = new Date(`${day}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return day;
+  return date.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
 export function AnalyticsScreen() {
+  const queryClient = useQueryClient();
+  const [days, setDays] = useState<number>(30);
+
+  const trend = useQuery({
+    queryKey: analyticsKey(days),
+    queryFn: () => AnalyticsService.Trend(days),
+    refetchInterval: 30_000,
+  });
+  const retention = useQuery({
+    queryKey: retentionKey,
+    queryFn: () => AnalyticsService.Retention(),
+  });
+  const changeRetention = useMutation({
+    mutationFn: (next: number) => AnalyticsService.SetRetention(next),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["analytics"] });
+    },
+  });
+
+  const data = trend.data;
+  const busiest = useMemo(() => {
+    const points = data?.days ?? [];
+    return points.reduce((best, point) => (point.count > best.count ? point : best), {
+      day: "",
+      count: 0,
+    });
+  }, [data]);
+  const peak = Math.max(1, ...(data?.days ?? []).map((point) => point.count));
+  const total = data?.total ?? 0;
+
   return (
-    <div className="flex min-h-full flex-col">
-      {/* Header */}
-      <div className="border-b border-border px-6 py-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-lg font-semibold tracking-tight">Analytics</h1>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Local-only resource and activity data · nothing is sent externally
-            </p>
-          </div>
-          <Badge variant="secondary" className="font-normal">
-            <Clock className="mr-1 size-3" />
-            Updated 30 s ago
+    <div className="mx-auto w-full max-w-6xl space-y-4 px-6 py-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-lg font-semibold tracking-tight">Analytics</h1>
+          <p className="text-xs text-muted-foreground">
+            What Locafy recorded on this machine. Read from the local action history — no account, no
+            upload.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline" className="font-normal">
+            Machine-wide
           </Badge>
+          <div className="flex rounded-md border border-border bg-muted/40 p-0.5">
+            {windows.map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setDays(option)}
+                className={cn(
+                  "rounded px-2.5 py-1 text-xs transition-colors",
+                  days === option
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {option}d
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      <div className="flex-1 space-y-6 px-6 py-6">
-        {/* Resource cards */}
-        <section className="space-y-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Resource usage — Locafy-managed processes
-          </h2>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <ResourceCard
-              label="CPU"
-              current="24"
-              unit="%"
-              icon={Cpu}
-              color="text-primary"
-              sparkline={CPU_SPARKLINE}
-              scope="Locafy-managed"
-            />
-            <ResourceCard
-              label="Memory"
-              current="2.8"
-              max="8"
-              unit="GB"
-              icon={Activity}
-              color="text-blue-400"
-              sparkline={MEM_SPARKLINE}
-              scope="Locafy-managed"
-            />
-            <ResourceCard
-              label="Disk I/O"
-              current="18.6"
-              max="100"
-              unit="GB"
-              icon={HardDrive}
-              color="text-amber-400"
-              sparkline={DISK_SPARKLINE}
-              scope="Locafy data only"
-            />
-          </div>
-        </section>
-
-        {/* Status history */}
-        <section className="space-y-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Project status history — today
-          </h2>
-          <div className="overflow-hidden rounded-lg border border-border">
-            <table className="w-full text-sm">
-              <thead className="border-b border-border bg-muted/40">
-                <tr>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                    Project
-                  </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                    Status
-                  </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                    Apps
-                  </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                    Uptime
-                  </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                    CPU avg
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {[
-                  { name: "Etugora", status: "running", apps: 3, uptime: "4h 12m", cpu: "18%" },
-                  { name: "Folio", status: "stopped", apps: 1, uptime: "—", cpu: "—" },
-                ].map((row) => (
-                  <tr key={row.name}>
-                    <td className="px-4 py-2.5 font-medium">{row.name}</td>
-                    <td className="px-4 py-2.5">
-                      <span
-                        className={cn(
-                          "inline-flex items-center gap-1.5 text-xs",
-                          row.status === "running" ? "text-success" : "text-muted-foreground",
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            "size-1.5 rounded-full",
-                            row.status === "running" ? "bg-success" : "bg-muted-foreground/40",
-                          )}
-                        />
-                        {row.status === "running" ? "Running" : "Stopped"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 text-muted-foreground">{row.apps}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs">{row.uptime}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs">{row.cpu}</td>
-                  </tr>
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Card className="py-0">
+          <CardContent className="flex items-center gap-3 p-4">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
+              <Activity className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">Recorded actions</p>
+              <p className="text-xl font-semibold tracking-tight">{trend.isPending ? "—" : total}</p>
+              <p className="text-xs text-muted-foreground">in the last {days} days</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="py-0">
+          <CardContent className="flex items-center gap-3 p-4">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
+              <CalendarDays className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">Busiest day</p>
+              <p className="text-xl font-semibold tracking-tight">
+                {busiest.count > 0 ? busiest.count : "—"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {busiest.count > 0 ? dayLabel(busiest.day) : "nothing recorded yet"}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="py-0">
+          <CardContent className="flex items-center gap-3 p-4">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+              <ListChecks className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">Action kinds</p>
+              <p className="text-xl font-semibold tracking-tight">{data?.actions?.length ?? 0}</p>
+              <p className="text-xs text-muted-foreground">distinct in this window</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="py-0">
+          <CardContent className="flex items-center gap-3 p-4">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+              <Database className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">History kept</p>
+              <p className="text-xl font-semibold tracking-tight">
+                {retention.isPending ? "—" : `${retention.data ?? 0} days`}
+              </p>
+              <select
+                aria-label="Keep history for"
+                value={retention.data ?? ""}
+                disabled={changeRetention.isPending}
+                onChange={(event) => changeRetention.mutate(Number(event.target.value))}
+                className="mt-1 h-7 rounded-md border border-border bg-background px-1.5 text-xs focus:outline-none"
+              >
+                {retentionChoices.map((choice) => (
+                  <option key={choice} value={choice}>
+                    Keep {choice} days
+                  </option>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+              </select>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
 
-        {/* Activity timeline */}
-        <section className="space-y-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Activity timeline — today
-          </h2>
-          <div className="space-y-0 overflow-hidden rounded-lg border border-border divide-y divide-border">
-            {ACTIVITY_ITEMS.map((item, i) => (
-              <div key={i} className="flex items-start gap-3 px-4 py-2.5">
-                <span className="mt-0.5 w-10 shrink-0 font-mono text-xs text-muted-foreground/70">
-                  {item.time}
-                </span>
-                <ActivityDot kind={item.kind} />
-                <span className="flex-1 text-xs">{item.event}</span>
-                {item.project && (
-                  <Badge variant="outline" className="shrink-0 text-xs font-normal">
-                    {item.project}
-                  </Badge>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Actions per day</CardTitle>
+          <CardDescription>
+            Every recorded action, machine-wide, for the last {days} days. Days with nothing recorded
+            stay in the chart as gaps.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {trend.error ? (
+            <p role="alert" className="text-sm text-destructive">
+              Could not read the activity history: {String(trend.error)}
+            </p>
+          ) : trend.isPending ? (
+            <p className="text-sm text-muted-foreground">Reading the history…</p>
+          ) : total === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Nothing has been recorded in this window yet. Starting a project, attaching a service or
+              adding an application writes the first entries.
+            </p>
+          ) : (
+            <div
+              className="flex h-40 items-end gap-1"
+              role="img"
+              aria-label={`Recorded actions per day over ${days} days, ${total} in total`}
+            >
+              {(data?.days ?? []).map((point) => (
+                <div key={point.day} className="group flex h-full min-w-0 flex-1 flex-col justify-end">
+                  <div
+                    className={cn(
+                      "w-full rounded-t-sm",
+                      point.count === 0 ? "bg-muted/60" : "bg-primary/70 group-hover:bg-primary",
+                    )}
+                    style={{ height: `${Math.max(2, (point.count / peak) * 100)}%` }}
+                    title={`${point.day}: ${point.count} action${point.count === 1 ? "" : "s"}`}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+          {total > 0 && (
+            <div className="mt-2 flex justify-between text-[0.7rem] text-muted-foreground">
+              <span>{dayLabel(data?.days?.[0]?.day ?? "")}</span>
+              <span>{dayLabel(data?.days?.[(data?.days?.length ?? 1) - 1]?.day ?? "")}</span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-        {/* Local-only note */}
-        <div className="flex items-center gap-2 rounded-lg border border-border p-3 text-xs text-muted-foreground">
-          <Info className="size-3.5 shrink-0" />
-          All analytics data is stored locally on this machine and is never sent to Locafy servers.
-          Data is kept for 30 days and then removed automatically.
-        </div>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">What happened</CardTitle>
+            <CardDescription>
+              The actions recorded in this window, most frequent first. Each count is one recorded
+              entry, not a sample.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {(data?.actions?.length ?? 0) === 0 ? (
+              <p className="text-sm text-muted-foreground">No actions recorded in this window.</p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {(data?.actions ?? []).map((action) => {
+                  const share = total === 0 ? 0 : Math.round((action.count / total) * 100);
+                  return (
+                    <li key={action.action} className="flex items-center gap-3 py-2.5">
+                      <span className="min-w-0 flex-1 truncate text-sm">{action.action}</span>
+                      <span className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-muted">
+                        <span
+                          className="block h-full rounded-full bg-primary"
+                          style={{ width: `${Math.max(4, share)}%` }}
+                        />
+                      </span>
+                      <span className="w-14 shrink-0 text-right font-mono text-xs text-muted-foreground">
+                        {action.count}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Not recorded yet</CardTitle>
+            <CardDescription>What this view will add as the remaining work lands.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-xs text-muted-foreground">
+            <p>
+              Resource trends (CPU, memory, disk over time) are not stored: the meters on the overview
+              show the current reading only.
+            </p>
+            <p>
+              Status history is not stored: a restarted or failed application appears here only as the
+              project action that caused it.
+            </p>
+            <p>
+              Retention applies to the action history above. Lowering it prunes immediately; raising it
+              keeps future entries for longer.
+            </p>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

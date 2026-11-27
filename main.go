@@ -15,6 +15,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/events"
 
 	"locafy.dev/desktop/internal/activity"
+	"locafy.dev/desktop/internal/analytics"
 	"locafy.dev/desktop/internal/applications"
 	"locafy.dev/desktop/internal/db"
 	"locafy.dev/desktop/internal/dialogs"
@@ -99,6 +100,12 @@ func run() error {
 	applications.SupervisorOf(appsService).SetLogSink(logStore)
 	services.SupervisorOf(servicesService).SetLogSink(logStore)
 	logsService := logs.NewService(logStore)
+	analyticsService := analytics.NewService(database)
+	if pruned, err := analytics.ApplyRetention(database); err != nil {
+		slog.Warn("history retention could not run", "error", err)
+	} else if pruned > 0 {
+		slog.Info("history pruned to its retention window", "rows", pruned)
+	}
 	networkService := network.NewService(database)
 	scaffoldService := scaffold.NewService(database)
 	runtimesService := runtimes.NewService()
@@ -122,6 +129,7 @@ func run() error {
 			application.NewService(appsService),
 			application.NewService(servicesService),
 			application.NewService(logsService),
+			application.NewService(analyticsService),
 			application.NewService(networkService),
 			application.NewService(scaffoldService),
 			application.NewService(runtimesService),

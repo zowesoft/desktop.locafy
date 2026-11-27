@@ -26,7 +26,7 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 | DESK-SVC-001 | Service catalogue and lifecycle | desktop.locafy | 5 | IN_PROGRESS | DESK-APP-002 |
 | DESK-NET-001 | Local domains and reverse proxy | desktop.locafy | 6 | TESTING | DESK-APP-002, DESK-SVC-001 |
 | DESK-DEVX-001 | Integrated terminal and logs | desktop.locafy | 7 | IN_PROGRESS | DESK-PROJ-002, DESK-APP-002, DESK-SVC-001 |
-| DESK-ANAL-001 | Analytics views | desktop.locafy | 7 | NOT_STARTED | DESK-DB-002, DESK-DEVX-001 |
+| DESK-ANAL-001 | Analytics views | desktop.locafy | 7 | IN_PROGRESS | DESK-DB-002, DESK-DEVX-001 |
 | TUN-PROTO-001 | Tunnel threat model and protocol (shared) | Gateway · Desktop · API | 9 | NOT_STARTED | API-AUTH-001, API-DEVICE-001, DESK-NET-001 |
 | TUN-AGENT-001 | Desktop tunnel agent | desktop.locafy | 9 | NOT_STARTED | TUN-PROTO-001 |
 | TUN-E2E-001 | End-to-end public tunnel flow (shared) | Gateway · Desktop · API | 9 | NOT_STARTED | TUN-PROTO-001, TUN-AGENT-001, TUN-GATE-001 |
@@ -301,12 +301,12 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 - **Description:** Local historical views: activity over time derived from the engine action history, resource usage trends with explicit scope labels, and application/service status history including restarts and failures (PRD section 13.4).
 - **Dependencies:** DESK-DB-002, DESK-DEVX-001
 - **Acceptance criteria:** Activity trend view works from local history without an account; every metric states its scope (machine-wide, Locafy-managed, or project-specific); status history covers restarts and failures; retention is bounded and configurable (PRD sections 6.3, 13.3, 13.4).
-- **Status:** NOT_STARTED
+- **Status:** IN_PROGRESS
 - **Assigned agent:** —
-- **Files/modules:** —
-- **Tests:** Trend queries over stored history; retention pruning; scope-label presence
-- **Blockers:** Metric collection arrives with Phase 7 monitoring (DESK-DEVX-001)
-- **Evidence:** —
+- **Files/modules:** `internal/analytics/analytics.go` (per-day trend, action mix, retention preference and pruning), `internal/analytics/service.go` (bindings), `internal/analytics/analytics_test.go`, `main.go` (startup retention pass), `frontend/src/screens/analytics.tsx`, `frontend/src/screens/analytics.test.tsx`, `frontend/bindings/.../internal/analytics/`
+- **Tests:** `internal/analytics/analytics_test.go` — every day in the window is present with zero counts for silent days, today's and two-days-ago counts and the action mix read back correctly, the total matches, pruning keeps the window and reports the rows it removed, and a retention preference is validated (zero and above the ceiling refused), stored, applied immediately and re-read. `frontend/src/screens/analytics.test.tsx` — totals, action mix, retention value and the empty-window state render from the binding, and choosing a retention window calls `SetRetention`.
+- **Blockers:** Resource usage trends and application/service status history are not recorded anywhere yet: the machine meters keep only the current reading (ADR-0005) and a process state change is not persisted as an event. Both halves of the acceptance criteria wait on that collection, which belongs to the monitoring half of DESK-DEVX-001. Activity trends, scope labelling and bounded, configurable retention are delivered below.
+- **Evidence (activity trends and retention):** The analytics screen is no longer sample data. `internal/analytics` reads `activity_logs` — the history the engine already writes — into a per-day series for a 7, 30 or 90 day window, filling days with no entries as zero so a silent day is visible as a gap, plus the ten most frequent actions with their counts. `Service.Trend`, `Retention` and `SetRetention` expose it; the view states its scope with a `Machine-wide` badge and explains every number ("in the last 30 days", "distinct in this window"). Retention is bounded and configurable: `analytics.retention_days` defaults to 90, is validated to 1–3650 days, prunes immediately when lowered, and `ApplyRetention` runs once at engine startup so a machine that is rarely restarted still trims. The screen also names what is not recorded yet rather than faking it: usage trends and status history. Verified in the rebuilt application over CDP: the tiles read `Recorded actions 337 in the last 30 days`, `Busiest day 80 · Nov 16`, `Action kinds 10`, `History kept 90 days`, the chart spanned `Oct 29` to `Nov 27`, and the action mix began with `Engine started`. `go vet ./...`, `go test ./internal/analytics`, `npx tsc --noEmit`, `npx vitest run src/screens/analytics.test.tsx` (3 tests) and `wails3 build` pass.
 
 ### TUN-PROTO-001 — Tunnel threat model and protocol (shared: Gateway/Desktop/API)
 
