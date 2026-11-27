@@ -91,9 +91,6 @@ func (s *Supervisor) recordUsage(id string, live *run, root int) {
 	if exited(live) {
 		return
 	}
-	if s.cpuBaseline == nil {
-		s.cpuBaseline = map[int]cpuTimes{}
-	}
 	cores, err := logicalCores()
 	if err != nil || cores <= 0 {
 		return
@@ -115,6 +112,17 @@ func (s *Supervisor) recordUsage(id string, live *run, root int) {
 		}
 	}
 
+	// Commit the baseline only while the run is live, in the same lock that
+	// finalises it: a scan already in flight must not restore a baseline that a
+	// Stop has just dropped unless its reading was taken before the stop.
+	s.mu.Lock()
+	if live.finalised {
+		s.mu.Unlock()
+		return
+	}
+	if s.cpuBaseline == nil {
+		s.cpuBaseline = map[int]cpuTimes{}
+	}
 	var percent float64
 	if previous, seen := s.cpuBaseline[root]; seen {
 		wall := now.Sub(previous.at).Seconds()
@@ -127,7 +135,6 @@ func (s *Supervisor) recordUsage(id string, live *run, root int) {
 	// through the running set, not here: the map is keyed by root.
 
 	usage := Usage{CPUPercent: percent, MemoryBytes: memory}
-	s.mu.Lock()
 	changed := live.usage != usage
 	if changed {
 		live.usage = usage
