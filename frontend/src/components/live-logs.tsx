@@ -43,11 +43,15 @@ function sourceColour(name: string): string {
   return SOURCE_COLOURS[hash % SOURCE_COLOURS.length];
 }
 
+// The row shows a readable local time; the export keeps the exact instant.
 function timestamp(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  const time = date.toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  return `${time}.${String(date.getMilliseconds()).padStart(3, "0")}`;
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  );
 }
 
 function SeverityBadge({ severity }: { severity: Severity }) {

@@ -55,6 +55,8 @@ describe("LiveLogs", () => {
     renderLogs("p1");
 
     expect(await screen.findByText("✓ Ready in 2.6s")).toBeInTheDocument();
+    // The row reads as a date and a wall-clock time, not a raw instant.
+    expect(screen.getAllByText(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)).toHaveLength(2);
     expect(screen.getByText("info")).toBeInTheDocument();
     expect(screen.getByText("warn")).toBeInTheDocument();
     expect(screen.getAllByText("PostgreSQL").length).toBeGreaterThan(0);
