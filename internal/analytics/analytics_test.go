@@ -72,6 +72,35 @@ func TestTrendBucketsEveryDayAndCountsActions(t *testing.T) {
 	}
 }
 
+func TestRecentEventsKeepsMachineScopeAndOrdersNewestFirst(t *testing.T) {
+	database := newTestDB(t)
+	now := time.Now().UTC()
+
+	logAt(t, database, "Engine started", now.Add(-time.Hour))
+	if _, err := database.Exec(`INSERT INTO activity_logs (id, scope_type, scope_id, action, detail, created_at)
+		VALUES ('e1', 'project', 'p1', 'Project started', 'started web', ?)`,
+		now.Format("2006-01-02 15:04:05")); err != nil {
+		t.Fatalf("insert project activity: %v", err)
+	}
+
+	events, err := RecentEvents(database, 10)
+	if err != nil {
+		t.Fatalf("recent events: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("events = %d, want the two recorded actions", len(events))
+	}
+	if events[0].Action != "Project started" || events[0].Scope != "project" || events[0].Detail != "started web" {
+		t.Fatalf("first event = %+v, want the newest project action first", events[0])
+	}
+	if events[1].Action != "Engine started" || events[1].Scope != "machine" {
+		t.Fatalf("second event = %+v, want the machine action included", events[1])
+	}
+	if limited, err := RecentEvents(database, 1); err != nil || len(limited) != 1 {
+		t.Fatalf("limited = %d, %v; want one event", len(limited), err)
+	}
+}
+
 func TestPruneKeepsTheWindowAndReportsWhatItRemoved(t *testing.T) {
 	database := newTestDB(t)
 	now := time.Now().UTC()

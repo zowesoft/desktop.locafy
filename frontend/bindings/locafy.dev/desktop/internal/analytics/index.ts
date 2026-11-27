@@ -9,5 +9,6 @@ export {
 export type {
     Action,
     Day,
+    Event,
     Trend
 } from "./models.js";

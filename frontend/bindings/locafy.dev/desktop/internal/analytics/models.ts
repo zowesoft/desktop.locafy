@@ -18,6 +18,18 @@ export interface Day {
 }
 
 /**
+ * Event is one recorded action, for the timeline view.
+ */
+export interface Event {
+    "id": string;
+    "scope": string;
+    "scopeId": string;
+    "action": string;
+    "detail": string;
+    "at": string;
+}
+
+/**
  * Trend is the activity history over the requested window. It is machine-wide:
  * every project, application and service the engine recorded.
  */

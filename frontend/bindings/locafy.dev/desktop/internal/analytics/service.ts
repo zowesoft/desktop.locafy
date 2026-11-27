@@ -15,6 +15,13 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
+ * Recent returns the newest recorded actions, machine scope included.
+ */
+export function Recent(limit: number): $CancellablePromise<$models.Event[] | null> {
+    return $Call.ByID(1394324476, limit);
+}
+
+/**
  * Retention returns how many days of history the engine keeps.
  */
 export function Retention(): $CancellablePromise<number> {

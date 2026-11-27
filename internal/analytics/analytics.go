@@ -45,6 +45,42 @@ type Trend struct {
 	Retained int      `json:"retainedDays"`
 }
 
+// Event is one recorded action, for the timeline view.
+type Event struct {
+	ID      string `json:"id"`
+	Scope   string `json:"scope"`
+	ScopeID string `json:"scopeId"`
+	Action  string `json:"action"`
+	Detail  string `json:"detail"`
+	At      string `json:"at"`
+}
+
+// RecentEvents returns the newest recorded actions, machine scope included, so a
+// timeline can show what the engine did rather than only project actions.
+func RecentEvents(database *sql.DB, limit int) ([]Event, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := database.Query(`SELECT id, scope_type, coalesce(scope_id, ''), action, coalesce(detail, ''), created_at
+		FROM activity_logs
+		ORDER BY created_at DESC, rowid DESC
+		LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("read recent activity: %w", err)
+	}
+	defer rows.Close()
+
+	events := make([]Event, 0, limit)
+	for rows.Next() {
+		var event Event
+		if err := rows.Scan(&event.ID, &event.Scope, &event.ScopeID, &event.Action, &event.Detail, &event.At); err != nil {
+			return nil, fmt.Errorf("scan recent activity: %w", err)
+		}
+		events = append(events, event)
+	}
+	return events, rows.Err()
+}
+
 // TrendDays returns the recorded actions per day for the last days days,
 // oldest first, filling days with no activity with zero so a gap is visible as
 // a gap rather than a shorter chart.
