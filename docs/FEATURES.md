@@ -30,7 +30,7 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 | TUN-PROTO-001 | Tunnel threat model and protocol (shared) | Gateway · Desktop · API | 9 | NOT_STARTED | API-AUTH-001, API-DEVICE-001, DESK-NET-001 |
 | TUN-AGENT-001 | Desktop tunnel agent | desktop.locafy | 9 | NOT_STARTED | TUN-PROTO-001 |
 | TUN-E2E-001 | End-to-end public tunnel flow (shared) | Gateway · Desktop · API | 9 | NOT_STARTED | TUN-PROTO-001, TUN-AGENT-001, TUN-GATE-001 |
-| DESK-HELP-001 | Help and diagnostics export | desktop.locafy | 10 | IN_PROGRESS | DESK-BOOT-001 |
+| DESK-HELP-001 | Help and diagnostics export | desktop.locafy | 10 | COMPLETED | DESK-BOOT-001 |
 | DESK-EXT-001 | Extensions platform | desktop.locafy | 11 | NOT_STARTED | DESK-UI-001, DESK-DB-001 |
 | DESK-CLI-001 | Engine JSON API and the local CLI | desktop.locafy | 12 | NOT_STARTED | DESK-PROJ-002, DESK-APP-002, DESK-SVC-001, DESK-NET-001 |
 | DESK-MCP-001 | MCP server for AI clients | desktop.locafy | 12 | NOT_STARTED | DESK-CLI-001 |
@@ -353,7 +353,7 @@ Rules: a feature is never marked `COMPLETED` without evidence that its acceptanc
 - **Description:** Offline help entry point: built-in guidance for common tasks and problems, a way to open the documentation, and an exportable diagnostics bundle for reporting issues (PRD section 6.4).
 - **Dependencies:** DESK-BOOT-001
 - **Acceptance criteria:** Help content is usable without a network connection; a diagnostics bundle can be exported only after explicit user review; secrets and environment values are masked in the bundle (PRD sections 6.4, 12, 18.1).
-- **Status:** IN_PROGRESS
+- **Status:** COMPLETED
 - **Assigned agent:** —
 - **Files/modules:** `internal/diagnostics/diagnostics.go` (the bundle builder: system, counts, settings, activity and log files, every one re-masked before it is written, and the zip writer), `internal/diagnostics/service.go` (the bindings: `Preview` prepares the bundle in memory, `Export` opens the native save dialog and writes the archive; a cancelled dialog returns `ErrCancelled`), `internal/diagnostics/diagnostics_test.go`, `internal/logs/rotate.go` (a `Path()` accessor for the live log file), `main.go` (service wiring), `frontend/src/screens/help.tsx`, `frontend/src/screens/help.test.tsx`, `frontend/bindings/.../internal/diagnostics/`
 - **Tests:** `internal/diagnostics/diagnostics_test.go` (4 tests) — the bundle describes the engine and masks secrets in every file, an empty engine still produces a complete bundle instead of failing, the archive round-trips every member, and the default filename carries the moment. `frontend/src/screens/help.test.tsx` (4 tests) — the built-in articles are searchable with no network, the documentation link opens in the system browser, the masked bundle is shown for review and nothing is saved until the dialog's Save is chosen, and a cancelled save stays quiet while a real failure is reported.
