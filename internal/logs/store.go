@@ -65,7 +65,7 @@ func NewStore(database *sql.DB, capacity int) *Store {
 // Record captures a line from one source. A nil store ignores the call, so a
 // supervisor built without a log sink keeps working in tests.
 func (s *Store) Record(layer string, sourceID string, line string) {
-	if s == nil {
+	if s == nil || strings.TrimSpace(line) == "" {
 		return
 	}
 	clean, masked := Mask(line)

@@ -8,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useOutletContext } from "react-router-dom";
 import {
   AlertTriangle,
-  ChevronDown,
+  
   Copy,
   Eye,
   EyeOff,
@@ -19,6 +19,7 @@ import {
   Trash2,
 } from "lucide-react";
 import * as ProjectsService from "../../bindings/locafy.dev/desktop/internal/projects/service";
+import { LiveLogs } from "@/components/live-logs";
 import { ProjectServices } from "@/components/project-services";
 import { ProjectDomains } from "@/components/project-domains";
 import type { Project } from "../../bindings/locafy.dev/desktop/internal/projects/models";
@@ -261,132 +262,18 @@ export function ProjectEnvironmentTab() {
 
 // ─── Logs tab (project-scoped) ────────────────────────────────────────────────
 
-type LogSeverity = "error" | "warn" | "info" | "debug";
-
-interface ProjectLogEntry {
-  id: string;
-  time: string;
-  source: string;
-  severity: LogSeverity;
-  message: string;
-}
-
-const MOCK_PROJECT_LOGS: ProjectLogEntry[] = [
-  { id: "1", time: "16:47:04.213", source: "api", severity: "info", message: "Laravel application started — serving on http://api.etugora.test" },
-  { id: "2", time: "16:47:05.001", source: "auth", severity: "info", message: "NestJS server started on port 3001" },
-  { id: "3", time: "16:47:06.337", source: "ml", severity: "warn", message: "CUDA not available — falling back to CPU inference" },
-  { id: "4", time: "16:47:08.892", source: "api", severity: "error", message: "DB_PASSWORD env var is not set — using empty password" },
-  { id: "5", time: "16:47:14.012", source: "api", severity: "info", message: "GET /api/v1/users 200 42ms" },
-  { id: "6", time: "16:47:14.880", source: "api", severity: "info", message: "POST /api/v1/auth/login 200 88ms" },
-  { id: "7", time: "16:47:15.233", source: "ml", severity: "error", message: "RuntimeError: ONNX model weights not found at models/sentiment-v2.onnx" },
-  { id: "8", time: "16:47:18.441", source: "api", severity: "warn", message: "Slow query detected (>500ms): SELECT * FROM audit_logs WHERE project_id = 42" },
-  { id: "9", time: "16:47:22.100", source: "auth", severity: "info", message: "JWT signing key rotated successfully" },
-  { id: "10", time: "16:47:25.004", source: "api", severity: "info", message: "GET /api/v1/projects 200 15ms" },
-];
-
-function SeverityBadge({ severity }: { severity: LogSeverity }) {
-  const styles: Record<LogSeverity, string> = {
-    error: "bg-destructive/10 text-destructive border-destructive/20",
-    warn: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-    info: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-    debug: "bg-muted text-muted-foreground border-transparent",
-  };
-  return (
-    <span className={cn("inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium border", styles[severity])}>
-      {severity}
-    </span>
-  );
-}
-
 export function ProjectLogsTab() {
-  const [sourceFilter, setSourceFilter] = useState("all");
-  const [severityFilter, setSeverityFilter] = useState<LogSeverity | "all">("all");
-
-  const filtered = MOCK_PROJECT_LOGS.filter((entry) => {
-    if (sourceFilter !== "all" && entry.source !== sourceFilter) return false;
-    if (severityFilter !== "all" && entry.severity !== severityFilter) return false;
-    return true;
-  });
-
-  const sources = Array.from(new Set(MOCK_PROJECT_LOGS.map((e) => e.source)));
+  const project = useOutletContext<Project>();
 
   return (
     <div className="flex min-h-full flex-col">
-      {/* Filter bar */}
       <div className="border-b border-border px-6 py-3">
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Source */}
-          <div className="relative">
-            <select
-              value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value)}
-              className="h-8 appearance-none rounded-md border border-border bg-background pl-3 pr-7 text-xs focus:outline-none"
-            >
-              <option value="all">All apps</option>
-              {sources.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
-          </div>
-
-          {/* Severity */}
-          <div className="flex rounded-md border border-border bg-muted/40 p-0.5">
-            {(["all", "error", "warn", "info", "debug"] as (LogSeverity | "all")[]).map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setSeverityFilter(s)}
-                className={cn(
-                  "rounded px-2.5 py-1 text-xs capitalize transition-colors",
-                  severityFilter === s
-                    ? "bg-card text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-
-          <span className="ml-auto text-xs text-muted-foreground">
-            Project-scoped · machine-wide logs in{" "}
-            <span className="text-primary">Logs</span> sidebar
-          </span>
-        </div>
+        <p className="text-xs text-muted-foreground">
+          Output from this project's applications and services, oldest first. Credentials are
+          replaced before a line is stored; every project's output is in the Logs screen.
+        </p>
       </div>
-
-      {/* Log lines */}
-      <div className="flex-1 overflow-y-auto font-mono">
-        <div className="divide-y divide-border/50">
-          {filtered.map((entry) => (
-            <div
-              key={entry.id}
-              className={cn(
-                "flex items-start gap-3 px-6 py-2 text-xs hover:bg-muted/30",
-                entry.severity === "error" && "bg-destructive/5",
-                entry.severity === "warn" && "bg-amber-500/5",
-              )}
-            >
-              <span className="shrink-0 text-muted-foreground/60 tabular-nums">{entry.time}</span>
-              <span className="min-w-[40px] text-primary">{entry.source}</span>
-              <SeverityBadge severity={entry.severity} />
-              <span
-                className={cn(
-                  "flex-1 break-all",
-                  entry.severity === "error"
-                    ? "text-destructive"
-                    : entry.severity === "debug"
-                      ? "text-muted-foreground/70"
-                      : "text-foreground",
-                )}
-              >
-                {entry.message}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
+      <LiveLogs projectID={project.ID} />
     </div>
   );
 }
